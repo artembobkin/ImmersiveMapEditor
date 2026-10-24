@@ -10,3 +10,7 @@ A native macOS tool for the content of the ImmersiveMap engine: Swift, AppKit, S
 ```
 
 Requires macOS 14 and Xcode's Swift toolchain. The tiles and road documents come from TilePipeline.
+
+## License
+
+MIT, as the engine. See `LICENSE`.
