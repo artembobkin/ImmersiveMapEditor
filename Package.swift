@@ -1,9 +1,9 @@
-// swift-tools-version:5.10
+// swift-tools-version:6.0
 import PackageDescription
 
 let package = Package(
     name: "ImmersiveMapEditor",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(name: "ImmersiveMapEditor", targets: ["ImmersiveMapEditor"]),
         .executable(name: "tilepipeline", targets: ["tilepipeline"]),
@@ -23,5 +23,6 @@ let package = Package(
         .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker"], path: "Sources/TileKit"),
         .executableTarget(name: "ImmersiveMapEditor", path: "Sources/ImmersiveMapEditor"),
         .executableTarget(name: "tilepipeline", dependencies: ["TileKit", "Geometry", "GLTF"], path: "Sources/tilepipeline"),
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

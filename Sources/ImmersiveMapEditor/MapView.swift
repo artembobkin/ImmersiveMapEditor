@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import Observation
 import MetalKit
 
 /// The map: a top view of the road document, drawn on demand, and every
@@ -15,7 +15,6 @@ final class MapView: MTKView {
     /// Handles show from this scale up, so a whole block is not a cloud of them.
     let handleScale = 2.5
 
-    private var watching: AnyCancellable?
     private var gesture: Gesture = .none
     private var draft: [Vec2] = []
     private var hover: Vec2?
@@ -45,10 +44,23 @@ final class MapView: MTKView {
     override var isFlipped: Bool { false }
 
     private func observe() {
-        watching = model?.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.needsDisplay = true }
-        }
+        watch()
         frameAll()
+    }
+
+    /// Draws again whenever what the view shows of the model changes
+    /// (Observation: the reads below are what is tracked).
+    private func watch() {
+        guard let model else { return }
+        withObservationTracking {
+            _ = (model.revision, model.selection, model.tool, model.showBuildings, model.showCentreLines,
+                 model.showMarkings, model.showHandles)
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.needsDisplay = true
+                self?.watch()
+            }
+        }
     }
 
     // MARK: Coordinates

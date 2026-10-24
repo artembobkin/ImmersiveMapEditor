@@ -1,5 +1,5 @@
-import AppKit
-import Combine
+import Foundation
+import Observation
 
 /// A thing that can be selected.
 enum Item: Hashable {
@@ -50,24 +50,30 @@ enum Tool: String, CaseIterable, Identifiable {
     }
 }
 
-final class EditorModel: ObservableObject {
-    @Published var doc: RoadDocument
-    @Published var selection: Set<Item> = []
-    @Published var tool: Tool = .select
-    @Published var dirty = false
-    @Published var cornerRadius = 4.0
-    @Published var tolerance = 0.3
-    @Published var showBuildings = true
-    @Published var showCentreLines = true
-    @Published var showMarkings = true
-    @Published var showHandles = true
-    @Published var status = ""
+/// The road document open in the Roads view, its selection and its tools.
+/// Every change is one step of the window's undo, and the document saves
+/// itself a moment after the last change.
+@Observable
+final class EditorModel {
+    var doc: RoadDocument
+    var selection: Set<Item> = []
+    var tool: Tool = .select
+    var dirty = false
+    var cornerRadius = 4.0
+    var tolerance = 0.3
+    var showBuildings = true
+    var showCentreLines = true
+    var showMarkings = true
+    var showHandles = true
+    var status = ""
     /// Bumped whenever the document's geometry changes, so the view rebuilds.
-    @Published private(set) var revision = 0
+    private(set) var revision = 0
 
     let url: URL
     let context: Underlay
-    let undo = UndoManager()
+    /// The window's undo manager, given by the view (`@Environment(\.undoManager)`).
+    @ObservationIgnored weak var undo: UndoManager?
+    @ObservationIgnored private var saving: Task<Void, Never>?
 
     init(url: URL) throws {
         self.url = url
@@ -76,7 +82,6 @@ final class EditorModel: ObservableObject {
         let root = url.deletingLastPathComponent().deletingLastPathComponent()
         let ctx = root.appendingPathComponent("data/regions/\(doc.name)/context.json")
         context = Underlay.read(ctx, doc.projection)
-        undo.levelsOfUndo = 200
     }
 
     /// The project's folder: roads/<name>.json sits in it.
@@ -100,19 +105,34 @@ final class EditorModel: ObservableObject {
     }
 
     private func registerUndo(_ name: String, _ before: RoadDocument, _ selected: Set<Item>) {
-        undo.registerUndo(withTarget: self) { model in
+        undo?.registerUndo(withTarget: self) { model in
             let now = model.doc, nowSelected = model.selection
             model.doc = before
             model.selection = selected
             model.registerUndo(name, now, nowSelected)
             model.touched()
         }
-        undo.setActionName(name)
+        undo?.setActionName(name)
     }
 
     func touched() {
         dirty = true
         revision += 1
+        // Saved a moment after the last change, as a Mac document is: a drag
+        // saves once, when it stops.
+        saving?.cancel()
+        saving = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled, let self, self.dirty else { return }
+            self.save()
+        }
+    }
+
+    /// Saves now if anything is unsaved: before another document opens, the
+    /// workspace changes or the app goes to the background.
+    func saveIfNeeded() {
+        saving?.cancel()
+        if dirty { save() }
     }
 
     func save() {

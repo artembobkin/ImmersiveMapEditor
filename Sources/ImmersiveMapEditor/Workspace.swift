@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// A z15 tile.
 struct TileKey: Hashable, Codable, Comparable {
@@ -18,29 +19,30 @@ enum ViewMode: String, CaseIterable, Identifiable {
 /// (data/<z>_<x>_<y>/osm.json), a built model (out/tiles/<z>/<x>/<y>/), the
 /// road document holding it (roads/). And the tiles picked on the map and
 /// shown together in 3D.
-final class Workspace: ObservableObject {
+@Observable
+final class Workspace {
     static let zoom = 15
 
     let root: URL
-    @Published var viewMode: ViewMode = .map
-    @Published private(set) var fetched: Set<TileKey> = []
-    @Published private(set) var built: Set<TileKey> = []
-    @Published private(set) var documents: [(url: URL, tiles: RoadDocument.Tiles)] = []
+    var viewMode: ViewMode = .map
+    private(set) var fetched: Set<TileKey> = []
+    private(set) var built: Set<TileKey> = []
+    private(set) var documents: [(url: URL, tiles: RoadDocument.Tiles)] = []
     /// The tiles picked on the map.
-    @Published var selection: Set<TileKey> = [] {
+    var selection: Set<TileKey> = [] {
         didSet { remember() }
     }
     /// The tiles the 3D view shows, together.
-    @Published var shown: [TileKey] = [] {
+    var shown: [TileKey] = [] {
         didSet { remember(); tilesRevision += 1 }
     }
-    @Published var flying = false
-    @Published var showLightMap = true
-    @Published var tileStatus = ""
+    var flying = false
+    var showLightMap = true
+    var tileStatus = ""
     /// Bumped when the tiles shown or their builds change, so the 3D view
     /// reloads them.
-    @Published var tilesRevision = 0
-    @Published var building = false
+    var tilesRevision = 0
+    var building = false
 
     init(root: URL) {
         self.root = root

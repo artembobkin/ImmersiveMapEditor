@@ -12,7 +12,7 @@ A native macOS tool for the content of the ImmersiveMap engine: Swift, AppKit, S
 ./make_app.sh       # build/Immersive Map Editor.app
 ```
 
-Open `Package.swift` in Xcode (File > Open, the folder) or build with `swift build -c release`. Requires macOS 14 on Apple silicon and Xcode's Swift toolchain. The work (OSM data, road documents, landmark models, built tiles) lives in a TilePipeline folder.
+Open `Package.swift` in Xcode (File > Open, the folder) or build with `swift build -c release`. Requires macOS 15 on Apple silicon and Xcode's Swift toolchain. The work (OSM data, road documents, landmark models, built tiles) lives in a TilePipeline folder.
 
 ## License
 

@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import MetalKit
 import simd
 
@@ -24,7 +23,6 @@ final class TileView: MTKView {
     private let groundColour: MTLTexture
     private var tiles: [TileModel] = []
     private var loaded = -1
-    private var watching: AnyCancellable?
 
     // The camera: a target, the distance to it and the way it looks.
     private var target = SIMD3<Double>(0, 0, 0)
@@ -100,10 +98,9 @@ final class TileView: MTKView {
         sampleCount = 4
         clearColor = MTLClearColor(red: 0.80, green: 0.85, blue: 0.90, alpha: 1)
         preferredFramesPerSecond = 60
+        // Drawn every frame (preferredFramesPerSecond): flight moves it, and
+        // whatever of the workspace it shows is read as it draws.
         delegate = self
-        watching = model.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.needsDisplay = true }
-        }
     }
 
     required init(coder: NSCoder) { fatalError("not used") }
