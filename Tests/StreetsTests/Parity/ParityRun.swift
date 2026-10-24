@@ -13,6 +13,8 @@ import Streets
 
 struct ParityRun {
     var name: String
+    /// The port's time, from reading the OSM to the four outputs.
+    var seconds = 0.0
     var comparisons: [String: GeoJSONComparison] = [:]
     var lanesRecorded = 0
     var roads = 0
@@ -43,6 +45,8 @@ struct ParityRun {
         }
         let config = pipelineConfig()
         let lanes = try LaneHarvest.record(input: bytes, clip: clipPts, config: config, work: work)
+        let clock = ContinuousClock()
+        let started = clock.now
         var streets = try StreetNetwork.fromOSM(bytes, clip: clipPts, config: config, laneSpecs: lanes)
         streets.applyTransformations(Transformation.standardForClippedAreas())
         let actual = [
@@ -51,9 +55,11 @@ struct ParityRun {
             "lane_markings": try streets.toLaneMarkingsGeoJSON(.all),
             "intersection_markings": streets.toIntersectionMarkingsGeoJSON(.all),
         ]
+        let elapsed = clock.now - started
         let swiftDir = work.appendingPathComponent("swift")
         try FileManager.default.createDirectory(at: swiftDir, withIntermediateDirectories: true)
-        var result = ParityRun(name: name, lanesRecorded: lanes.lanes.count, roads: streets.roads.count,
+        var result = ParityRun(name: name, seconds: Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) * 1e-18,
+                               lanesRecorded: lanes.lanes.count, roads: streets.roads.count,
                                intersections: streets.intersections.count)
         for k in Oracle.outputs {
             try actual[k]!.write(to: swiftDir.appendingPathComponent("\(k).geojson"), atomically: true, encoding: .utf8)
@@ -73,7 +79,7 @@ struct ParityRun {
     }
 
     var summary: String {
-        var s = "\(name): \(roads) roads, \(intersections) intersections, \(lanesRecorded) tag sets"
+        var s = "\(name) (\(String(format: "%.2f", seconds)) s): \(roads) roads, \(intersections) intersections, \(lanesRecorded) tag sets"
         for k in Oracle.outputs {
             let c = comparisons[k]!
             s += "; \(k) \(c.featuresActual)/\(c.featuresExpected) features, "

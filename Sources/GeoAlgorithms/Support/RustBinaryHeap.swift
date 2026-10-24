@@ -3,18 +3,18 @@
 /// `push` sifts up, `pop` moves the last element to the root, sifts it down to the bottom and then
 /// up again, `init(_:)` heapifies with `rebuild`, and `extend` appends and runs `rebuild_tail`.
 
-struct RustBinaryHeap<Element, Failure: Error> {
+public struct RustBinaryHeap<Element, Failure: Error> {
     private(set) var data: [Element]
     /// Rust's `Ord::cmp` of the element type.
     private let cmp: (Element, Element) throws(Failure) -> RustOrdering
 
-    init(cmp: @escaping (Element, Element) throws(Failure) -> RustOrdering) {
+    public init(cmp: @escaping (Element, Element) throws(Failure) -> RustOrdering) {
         self.data = []
         self.cmp = cmp
     }
 
     /// Rust's `BinaryHeap::from(Vec)`: takes the elements in place and rebuilds the heap.
-    init(
+    public init(
         _ elements: [Element],
         cmp: @escaping (Element, Element) throws(Failure) -> RustOrdering
     ) throws(Failure) {
@@ -23,24 +23,24 @@ struct RustBinaryHeap<Element, Failure: Error> {
         try rebuild()
     }
 
-    var count: Int { data.count }
-    var isEmpty: Bool { data.isEmpty }
+    public var count: Int { data.count }
+    public var isEmpty: Bool { data.isEmpty }
 
     /// Rust's `peek`: the greatest element.
-    func peek() -> Element? { data.first }
+    public func peek() -> Element? { data.first }
 
     // `PartialOrd` derived from `Ord`: `a <= b` is `cmp(a, b) != Greater`, and so on.
     private func le(_ a: Element, _ b: Element) throws(Failure) -> Bool { try cmp(a, b) != .greater }
     private func ge(_ a: Element, _ b: Element) throws(Failure) -> Bool { try cmp(a, b) != .less }
     private func lt(_ a: Element, _ b: Element) throws(Failure) -> Bool { try cmp(a, b) == .less }
 
-    mutating func push(_ item: Element) throws(Failure) {
+    public mutating func push(_ item: Element) throws(Failure) {
         let oldLen = data.count
         data.append(item)
         _ = try siftUp(start: 0, pos: oldLen)
     }
 
-    mutating func pop() throws(Failure) -> Element? {
+    public mutating func pop() throws(Failure) -> Element? {
         guard var item = data.popLast() else { return nil }
         if !data.isEmpty {
             swap(&item, &data[0])
@@ -50,7 +50,7 @@ struct RustBinaryHeap<Element, Failure: Error> {
     }
 
     /// Rust's `Extend` for `BinaryHeap`: the items are appended, then the tail is rebuilt.
-    mutating func extend<S: Sequence>(_ items: S) throws(Failure) where S.Element == Element {
+    public mutating func extend<S: Sequence>(_ items: S) throws(Failure) where S.Element == Element {
         let start = data.count
         data.append(contentsOf: items)
         try rebuildTail(start)

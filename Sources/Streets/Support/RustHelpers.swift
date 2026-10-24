@@ -74,3 +74,5 @@ extension Bool: @retroactive Comparable {
     /// Rust's order: false before true.
     public static func < (a: Bool, b: Bool) -> Bool { !a && b }
 }
+
+extension Pair: Hashable where A: Hashable, B: Hashable {}

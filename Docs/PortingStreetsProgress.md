@@ -44,13 +44,13 @@ What the port does meanwhile: the reading of lanes is a seam, `LaneSpecSource` (
 - PBF input is not ported (the pipeline writes XML). osm2streets's test `frederiksted` is PBF and is not run.
 - The clip GeoJSON is read with serde_json's float algorithm (no `float_roundtrip`), not `Double(String)`: serde_json is off by one unit in the last place on some coordinates, and the port must be off the same way.
 - `checkInvariants` is ported but the parity tests do not call it: the Rust CLI does not, and with the pipeline's configuration the invariants do not always hold in the Rust either (an intersection left without roads after a road is skipped).
-- Transformations: the three of `standard_for_clipped_areas` are ported and checked. `RemoveDisconnectedRoads` is ported but not checked against the Rust (the binary does not run it). `MergeDualCarriageways` only adds debugging output in the Rust, so it is a no-op here. `ZipSidepaths` is not ported (it needs petgraph's A* with its heap order).
+- Transformations: the three of `standard_for_clipped_areas` are ported and checked. `RemoveDisconnectedRoads` and `ZipSidepaths` (with petgraph's A* on a `DiGraphMap`, its open set in Rust's `BinaryHeap` order) are ported and unit-tested on made-up networks, not checked against the Rust: the binary never runs them. `MergeDualCarriageways` only adds debugging output in the Rust, so it is a no-op here.
 - Not ported because nothing the pipeline calls reaches them: osm2lanes's lane editing (`edit/`), osm2streets's `block.rs`, `render/output.rs`, `paint.rs`, `marking.rs`, debug steps, pathfinding beyond `find_nearby_roads`, the geom pieces only those use (`FindClosest`, `QuadTree`, times and durations).
 - Muv's `Lane` is carried as its serde JSON (`LaneSpec.muv`). Rust compares `LaneSpec`s with Muv's derived `PartialEq`, the port compares the JSON. They agree on every case run.
 
 ## Parity numbers
 
-`swift test --filter StreetsTests` (debug build, 330 tests, about 210 s), the Rust being `osm2streets-cli` of the pipeline (rev fc119c4, arm64), with the pipeline's configuration (inferred sidewalks and kerbs) and the lanes recorded from the Rust as described above. "Identical" means byte-identical GeoJSON text. 2026-10-25:
+`swift test --filter StreetsTests` (debug build, 332 tests, about 210 s), the Rust being `osm2streets-cli` of the pipeline (rev fc119c4, arm64), with the pipeline's configuration (inferred sidewalks and kerbs) and the lanes recorded from the Rust as described above. "Identical" means byte-identical GeoJSON text. 2026-10-25:
 
 | Case | Roads | Intersections | Tag sets | plain | lanes | lane_markings | intersection_markings |
 |---|---|---|---|---|---|---|---|
@@ -70,11 +70,11 @@ Found on the way: serde_json reads some coordinates of the clip 1 or 2 units in 
 
 ## Commits
 
-- `5935bdb` Earcut. `3130717` CountryBoundaries. `7ddc315`, `cc93bb6` OSMReader. `7217ddf` GeoAlgorithms. `1aec73d` StreetGeom. Then Streets with the parity tests.
+- `5935bdb` Earcut. `3130717` CountryBoundaries. `7ddc315`, `cc93bb6` OSMReader. `7217ddf` GeoAlgorithms. `1aec73d` StreetGeom. `1cf1ea7` Streets with the parity tests. Then the remaining transformations.
 
 ## Left
 
 - The Muv decision, then the lane reading (and the `geometry.json` checks, which need it).
-- `ZipSidepaths`, with petgraph's `astar` on a `DiGraphMap`.
-- Speed: the Moscow region takes about 35 s in a debug build (the Rust 0.8 s). Not measured in release yet.
+- A way to check `ZipSidepaths` and `RemoveDisconnectedRoads` against the Rust (the binary does not run them).
+- Speed: the port takes 19.7 s for the Moscow region in a debug build, 6.8 to 10.9 s per tile (the Rust: 0.8 s for the region). A release run of the tests hung in swift-testing and was stopped, so release is not measured.
 - Phase 11 and on.

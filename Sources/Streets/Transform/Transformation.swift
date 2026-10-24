@@ -1,10 +1,11 @@
-/// osm2streets's transformations of a street network, and the two that the
-/// standard sequence for clipped areas uses: collapsing `junction=intersection`
-/// roads and collapsing degenerate intersections.
+/// osm2streets's transformations of a street network, applied in place. The
+/// standard sequence for clipped areas collapses `junction=intersection`
+/// roads and degenerate intersections.
 
 import StreetGeom
 
 public enum Transformation: Sendable {
+    case zipSidepaths
     case collapseShortRoads
     case collapseDegenerateIntersections
     case removeDisconnectedRoads
@@ -18,6 +19,7 @@ public enum Transformation: Sendable {
 
     func apply(_ streets: inout StreetNetwork) {
         switch self {
+        case .zipSidepaths: streets.zipSidepaths()
         case .collapseShortRoads: collapseAllJunctionRoads(&streets)
         case .collapseDegenerateIntersections: collapseDegenerate(&streets)
         case .removeDisconnectedRoads: streets.removeDisconnectedRoads()
