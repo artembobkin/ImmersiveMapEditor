@@ -1,4 +1,3 @@
-import AppKit
 import ImageIO
 import Observation
 import SwiftUI
@@ -193,16 +192,15 @@ struct MapCanvas: View {
 
 /// The Map view: drag to move, scroll or pinch to zoom at the cursor (as in
 /// the engine). A click picks or drops a tile, shift-drag picks a box of
-/// them, a double-click shows a built tile in 3D, F frames the work.
+/// them, a double-click shows a built tile in 3D, F frames the work. The
+/// scroll wheel comes through Metal/AppKitBridge.swift.
 struct MapPicker: View {
     @Environment(Session.self) private var session
     @State private var size = CGSize(width: 800, height: 600)
     @State private var shift = false
-    @State private var hover: CGPoint?
     @State private var box: (CGPoint, CGPoint)?
     @State private var dragFrom: SIMD2<Double>?
     @State private var magnifyFrom: Double?
-    @State private var wheel: Any?
 
     var body: some View {
         let workspace = session.workspace, camera = session.camera
@@ -242,28 +240,12 @@ struct MapPicker: View {
                 camera.zoom(to: magnifyFrom! + log2(v.magnification), keeping: v.startLocation, in: size)
             }.onEnded { _ in magnifyFrom = nil })
             .onModifierKeysChanged(mask: .shift) { _, keys in shift = keys.contains(.shift) }
-            .onContinuousHover { phase in
-                if case .active(let p) = phase { hover = p } else { hover = nil }
-            }
             .focusable()
             .focusEffectDisabled()
             .onKeyPress("f") {
                 camera.frame(workspace)
                 return .handled
             }
-            .onAppear {
-                // SwiftUI has no scroll wheel: a local monitor reads it while
-                // the cursor is over the map.
-                wheel = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                    guard let p = hover else { return event }
-                    let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 100 : event.scrollingDeltaY / 6
-                    camera.zoom(to: camera.zoom + dy, keeping: p, in: size)
-                    return nil
-                }
-            }
-            .onDisappear {
-                if let wheel { NSEvent.removeMonitor(wheel) }
-                wheel = nil
-            }
+            .onScrollWheel { dy, p in camera.zoom(to: camera.zoom + dy, keeping: p, in: size) }
     }
 }

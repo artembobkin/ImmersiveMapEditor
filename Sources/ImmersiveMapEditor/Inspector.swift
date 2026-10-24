@@ -1,4 +1,3 @@
-import AppKit
 import Observation
 import SwiftUI
 
@@ -189,17 +188,6 @@ struct StatusLine: View {
                 Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
             }
         }
-    }
-}
-
-/// A Metal view in SwiftUI: the one kind of AppKit view the app keeps, for
-/// what SwiftUI has no API for (its input). It takes the keyboard when shown.
-struct MetalHost: NSViewRepresentable {
-    let view: NSView
-    func makeNSView(context: Context) -> NSView { view }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        nsView.needsDisplay = true
-        Task { @MainActor in nsView.window?.makeFirstResponder(nsView) }
     }
 }
 

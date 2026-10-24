@@ -1,5 +1,4 @@
 import Foundation
-import AppKit
 import ImageIO
 import SwiftUI
 
@@ -31,7 +30,6 @@ enum Headless {
                 return p.count == 2 ? TileKey(z: Workspace.zoom, x: p[0], y: p[1]) : nil
             }
             guard let view = TileView(model: workspace) else { return fail("no Metal device") }
-            view.frame = NSRect(x: 0, y: 0, width: 1600, height: 1000)
             do {
                 try view.snapshot(to: URL(fileURLWithPath: arguments[i + 2]), width: 1600, height: 1000)
                 print(workspace.tileStatus)

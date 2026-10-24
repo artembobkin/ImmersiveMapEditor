@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Immersive Map Editor: the desktop tool for the ImmersiveMap engine's
@@ -17,9 +16,7 @@ import SwiftUI
 enum Entry {
     static func main() async {
         if let code = await Headless.run(CommandLine.arguments) { exit(code) }
-        // Run without its app bundle (from the command line or Xcode), the
-        // executable has no activation policy of its own.
-        if Bundle.main.bundleIdentifier == nil { NSApplication.shared.setActivationPolicy(.regular) }
+        Platform.activateBareExecutable()
         EditorApp.main()
     }
 }
