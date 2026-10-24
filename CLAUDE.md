@@ -4,7 +4,7 @@ The desktop tool for the content of the ImmersiveMap engine (`~/Desktop/Immersiv
 
 - **Map**: OpenStreetMap under the grid of z15 tiles, each coloured by what TilePipeline has of it (built, OSM fetched, a road document). Pick tiles, then show the built ones in 3D, open their road document, or fetch OSM and build them (`pipeline.py --tiles`, which seeds a road document for the tiles that have none).
 - **Roads**: corrects a road document by hand, the one source of a tile's roads (its format is the doc comment of TilePipeline's `build/roads.py`).
-- **Tiles 3D**: the tiles picked shown together as the engine draws them, so neither Blender nor the engine is needed to look at them.
+- **Tiles 3D**: the tiles picked shown together as the engine draws them, so the engine is not needed to look at them.
 
 ## Commands
 
@@ -42,6 +42,6 @@ With no argument the app opens the workspace opened last, else `~/Desktop/TilePi
 - Draw what the engine draws: when the engine's way of drawing a model tile changes (`ImmersiveMap/Sources/ImmersiveMap/SceneModels/ModelTiles/`), the 3D view follows.
 - No external packages unless asked for.
 
-## Next
+## TilePipeline without Blender
 
-- Building tiles without Blender (decided with the user, 2026-10-24): TilePipeline's geometry on numpy arrays with its own GLB writer, and the light map baked here with Metal ray tracing (sky occlusion from each texel), called by the pipeline.
+Since 2026-10-24 TilePipeline builds without Blender (the user removed it): plain Python with numpy, shapely and Pillow in its `.venv`, and the light map baked on the GPU by its `tools/light_baker` (Swift, Metal ray tracing). The editor runs `pipeline.py` with the system `python3`, which starts `.venv` for every step that needs it.
