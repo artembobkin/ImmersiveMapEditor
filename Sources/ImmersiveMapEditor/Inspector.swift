@@ -47,6 +47,7 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
                 Divider()
                 VStack(spacing: 0) {
                     Picker("", selection: $workspace.viewMode) {
@@ -69,6 +70,7 @@ struct ContentView: View {
                     }
                 }
                 .frame(width: 280)
+                .background(Color(nsColor: .windowBackgroundColor))
             }
             Divider()
             StatusLine(session: session, workspace: workspace)

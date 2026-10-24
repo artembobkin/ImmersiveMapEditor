@@ -25,6 +25,9 @@ final class MapPicker: NSView {
     init(workspace: Workspace) {
         self.workspace = workspace
         super.init(frame: .zero)
+        // Since macOS 14 a view draws past its bounds unless told not to: the
+        // map's tiles would cover the panel beside it.
+        clipsToBounds = true
         raster.changed = { [weak self] in self?.needsDisplay = true }
         watching = workspace.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.needsDisplay = true }
