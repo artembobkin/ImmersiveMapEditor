@@ -35,7 +35,7 @@ These are the user's decisions (2026-10-24). Follow them without asking again.
 
 Every change is checked before it is called done, and the check is said plainly (what ran, what came out).
 
-- `swift build -c release` with no errors and no new warnings.
+- `swift build -c release` with no errors and no new warnings, and `swift test` passing.
 - Looking at a result without a screen: `ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y...` (tiles in 3D) and `--map-snapshot WORKSPACE OUT.png` (the map) render offscreen to a PNG that can be read. Do not capture the screen (`screencapture`): it raises a permission prompt the user must answer. The live window is the user's to try.
 - The road document: `ImmersiveMapEditor --resave IN OUT` then `cmp IN OUT`, identical.
 - A tile: `tilepipeline validate`. A change to the pipeline: build `15/19808/10243` (Red Square, with landmarks, construction sites and roads) before and after and compare `stats.json` (`triangles`, `triangles_by_kind`, landmark windows, shelters) and the light map, and say what changed and why.
@@ -52,24 +52,28 @@ Targets:
 - `tilepipeline`: the command line over TileKit.
 - `ImmersiveMapEditor`: the app. It builds tiles by running `tilepipeline` beside its own executable, so a build never blocks the window and GEOS keeps its one thread.
 
-The app's sources (`Sources/ImmersiveMapEditor/`). SwiftUI and the model at the top level, everything drawn with Metal and every AppKit bridge in `Metal/`:
+The app's sources (`Sources/ImmersiveMapEditor/`), a folder per area:
 
-- `App.swift`: the entry (`@main`), the SwiftUI app and its scenes (the main window, the Build window), the menus (`EditorCommands`).
-- `Headless.swift`: `--resave`, `--snapshot`, `--map-snapshot`, run before any window (the map through `ImageRenderer`).
-- `Workspace.swift`: what the workspace has of each tile (fetched, built, its road document), the tiles picked and the tiles shown in 3D, kept between launches.
-- `MapPicker.swift`: the Map view in SwiftUI: `MapCamera`, `RasterTiles` (OpenStreetMap's tiles, loaded with `async`), `MapCanvas` (drawn in `Canvas`), `MapPicker` (its gestures, the scroll wheel through `onScrollWheel`).
-- `RoadDocument.swift`: the road document in local metres for editing, read and written byte for byte in `TileKit`'s layout, and the underlay (`Underlay`).
-- `Geometry.swift`: `Vec2`, the projection of a range of tiles, polygon helpers: winding, nearest point, Douglas-Peucker, fillet, offset, dashes.
-- `Markings.swift`: what TileKit's `Markings` makes of a marking's parameters, drawn as quads, the same constants and rules. Change both together.
-- `EditorModel.swift`: the state, the selection, every edit with its undo (on the window's undo manager, so Edit > Undo works), the roadway test (`RoadwayIndex`). The document saves itself 1.5 s after the last change, and when another one opens or the app goes to the background.
-- `Metal/AppKitBridge.swift`: `MetalHost`, `onScrollWheel`, `Platform`: the app's one door to AppKit.
-- `Metal/MapView.swift`, `Metal/Renderer.swift`: the 2D roads view (an `MTKView`, its input in AppKit), its gestures and tools, drawn with Metal when the model changes (`withObservationTracking`). Polygons with holes are filled through the stencil (non-zero winding), with no triangulation.
-- `Metal/TileModel.swift`, `Metal/TileView.swift`: the 3D view. A tile's GLB read as the engine's tooling reads it, drawn as palette × light map, raw values, back faces culled, each tile placed and scaled as the engine places it. Orbit and flight (Tab: W A S D, Q, E, right-drag to look).
-- `Inspector.swift`: `Session` (the workspace, the open document, the build), `ContentView` (the view of the mode, `.toolbar` with the mode, `.inspector` with its panel, the status line, `.fileImporter`, `.alert`), and the panels.
-- `BuildRunner.swift`: runs `tilepipeline build`, its output read as an `async` sequence of lines, and the Build window (`BuildLogView`).
-- `Icon/make_icon.swift`: draws `Icon/AppIcon.png`, the icon. `make_app.sh` makes the `.icns` from it.
+- `App/`: `App.swift` (the entry, the SwiftUI app and its scenes), `EditorCommands.swift` (the menus), `Headless.swift` (`--resave`, `--snapshot`, `--map-snapshot`, before any window).
+- `Session/`: `Session` (the workspace, the open road document, the build, what the window asks for), `Workspace` (what the TilePipeline folder has of each tile, the tiles picked and shown), `BuildRunner` (runs `tilepipeline build`, its output as an `async` sequence).
+- `Map/`: the Map view in SwiftUI. `MapCamera` (centre and zoom), `RasterTiles` (OpenStreetMap's tiles, loaded with `async`), `MapCanvas` (drawn in `Canvas`), `MapPicker` (its gestures).
+- `Roads/`: the road document as it is edited. `RoadPlan` (the plan in local metres, read and written through TileKit's `RoadDocument`), `RoadEditor` (the open plan, selection, tool, settings, layers; every change through `change`, one undo step, saved by its `DocumentStore`), `RoadEdits` (every edit as a plain operation on a plan), `Selection`, `Tool`, `RoadHitTest` (what is under a point), `ViewTransform2D`, `RoadwayIndex`, `Geometry2D` (fillet, simplify, offsets, dashes), `MarkingShapes` (markings as quads, with TileKit's constants), `Underlay`. `Tools/`: `RoadToolHandler` (the protocol, `Pointer`, `ToolPreview`, `ToolContext`) and one type per tool (`SelectTool`, `DrawTool`, `DragPlaceTool`, `ClickPlaceTool`).
+- `Views/`: `ContentView` (the mode's view, `.toolbar`, `.inspector`, the status line, `.fileImporter`, `.alert`), `StatusLine`, `BuildLogView`, `Panels/` (one panel per mode, and the selection's).
+- `Metal/`: everything drawn with Metal and every AppKit bridge. `AppKitBridge.swift` (`MetalHost`, `onScrollWheel`, `Platform`). `Roads2D/`: `RoadsView` (the thin `MTKView`: events to the tool, pan and zoom, keys to commands), `RoadsRenderer` (pipelines, stencil fills), `RoadLayers` (the plan as meshes), `RoadOverlay` (handles, selection, the tool's preview), `Mesh2D` (vertices, meshes, colours). `Tiles3D/`: `TileView` (the thin `MTKView`), `OrbitCamera` (the camera's math), `CameraController` (input to the camera: orbit and flight), `TileLibrary` (the tiles shown, loaded and placed), `TileRenderer` (pipelines, drawing, the offscreen snapshot), `TileModel` (a tile's GLB on the GPU).
 
-Known duplication, to fold together when it is touched: the app's `RoadDocument`, `Geometry.swift` (`Vec2`, `Projection`) and `Markings.swift` repeat what `TileKit` has. The app should import `TileKit` for them.
+TileKit's sources (`Sources/TileKit/`) are in folders the same way: `Core` (projections, tags, OSM, vectors), `Workspace` (`WorkspacePaths`, passed to whatever reads or writes the workspace: no global state), `Mesh`, `Style`, `Roads` (`RoadDocument`, seeding, loading, `Markings`, `Ground`, `Furniture`), `Buildings`, `Landmarks`, `Construction`, `Lighting`, `Output`, `Pipeline`.
+
+## Architecture
+
+Keep the code clean as it grows (the user asked for it, 2026-10-24):
+
+- **One responsibility per type and per file.** A type that keeps state, reads input and draws is three types. A file past about 300 lines is a sign to split by responsibility, into a folder.
+- **Math and rules are plain values**, apart from views, AppKit and Metal: cameras, transforms, hit tests, edits are structs or extensions that tests can run (`OrbitCamera`, `ViewTransform2D`, `RoadHitTest`, `RoadEdits`).
+- **Views are thin.** A Metal view turns events into calls on a controller or a tool and draws through a renderer. A SwiftUI view reads state and calls the session or the editor.
+- **Open for extension**: a new tool is a new `RoadToolHandler`, a new mode a new view and panel, not a new branch in a switch spread over files.
+- **One source of truth.** A format, a constant or a rule lives once: the road document's format and the markings' constants are TileKit's, the app uses them.
+- **No hidden globals.** What a function reads or writes comes in as a parameter (`WorkspacePaths`), not a mutable global.
+- **Tests** (`Tests/`, swift-testing) cover the plain parts. A new rule of geometry, editing or a camera comes with a test.
 
 ## Commands
 

@@ -44,9 +44,8 @@ func usage() -> Never {
 }
 
 setvbuf(stdout, nil, _IOLBF, 0)
-if let root = value("--root") { pipelineRoot = URL(fileURLWithPath: root[0]).standardizedFileURL }
-else { pipelineRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath) }
-func path(_ p: String) -> URL { URL(fileURLWithPath: p, relativeTo: pipelineRoot).standardizedFileURL }
+let paths = WorkspacePaths(root: URL(fileURLWithPath: value("--root")?[0] ?? FileManager.default.currentDirectoryPath))
+func path(_ p: String) -> URL { paths.resolve(p) }
 
 do {
     guard let command = args.first else { usage() }
@@ -75,25 +74,25 @@ do {
                 usage()
             }
         }
-        exit(try Pipeline.run(z: z, tiles: tiles, options: options) ? 0 : 1)
+        exit(try Pipeline.run(paths, z: z, tiles: tiles, options: options) ? 0 : 1)
     case "lab":
         let whole = option("--whole"), export = option("--export")
         let samples = value("--samples").flatMap { Int($0[0]) } ?? 128
         let region = value("--region", count: 3).map { v in (Double(v[0])!, Double(v[1])!, Double(v[2])!) }
         let roads = value("--roads").map { path($0[0]) }
         guard args.count == 2 else { usage() }
-        try Build.run(tile: Tile(folder: path(args[0])), out: path(args[1]), region: region, whole: whole, export: export,
+        try Build.run(paths, tile: Tile(folder: path(args[0])), out: path(args[1]), region: region, whole: whole, export: export,
                       samples: samples, roads: roads)
     case "fetch":
         let force = option("--force")
         let n = args.compactMap { Int($0) }
         guard n.count == 3 else { usage() }
-        try Fetch.tile(z: n[0], x: n[1], y: n[2], force: force)
+        try Fetch.tile(paths, z: n[0], x: n[1], y: n[2], force: force)
     case "seed":
         let force = option("--force")
         let n = args.compactMap { Int($0) }
         guard n.count == 5 else { usage() }
-        _ = try Seed.run(z: n[0], x0: n[1], y0: n[2], x1: n[3], y1: n[4], force: force)
+        _ = try Seed.run(paths, z: n[0], x0: n[1], y0: n[2], x1: n[3], y1: n[4], force: force)
     case "validate":
         guard let f = args.first else { usage() }
         let r = try Validate.tile(path(f))
@@ -102,7 +101,7 @@ do {
         exit(r.ok ? 0 : 1)
     case "fit":
         guard let id = args.first else { usage() }
-        try Fit.run(id)
+        try Fit.run(id, paths)
     default:
         usage()
     }

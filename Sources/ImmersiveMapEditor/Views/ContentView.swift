@@ -1,0 +1,83 @@
+import SwiftUI
+
+/// The window's content: the view of the mode, its panel in the inspector,
+/// the mode in the toolbar, hints and state along the bottom.
+struct ContentView: View {
+    @Environment(Session.self) private var session
+    @Environment(\.undoManager) private var undoManager
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.scenePhase) private var phase
+    @State private var inspector = true
+
+    var body: some View {
+        @Bindable var workspace = session.workspace
+        let importing = session.importing
+        Group {
+            switch workspace.viewMode {
+            case .map:
+                MapPicker()
+            case .roads:
+                if let roads = session.roads {
+                    MetalHost(view: roads)
+                } else {
+                    ContentUnavailableView("No road document", systemImage: "road.lanes",
+                                           description: Text("Pick a tile with roads on the Map, then Edit Roads."))
+                }
+            case .tiles:
+                if let tiles = session.tiles { MetalHost(view: tiles) }
+            }
+        }
+        .frame(minWidth: 600, minHeight: 400)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            StatusLine()
+                .font(.callout)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.bar)
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $workspace.viewMode) {
+                    ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+            ToolbarItem {
+                Button("Fetch and Build", systemImage: "hammer") {
+                    session.buildPickedOrOpen()
+                    openWindow(id: "build")
+                }
+                .disabled(session.build.running)
+            }
+            ToolbarItem {
+                Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
+            }
+        }
+        .inspector(isPresented: $inspector) {
+            Group {
+                switch workspace.viewMode {
+                case .map: MapPanel()
+                case .roads:
+                    if let model = session.model, let roads = session.roads { RoadsPanel(model: model, map: roads) }
+                case .tiles: TilesPanel()
+                }
+            }
+            .inspectorColumnWidth(min: 260, ideal: 290, max: 400)
+        }
+        .navigationTitle(session.model.map { "\($0.url.lastPathComponent)\($0.dirty ? " (edited)" : "")" }
+                         ?? session.workspace.root.lastPathComponent)
+        .onChange(of: undoManager, initial: true) { session.model?.undo = undoManager }
+        .onChange(of: session.model.map { ObjectIdentifier($0) }) { session.model?.undo = undoManager }
+        .onChange(of: phase) { if phase != .active { session.model?.saveIfNeeded() } }
+        .fileImporter(isPresented: Binding(get: { session.importing != nil }, set: { if !$0 { session.importing = nil } }),
+                      allowedContentTypes: session.importing == .workspace ? [.folder] : [.json]) { result in
+            guard let url = try? result.get() else { return }
+            if importing == .workspace { session.open(workspace: url) } else { session.open(roads: url) }
+        }
+        .fileDialogDefaultDirectory(session.importing == .roads ? session.workspace.root.appendingPathComponent("roads") : nil)
+        .alert("Immersive Map Editor", isPresented: Binding(get: { session.problem != nil }, set: { if !$0 { session.problem = nil } })) {
+        } message: {
+            Text(session.problem ?? "")
+        }
+    }
+}

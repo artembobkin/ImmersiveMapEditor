@@ -21,7 +21,9 @@ let package = Package(
         .target(name: "LightBaker", path: "Sources/LightBaker"),
         // The tile pipeline: OSM to one 3D model per map tile.
         .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker"], path: "Sources/TileKit"),
-        .executableTarget(name: "ImmersiveMapEditor", path: "Sources/ImmersiveMapEditor"),
+        .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
+        .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
+        .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
         .executableTarget(name: "tilepipeline", dependencies: ["TileKit", "Geometry", "GLTF"], path: "Sources/tilepipeline"),
     ],
     swiftLanguageModes: [.v5]
