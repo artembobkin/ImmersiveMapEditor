@@ -17,6 +17,8 @@ nonisolated(unsafe) let ctx: GEOSContextHandle_t = {
 /// An operation GEOS cannot do (a topology error) gives an empty geometry.
 public final class Geometry: CustomStringConvertible {
     public let ptr: OpaquePointer
+    /// Its id in the recording (`Recorder`), 0 until it is written.
+    var recordID: UInt32 = 0
 
     /// Takes ownership of a GEOS geometry.
     public init(owning ptr: OpaquePointer) {
@@ -47,7 +49,10 @@ public final class Geometry: CustomStringConvertible {
 
     // MARK: Making
 
-    public static var empty: Geometry { Geometry(owning: GEOSGeom_createEmptyCollection_r(ctx, 7)!) }
+    public static var empty: Geometry {
+        Recorder.shared?.count("empty")
+        return Geometry(owning: GEOSGeom_createEmptyCollection_r(ctx, 7)!)
+    }
 
     static func sequence(_ pts: [P2]) -> OpaquePointer {
         var flat = [Double]()
@@ -57,12 +62,14 @@ public final class Geometry: CustomStringConvertible {
     }
 
     public static func point(_ x: Double, _ y: Double) -> Geometry {
-        Geometry(owning: GEOSGeom_createPointFromXY_r(ctx, x, y)!)
+        Recorder.shared?.count("point")
+        return Geometry(owning: GEOSGeom_createPointFromXY_r(ctx, x, y)!)
     }
 
     public static func point(_ p: P2) -> Geometry { point(p.x, p.y) }
 
     public static func lineString(_ pts: [P2]) -> Geometry {
+        Recorder.shared?.count("lineString")
         guard pts.count >= 2 else { return Geometry(owning: GEOSGeom_createEmptyLineString_r(ctx)!) }
         return make(GEOSGeom_createLineString_r(ctx, sequence(pts)))
     }
@@ -77,6 +84,7 @@ public final class Geometry: CustomStringConvertible {
 
     /// A polygon of an outer ring and holes, open or closed.
     public static func polygon(_ shell: [P2], holes: [[P2]] = []) -> Geometry {
+        Recorder.shared?.count("polygon")
         guard let s = ring(shell) else { return Geometry(owning: GEOSGeom_createEmptyPolygon_r(ctx)!) }
         var hs: [OpaquePointer?] = holes.compactMap { ring($0) }
         return make(GEOSGeom_createPolygon_r(ctx, s, &hs, UInt32(hs.count)))
@@ -89,6 +97,7 @@ public final class Geometry: CustomStringConvertible {
     /// A collection of copies of the geometries: a multi-geometry when they
     /// are all of one kind, else a geometry collection.
     public static func collection(_ parts: [Geometry]) -> Geometry {
+        Recorder.shared?.count("collection")
         let flat = parts.flatMap { $0.isEmpty ? [] : ($0.isMulti ? $0.parts : [$0]) }
         guard !flat.isEmpty else { return .empty }
         let kinds = Set(flat.map(\.kind))
@@ -102,16 +111,21 @@ public final class Geometry: CustomStringConvertible {
 
     public var kind: Kind { Kind(rawValue: GEOSGeomTypeId_r(ctx, ptr)) ?? .collection }
     public var isEmpty: Bool { GEOSisEmpty_r(ctx, ptr) == 1 }
-    public var isValid: Bool { GEOSisValid_r(ctx, ptr) == 1 }
+    public var isValid: Bool {
+        Recorder.shared?.call("isValid", [self])
+        return GEOSisValid_r(ctx, ptr) == 1
+    }
     public var isMulti: Bool { [.multiPoint, .multiLineString, .multiPolygon, .collection].contains(kind) }
 
     public var area: Double {
+        Recorder.shared?.call("area", [self])
         var d = 0.0
         GEOSArea_r(ctx, ptr, &d)
         return d
     }
 
     public var length: Double {
+        Recorder.shared?.call("length", [self])
         var d = 0.0
         GEOSLength_r(ctx, ptr, &d)
         return d
@@ -119,6 +133,7 @@ public final class Geometry: CustomStringConvertible {
 
     /// (x0, y0, x1, y1).
     public var bounds: (Double, Double, Double, Double) {
+        Recorder.shared?.call("bounds", [self])
         guard !isEmpty else { return (0, 0, 0, 0) }
         var a = 0.0, b = 0.0, c = 0.0, d = 0.0
         GEOSGeom_getXMin_r(ctx, ptr, &a)
@@ -193,10 +208,18 @@ public final class Geometry: CustomStringConvertible {
         return isMulti ? parts.flatMap(\.lines) : []
     }
 
-    public var centroid: Geometry { Geometry.make(GEOSGetCentroid_r(ctx, ptr)) }
-    public var representativePoint: Geometry { Geometry.make(GEOSPointOnSurface_r(ctx, ptr)) }
+    public var centroid: Geometry {
+        Recorder.shared?.call("centroid", [self])
+        return Geometry.make(GEOSGetCentroid_r(ctx, ptr))
+    }
+
+    public var representativePoint: Geometry {
+        Recorder.shared?.call("representativePoint", [self])
+        return Geometry.make(GEOSPointOnSurface_r(ctx, ptr))
+    }
 
     public var description: String {
+        Recorder.shared?.call("description", [self])
         let w = GEOSWKTWriter_create_r(ctx)
         defer { GEOSWKTWriter_destroy_r(ctx, w) }
         GEOSWKTWriter_setRoundingPrecision_r(ctx, w, 3)
@@ -209,14 +232,27 @@ public final class Geometry: CustomStringConvertible {
 
     public func buffer(_ d: Double, quadSegs: Int = 16, cap: Cap = .round, join: Join = .round,
                        mitreLimit: Double = 5) -> Geometry {
-        Geometry.make(GEOSBufferWithStyle_r(ctx, ptr, d, Int32(quadSegs), cap.rawValue, join.rawValue, mitreLimit))
+        Recorder.shared?.call("buffer", [self], [d, Double(quadSegs), Double(cap.rawValue), Double(join.rawValue), mitreLimit])
+        return Geometry.make(GEOSBufferWithStyle_r(ctx, ptr, d, Int32(quadSegs), cap.rawValue, join.rawValue, mitreLimit))
     }
 
-    public func union(_ o: Geometry) -> Geometry { Geometry.make(GEOSUnion_r(ctx, ptr, o.ptr)) }
-    public func intersection(_ o: Geometry) -> Geometry { Geometry.make(GEOSIntersection_r(ctx, ptr, o.ptr)) }
-    public func difference(_ o: Geometry) -> Geometry { Geometry.make(GEOSDifference_r(ctx, ptr, o.ptr)) }
+    public func union(_ o: Geometry) -> Geometry {
+        Recorder.shared?.call("union", [self, o])
+        return Geometry.make(GEOSUnion_r(ctx, ptr, o.ptr))
+    }
+
+    public func intersection(_ o: Geometry) -> Geometry {
+        Recorder.shared?.call("intersection", [self, o])
+        return Geometry.make(GEOSIntersection_r(ctx, ptr, o.ptr))
+    }
+
+    public func difference(_ o: Geometry) -> Geometry {
+        Recorder.shared?.call("difference", [self, o])
+        return Geometry.make(GEOSDifference_r(ctx, ptr, o.ptr))
+    }
 
     public static func unaryUnion(_ parts: [Geometry]) -> Geometry {
+        Recorder.shared?.call("unaryUnion", parts)
         let c = collection(parts)
         if c.isEmpty { return c }
         return make(GEOSUnaryUnion_r(ctx, c.ptr))
@@ -224,41 +260,85 @@ public final class Geometry: CustomStringConvertible {
 
     /// Douglas-Peucker keeping the topology, as shapely's `simplify`.
     public func simplify(_ tolerance: Double) -> Geometry {
-        Geometry.make(GEOSTopologyPreserveSimplify_r(ctx, ptr, tolerance))
+        Recorder.shared?.call("simplify", [self], [tolerance])
+        return Geometry.make(GEOSTopologyPreserveSimplify_r(ctx, ptr, tolerance))
     }
 
-    public func makeValid() -> Geometry { Geometry.make(GEOSMakeValid_r(ctx, ptr)) }
-    public func setPrecision(_ grid: Double) -> Geometry { Geometry.make(GEOSGeom_setPrecision_r(ctx, ptr, grid, 0)) }
-    public var convexHull: Geometry { Geometry.make(GEOSConvexHull_r(ctx, ptr)) }
-    public var envelope: Geometry { Geometry.make(GEOSEnvelope_r(ctx, ptr)) }
-    public var boundary: Geometry { Geometry.make(GEOSBoundary_r(ctx, ptr)) }
-    public var minimumRotatedRectangle: Geometry { Geometry.make(GEOSMinimumRotatedRectangle_r(ctx, ptr)) }
+    public func makeValid() -> Geometry {
+        Recorder.shared?.call("makeValid", [self])
+        return Geometry.make(GEOSMakeValid_r(ctx, ptr))
+    }
+
+    public func setPrecision(_ grid: Double) -> Geometry {
+        Recorder.shared?.call("setPrecision", [self], [grid])
+        return Geometry.make(GEOSGeom_setPrecision_r(ctx, ptr, grid, 0))
+    }
+
+    public var convexHull: Geometry {
+        Recorder.shared?.call("convexHull", [self])
+        return Geometry.make(GEOSConvexHull_r(ctx, ptr))
+    }
+
+    public var envelope: Geometry {
+        Recorder.shared?.call("envelope", [self])
+        return Geometry.make(GEOSEnvelope_r(ctx, ptr))
+    }
+
+    public var boundary: Geometry {
+        Recorder.shared?.call("boundary", [self])
+        return Geometry.make(GEOSBoundary_r(ctx, ptr))
+    }
+
+    public var minimumRotatedRectangle: Geometry {
+        Recorder.shared?.call("minimumRotatedRectangle", [self])
+        return Geometry.make(GEOSMinimumRotatedRectangle_r(ctx, ptr))
+    }
+
 
     public func offsetCurve(_ d: Double, quadSegs: Int = 16, join: Join = .round, mitreLimit: Double = 5) -> Geometry {
-        Geometry.make(GEOSOffsetCurve_r(ctx, ptr, d, Int32(quadSegs), join.rawValue, mitreLimit))
+        Recorder.shared?.call("offsetCurve", [self], [d, Double(quadSegs), Double(join.rawValue), mitreLimit])
+        return Geometry.make(GEOSOffsetCurve_r(ctx, ptr, d, Int32(quadSegs), join.rawValue, mitreLimit))
     }
 
     /// The point `d` along a line (or a share of its length).
     public func interpolate(_ d: Double, normalized: Bool = false) -> Geometry {
-        Geometry.make(normalized ? GEOSInterpolateNormalized_r(ctx, ptr, d) : GEOSInterpolate_r(ctx, ptr, d))
+        Recorder.shared?.call("interpolate", [self], [d, normalized ? 1 : 0])
+        return Geometry.make(normalized ? GEOSInterpolateNormalized_r(ctx, ptr, d) : GEOSInterpolate_r(ctx, ptr, d))
     }
 
     /// How far along a line the point nearest to `p` is.
-    public func project(_ p: Geometry) -> Double { GEOSProject_r(ctx, ptr, p.ptr) }
+    public func project(_ p: Geometry) -> Double {
+        Recorder.shared?.call("project", [self, p])
+        return GEOSProject_r(ctx, ptr, p.ptr)
+    }
 
     public func distance(_ o: Geometry) -> Double {
+        Recorder.shared?.call("distance", [self, o])
         var d = 0.0
         GEOSDistance_r(ctx, ptr, o.ptr, &d)
         return d
     }
 
-    public func intersects(_ o: Geometry) -> Bool { GEOSIntersects_r(ctx, ptr, o.ptr) == 1 }
-    public func contains(_ o: Geometry) -> Bool { GEOSContains_r(ctx, ptr, o.ptr) == 1 }
+    public func intersects(_ o: Geometry) -> Bool {
+        Recorder.shared?.call("intersects", [self, o])
+        return GEOSIntersects_r(ctx, ptr, o.ptr) == 1
+    }
+
+    public func contains(_ o: Geometry) -> Bool {
+        Recorder.shared?.call("contains", [self, o])
+        return GEOSContains_r(ctx, ptr, o.ptr) == 1
+    }
+
     public func contains(_ p: P2) -> Bool { contains(.point(p)) }
-    public func within(_ o: Geometry) -> Bool { GEOSWithin_r(ctx, ptr, o.ptr) == 1 }
+
+    public func within(_ o: Geometry) -> Bool {
+        Recorder.shared?.call("within", [self, o])
+        return GEOSWithin_r(ctx, ptr, o.ptr) == 1
+    }
 
     /// The nearest points of this and `o`: this one's first.
     public func nearestPoints(_ o: Geometry) -> (P2, P2) {
+        Recorder.shared?.call("nearestPoints", [self, o])
         guard let seq = GEOSNearestPoints_r(ctx, ptr, o.ptr) else { return (.zero, .zero) }
         defer { GEOSCoordSeq_destroy_r(ctx, seq) }
         let pts = Geometry.read(seq)
@@ -267,16 +347,21 @@ public final class Geometry: CustomStringConvertible {
 
     /// Triangles of a polygon, its edges kept.
     public func constrainedDelaunay() -> [[P2]] {
+        Recorder.shared?.call("constrainedDelaunay", [self])
         let t = Geometry.make(GEOSConstrainedDelaunayTriangulation_r(ctx, ptr))
         return t.polygons.map { Array($0.exterior.prefix(3)) }
     }
 
     public static func polygonize(_ lines: [Geometry]) -> Geometry {
+        Recorder.shared?.call("polygonize", lines)
         var ptrs: [OpaquePointer?] = lines.map { $0.ptr }
         return make(GEOSPolygonize_r(ctx, &ptrs, UInt32(ptrs.count)))
     }
 
-    public func lineMerge() -> Geometry { Geometry.make(GEOSLineMerge_r(ctx, ptr)) }
+    public func lineMerge() -> Geometry {
+        Recorder.shared?.call("lineMerge", [self])
+        return Geometry.make(GEOSLineMerge_r(ctx, ptr))
+    }
 
     // MARK: Done in Swift
 
@@ -353,17 +438,31 @@ public func signedArea(_ r: [P2]) -> Double {
 public final class Prepared {
     let geometry: Geometry
     let ptr: OpaquePointer
+    /// Its id in the recording (`Recorder`).
+    var recordID: UInt32 = 0
 
     public init(_ g: Geometry) {
         geometry = g
         ptr = GEOSPrepare_r(ctx, g.ptr)
+        if let r = Recorder.shared {
+            recordID = r.object()
+            r.call("Prepared.init", [g], [Double(recordID)])
+        }
     }
 
     deinit { GEOSPreparedGeom_destroy_r(ctx, ptr) }
 
-    public func contains(_ o: Geometry) -> Bool { GEOSPreparedContains_r(ctx, ptr, o.ptr) == 1 }
+    public func contains(_ o: Geometry) -> Bool {
+        Recorder.shared?.call("Prepared.contains", [o], [Double(recordID)])
+        return GEOSPreparedContains_r(ctx, ptr, o.ptr) == 1
+    }
+
     public func contains(_ p: P2) -> Bool { contains(.point(p)) }
-    public func intersects(_ o: Geometry) -> Bool { GEOSPreparedIntersects_r(ctx, ptr, o.ptr) == 1 }
+
+    public func intersects(_ o: Geometry) -> Bool {
+        Recorder.shared?.call("Prepared.intersects", [o], [Double(recordID)])
+        return GEOSPreparedIntersects_r(ctx, ptr, o.ptr) == 1
+    }
 }
 
 /// An STR tree over geometries, as shapely's STRtree: `query` gives the
@@ -373,9 +472,15 @@ public final class STRtree {
     let tree: OpaquePointer
     let items: [Geometry]
     var index: [OpaquePointer: Int] = [:]
+    /// Its id in the recording (`Recorder`).
+    var recordID: UInt32 = 0
 
     public init(_ items: [Geometry]) {
         self.items = items
+        if let r = Recorder.shared {
+            recordID = r.object()
+            r.call("STRtree.init", items, [Double(recordID)])
+        }
         tree = GEOSSTRtree_create_r(ctx, 10)
         for (i, g) in items.enumerated() {
             index[g.ptr] = i
@@ -386,6 +491,7 @@ public final class STRtree {
     deinit { GEOSSTRtree_destroy_r(ctx, tree) }
 
     public func query(_ g: Geometry) -> [Int] {
+        Recorder.shared?.call("STRtree.query", [g], [Double(recordID)])
         final class Box { var found: [Int] = []; var index: [OpaquePointer: Int] = [:] }
         let box = Box()
         box.index = index
@@ -399,6 +505,7 @@ public final class STRtree {
     }
 
     public func nearest(_ g: Geometry) -> Int? {
+        Recorder.shared?.call("STRtree.nearest", [g], [Double(recordID)])
         guard !items.isEmpty, let p = GEOSSTRtree_nearest_r(ctx, tree, g.ptr) else { return nil }
         return index[p]
     }
