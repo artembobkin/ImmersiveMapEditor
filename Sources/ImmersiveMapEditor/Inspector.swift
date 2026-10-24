@@ -35,8 +35,8 @@ struct ContentView: View {
             Divider()
             HStack {
                 Text(model.viewMode == .tiles ? (model.flying
-                    ? "Flight: W A S D, Q down, E up, shift faster, drag to look, scroll for speed. Tab to orbit."
-                    : "Orbit: drag to turn, right-drag or two fingers to pan, pinch to zoom. Tab to fly, F frames, L light map.")
+                    ? "Flight: W A S D, Q down, E up, shift faster, right-drag to look, scroll for speed. Tab to orbit."
+                    : "Drag to move, right-drag (or option-drag) to turn and tilt, scroll or pinch to zoom. Tab to fly, F frames, L light map.")
                     : model.tool.hint).lineLimit(1)
                 Spacer()
                 Text(model.viewMode == .tiles ? model.tileStatus : model.status).lineLimit(1).foregroundStyle(.secondary)

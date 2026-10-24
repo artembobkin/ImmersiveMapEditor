@@ -8,9 +8,10 @@ import simd
 /// faces culled. One tile or every tile of the document, each placed and
 /// scaled as the engine places it, so the seams show as they will on the map.
 ///
-/// Orbit: drag to turn, right-drag or two fingers to pan, pinch or scroll
-/// with command to zoom. Flight (Tab): W A S D, Q down, E up, shift faster,
-/// drag to look, scroll to change speed. F frames the tiles.
+/// The mouse as in the engine: drag to move over the ground, right-drag (or
+/// option-drag) to turn and tilt, scroll or pinch to zoom. Flight (Tab):
+/// W A S D, Q down, E up, shift faster, right-drag to look, scroll to change
+/// speed. F frames the tiles.
 final class TileView: MTKView {
     let model: EditorModel
     private let queue: MTLCommandQueue
@@ -295,36 +296,55 @@ final class TileView: MTKView {
 
     // MARK: Input
 
+    // The mouse as in the engine (MapGestureControllerMac): the left button
+    // drags the ground, the right one turns (sideways) and tilts (up and
+    // down), and so does the left one with option. In flight the right button
+    // looks around from the eye.
+    private var turning = false
+
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        lastDrag = event.locationInWindow
+        turning = event.modifierFlags.contains(.option)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let (dx, dy) = drag(event) else { return }
+        if turning { turn(dx, dy) } else { pan(dx, dy) }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         lastDrag = event.locationInWindow
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        guard let last = lastDrag else { return }
-        let now = event.locationInWindow
-        let dx = Double(now.x - last.x), dy = Double(now.y - last.y)
-        lastDrag = now
-        if model.flying {
-            // Look around from where the eye is.
-            let e = eye
-            yaw += dx * 0.25
-            pitch = min(89, max(-89, pitch + dy * 0.25))
-            target = e + forward * distance
-        } else {
-            yaw += dx * 0.4
-            pitch = min(-2, max(-89, pitch - dy * 0.4))
-        }
-        needsDisplay = true
+    override func rightMouseDragged(with event: NSEvent) {
+        guard let (dx, dy) = drag(event) else { return }
+        turn(dx, dy)
     }
 
-    override func rightMouseDown(with event: NSEvent) { lastDrag = event.locationInWindow }
-
-    override func rightMouseDragged(with event: NSEvent) {
-        guard let last = lastDrag else { return }
+    /// The mouse's move since the last event, in points.
+    private func drag(_ event: NSEvent) -> (Double, Double)? {
+        guard let last = lastDrag else { return nil }
         let now = event.locationInWindow
-        pan(Double(now.x - last.x), Double(now.y - last.y))
         lastDrag = now
+        return (Double(now.x - last.x), Double(now.y - last.y))
+    }
+
+    /// Turns the camera as the engine does: across the whole width is half a
+    /// turn, down the whole height tilts twice the pitch range (the engine's
+    /// `tiltGestureSensitivity` 2), dragging down tilts toward the horizon.
+    private func turn(_ dx: Double, _ dy: Double) {
+        let w = max(Double(bounds.width), 1), h = max(Double(bounds.height), 1)
+        let e = eye
+        yaw += dx / w * 180
+        if model.flying {
+            pitch = min(89, max(-89, pitch - dy / h * 2 * 88))
+            target = e + forward * distance
+        } else {
+            pitch = min(-2, max(-89, pitch - dy / h * 2 * 87))
+        }
+        needsDisplay = true
     }
 
     /// Moves the target over the ground, by screen points.
@@ -336,12 +356,12 @@ final class TileView: MTKView {
         needsDisplay = true
     }
 
+    /// Scrolling zooms, the wheel and the trackpad alike, up zooming in, as in
+    /// the engine. In flight it sets the speed.
     override func scrollWheel(with event: NSEvent) {
         if model.flying {
             speed = min(500, max(2, speed * exp(event.scrollingDeltaY / 50)))
             model.tileStatus = String(format: "Flight speed %.0f m/s", speed)
-        } else if event.hasPreciseScrollingDeltas && !event.modifierFlags.contains(.command) {
-            pan(event.scrollingDeltaX, -event.scrollingDeltaY)
         } else {
             let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 100 : event.scrollingDeltaY / 10
             distance = min(20000, max(5, distance * exp(-dy)))

@@ -25,7 +25,7 @@ With no argument the app opens the document opened last, else TilePipeline's fir
 - `Markings.swift`: what TilePipeline's `build/markings.py` makes of a marking's parameters, the same constants and rules. Change both together.
 - `EditorModel.swift`: the state, the selection, every edit with its undo, the roadway test (`RoadwayIndex`).
 - `MapView.swift`, `Renderer.swift`: the 2D roads view, its gestures and tools, drawn on demand with Metal. Polygons with holes are filled through the stencil (non-zero winding), with no triangulation.
-- `TileModel.swift`, `TileView.swift`: the 3D view. A tile's GLB read as the engine's tooling reads it (one primitive, palette and light map embedded as PNG), drawn as palette × light map, raw values, back faces culled, each tile placed and scaled as the engine places it. Orbit and flight cameras.
+- `TileModel.swift`, `TileView.swift`: the 3D view. A tile's GLB read as the engine's tooling reads it (one primitive, palette and light map embedded as PNG), drawn as palette × light map, raw values, back faces culled, each tile placed and scaled as the engine places it. The mouse works as the engine's (`MapGestureControllerMac`): the left button drags the ground, the right one (or the left with option) turns sideways and tilts up and down, scrolling zooms. Keep the two alike. Tab flies (W A S D, Q, E, right-drag to look).
 - `Inspector.swift`: the SwiftUI panels.
 - `Icon/make_icon.swift`: draws `Icon/AppIcon.png`, the icon (a tile in isometric view in the tiles' palette). `make_app.sh` makes the `.icns` from it.
 - `BuildRunner.swift`: runs TilePipeline's `pipeline.py` and shows its log.
