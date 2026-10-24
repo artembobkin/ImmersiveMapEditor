@@ -27,6 +27,7 @@ With no argument the app opens the document opened last, else TilePipeline's fir
 - `MapView.swift`, `Renderer.swift`: the 2D roads view, its gestures and tools, drawn on demand with Metal. Polygons with holes are filled through the stencil (non-zero winding), with no triangulation.
 - `TileModel.swift`, `TileView.swift`: the 3D view. A tile's GLB read as the engine's tooling reads it (one primitive, palette and light map embedded as PNG), drawn as palette × light map, raw values, back faces culled, each tile placed and scaled as the engine places it. Orbit and flight cameras.
 - `Inspector.swift`: the SwiftUI panels.
+- `Icon/make_icon.swift`: draws `Icon/AppIcon.png`, the icon (a tile in isometric view in the tiles' palette). `make_app.sh` makes the `.icns` from it.
 - `BuildRunner.swift`: runs TilePipeline's `pipeline.py` and shows its log.
 
 ## Rules
