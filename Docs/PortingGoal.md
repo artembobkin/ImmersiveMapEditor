@@ -11,6 +11,29 @@ The package has two dependencies that are not Swift:
 
 Port both to Swift, as targets of this package, **behaving exactly as they do today**, prove it with tests, then remove the originals from the build. Nothing outside the new targets and their wiring should notice the change.
 
+## Running this as a goal, unattended
+
+This task is far larger than one session: expect weeks of agent work, not a night. A goal run therefore works on a **range of phases** and ends in one of three states. The state is the first line of `Docs/PortingStatus.md`, and the goal counts as reached when that line is any of them:
+
+- `DONE`: the Definition of done holds in full.
+- `PHASES DONE <first>-<last>`: the phases this run was asked for are green (build, tests, their parity checks) and committed.
+- `BLOCKED: <one line>`: something cannot be made to behave identically, or a source, tool or download the task needs is missing, after **three distinct attempts**. The status file then holds the phase, what was tried, the smallest input that shows the problem, and what the user should decide. `Docs/PortingParity.md` holds the full record.
+
+The phases of a run come from the goal text (for example "phases 1 to 3"). With no range given, the run takes the next unfinished phase in the status file and the ones after it until an end state. The right size for one night is one to three phases.
+
+Checkpointing, so a new session continues where the last stopped:
+
+- `Docs/PortingStatus.md` holds the current phase, the last green commit, the next step, and every decision taken on the user's behalf. Update it after every finished step, not only at the end.
+- A session's first actions: read this document and the status file. Its last action: update the status file.
+
+Forbidden during an unattended run, whatever the phase says:
+
+- `git push`, force pushes, rebases, history rewrites, amends of earlier commits. Commits stay local, the user pushes.
+- Deleting `~/Desktop/TilePipeline/tools/osm2streets_cli`, removing the `GEOSwift/geos` dependency before phase 12, or changing anything in `~/Desktop/TilePipeline` outside a scratch folder. (Phase 11 keeps the Rust CLI in place; whether to delete it is the user's later decision, noted in the status file.)
+- Network beyond fetching the JTS 1.20.0 sources and the crates named above; installing anything system-wide.
+- Loosening a tolerance, skipping a parity check or marking a test as expected to fail to get past it. A parity failure after three approaches is `BLOCKED`, never a lower bar.
+- Asking the user and waiting. Decide, take the conservative choice (the one that changes less and deletes nothing), and record the decision in the status file.
+
 ## Definition of done
 
 - New targets build with no errors and no warnings (`swift build -c release`) and `swift test` passes, also in Xcode with the shared schemes, **with code coverage turned back on** in `.swiftpm/xcode/xcshareddata/xcschemes/` once GEOS is gone.
@@ -169,7 +192,7 @@ Each phase ends green (build, tests, its parity checks) and committed.
 8. **Swap `Geometry` onto `Topology`.** Every replayed call matches, the pipeline end-to-end checks pass. GEOS stays only in tests.
 9. **Streets foundations.** `StreetGeom` and `GeoAlgorithms` (with their own tests against the Rust crates' behaviour: write small Rust-side fixtures from the Rust sources' tests where they exist), `Earcut`, `OSMReader`, `CountryBoundaries`, the driving side table.
 10. **Streets.** osm2lanes, streets_reader, osm2streets, its transformations, the four outputs. Parity on the 30 cases and Moscow.
-11. **Swap `Seed` onto `Streets`.** Seeding parity, then remove the Rust CLI from the pipeline (keep `tools/osm2streets_cli` in TilePipeline only as the oracle for the tests, documented as such, or delete it once the parity record is written: ask the user).
+11. **Swap `Seed` onto `Streets`.** Seeding parity, then remove the Rust CLI from the pipeline (keep `tools/osm2streets_cli` in TilePipeline as the oracle for the tests, documented as such; whether to delete it is the user's decision later, noted in the status file).
 12. **Remove GEOS.** Drop `GEOSwift/geos` from `Package.swift`, keep the recorded parity cases as regression tests against stored expected outputs, turn code coverage back on in the shared Xcode schemes, update both `CLAUDE.md` files, `README.md`, and write `Docs/PortingParity.md` in full.
 
 ## Rules for the work
@@ -177,4 +200,4 @@ Each phase ends green (build, tests, its parity checks) and committed.
 - Port, then optimise: the first version follows the original's algorithms, branch for branch and in the same order of floating point operations. Speed up only with parity tests green before and after.
 - Never change the user's road documents (`~/Desktop/TilePipeline/roads/`) or built tiles in `out/tiles/`: compare in a scratch folder.
 - Keep the `Geometry` API, `TileKit` and the app untouched by the swap, except `Seed` in phase 11.
-- If something cannot be made identical, stop and record why in `Docs/PortingParity.md`, with the smallest input that shows it, before going on.
+- If something cannot be made identical after three distinct attempts, record it in `Docs/PortingParity.md` with the smallest input that shows it, write `BLOCKED` to `Docs/PortingStatus.md` and end the run (see "Running this as a goal"). Never go on past a known difference.
