@@ -47,9 +47,16 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 - Checked against GEOS (`Docs/PortingParity.md`, phase 4): random and near-degenerate inputs, the JTS XML suites, and every recorded `intersection`, `difference`, `union` and `unaryUnion` call, all GEOS's bit for bit, results in GEOS's normal form and as they come. Tests: `Parity/OverlayParityTests`, `Recording/OverlayReplayTests` (long: `TOPOLOGY_LONG_REPLAY=1`), the overlays in `JTSXML/TopologyEngine`, `Parity/DebugCaseTests` (one case on both sides, from `DEBUG_OP`, `DEBUG_A`, `DEBUG_B`).
 - How differences were found: the parity helpers write every difference in full to the file named by `PARITY_DUMP`; a case is run on both sides with `DebugCaseTests`; and GEOS's internal stages are observed with lldb on the test binary (breakpoints on GEOS's functions and on C++ throws, its edges printed at `OverlayGraph::addEdge`), which showed which stage of the robust overlay each side ended at.
 
+### Phase 4, step 2: predicates, distance and nearest points
+
+- **RelateNG** (`Operation/RelateNG/`): `RelateNG`, `RelateGeometry`, `RelatePointLocator`, `AdjacentEdgeLocator`, `LinearBoundary`, `TopologyComputer`, `NodeSection`, `NodeSections`, `PolygonNodeConverter`, `RelateNode`, `RelateEdge`, `RelateSegmentString`, `EdgeSegmentIntersector`, `EdgeSetIntersector`, `DimensionLocation`, the predicates (`TopologyPredicate`, `IMPredicate`, `RelatePredicate` with its named predicates, `IMPatternMatcher`, `RelateMatrixPredicate`) and `GeometryPredicates` (`Geometry`'s `intersects`, `contains`, `within` and the rest, as GEOS 3.13 dispatches them; they throw where JTS and GEOS fail). `Geom/IntersectionMatrix`, `Algorithm/PolygonNodeTopology`, `Operation/Predicate/` (`RectangleIntersects`, `RectangleContains`).
+- **Prepared geometries** (`Geom/Prep/`): `PreparedGeometryFactory` with GEOS's choice of kind, `BasicPreparedGeometry` (a prepared RelateNG), `PreparedPoint`, `PreparedLineString`, `PreparedPolygon` (with GEOS's contains, covers, containsProperly and point locator). `Noding`: `MCIndexSegmentSetMutualIntersector`, `FastSegmentSetIntersectionFinder`, `SegmentIntersectionDetector`, `SegmentStringUtil`.
+- **Distance** (`Operation/Distance/`): `DistanceOp` (distance, nearest points, within a distance, as GEOS runs it), `GeometryLocation`, `LineSegment.closestPoints`, `Geometry.distance`. `Envelope.distance` and `distanceSquared` as GEOS computes them.
+- Checked against GEOS (`Docs/PortingParity.md`, phase 4): random pairs, the JTS XML suites and every recorded `intersects`, `contains`, `Prepared.contains`, `distance` and `nearestPoints` call, all equal. Tests: `Parity/PredicateParityTests`, `Parity/DistanceParityTests`, `Recording/PredicateReplayTests` and `DistanceReplayTests` (long), the predicates and distance in `JTSXML/TopologyEngine`.
+
 ## Left
 
-- Phase 4: predicates (RelateNG, prepared geometries), distance and nearest points.
+- Phase 4: the port's speed (optimized, 1.6 to 5 times GEOS's time on the recorded calls, the overlays about 4 times, `Docs/PortingParity.md`), to bring down with the parity tests green before and after.
 - Phase 5: buffer and offset curve. `UnionStrategy.classic` then gets its buffer by zero for two areas whose overlay fails (until then that failure stands).
 - Phases 6 and after (validity, precision, simplify, triangulation, polygonize, line merge, linear referencing, then the swap of `Geometry`).
 

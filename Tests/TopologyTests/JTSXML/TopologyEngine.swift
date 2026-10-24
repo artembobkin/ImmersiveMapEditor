@@ -42,6 +42,8 @@ struct TopologyEngine: JTSTestEngine {
         "getcentroid", "getinteriorpoint", "convexhull", "getboundary", "equalsexact", "equalsnorm",
         "intersection", "intersectionng", "union", "unionng", "difference", "differenceng", "symdifference", "symdifferenceng",
         "intersectionsr", "unionsr", "differencesr", "symdifferencesr", "unionarea", "unionlength", "overlayareatest",
+        "intersects", "contains", "within", "covers", "coveredby", "touches", "crosses", "overlaps", "disjoint",
+        "equalstopo", "relate", "containsproperly", "distance", "iswithindistance",
     ]
 
     func evaluate(_ t: JTSTestFile.Test, target g: Topology.Geometry, a: Topology.Geometry?, b: Topology.Geometry?,
@@ -93,6 +95,38 @@ struct TopologyEngine: JTSTestEngine {
         case "unionarea": return .number(try g.union().getArea())
         case "unionlength": return .number(try g.union().getLength())
         case "overlayareatest": return .boolean(try overlayAreaTest(g, try geometry(0)))
+        case "distance": return .number(g.distance(try geometry(0)))
+        case "iswithindistance": return .boolean(g.isWithinDistance(try geometry(0), try number(1)))
+        case "relate":
+            guard t.arguments.count > 1 else { throw JTSEngineError("relate without a pattern") }
+            return .boolean(try g.relate(try geometry(0), t.arguments[1]))
+        default: break
+        }
+        let predicates: Set<String> = ["intersects", "contains", "within", "covers", "coveredby", "touches", "crosses",
+                                       "overlaps", "disjoint", "equalstopo", "containsproperly"]
+        guard predicates.contains(t.operation.lowercased()) else { return nil }
+        let other = try geometry(0)
+        if file.geometryOperation?.hasSuffix("PreparedGeometryOperation") == true {
+            let p = PreparedGeometryFactory.prepare(g)
+            switch t.operation.lowercased() {
+            case "intersects": return .boolean(try p.intersects(other))
+            case "contains": return .boolean(try p.contains(other))
+            case "containsproperly": return .boolean(try p.containsProperly(other))
+            case "covers": return .boolean(try p.covers(other))
+            default: break
+            }
+        }
+        switch t.operation.lowercased() {
+        case "intersects": return .boolean(try g.intersects(other))
+        case "contains": return .boolean(try g.contains(other))
+        case "within": return .boolean(try g.within(other))
+        case "covers": return .boolean(try g.covers(other))
+        case "coveredby": return .boolean(try g.coveredBy(other))
+        case "touches": return .boolean(try g.touches(other))
+        case "crosses": return .boolean(try g.crosses(other))
+        case "overlaps": return .boolean(try g.overlaps(other))
+        case "disjoint": return .boolean(try g.disjoint(other))
+        case "equalstopo": return .boolean(try g.equalsTopo(other))
         default: return nil
         }
     }

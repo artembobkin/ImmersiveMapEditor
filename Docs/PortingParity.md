@@ -175,3 +175,56 @@ Each was found by a parity test, then understood from GEOS's sources (read, neve
 - **The overlay methods** (`GeometryOverlay`): no shortcuts for empty inputs (OverlayNG's empty results apply), but a union or symmetric difference of inputs with disjoint envelopes (an empty one included) is their members put together; a collection of mixed dimensions is overlaid dimension by dimension (`MixedDimensionOverlay`, JTS refuses it).
 - **The unary union** (`UnaryUnionOp`, `CascadedPolygonUnion`, `PointGeometryUnion`): every point, line and polygon extracted, empty ones included; lines and points cleaned by a union with an empty collection (JTS: an empty point, which sends points through the point overlay instead of the mixed one); polygons in an STR tree of capacity 10, unioned in its packed order by halving the list (JTS: capacity 4, node by node); each partial result restricted to its polygons; an empty collection when nothing is left; empty points skipped where points are added to a union.
 - **GEOS's first robust stage catches every error** (any `std::runtime_error`: topology failures, failed assertions, illegal arguments), its later stages only topology failures, as JTS does with `RuntimeException`: the port throws JTS's exception kinds as errors and catches the same ones.
+
+### Phase 4: predicates, distance and nearest points against GEOS
+
+GEOS 3.13 evaluates every predicate with RelateNG (`USE_RELATENG` in its `Geometry.cpp`), after an envelope test for `intersects` and `touches` and the rectangle's fast path for `intersects`; its prepared polygons keep JTS's fast paths for `intersects`, `contains`, `covers` and `containsProperly`, and the other prepared predicates are a prepared RelateNG. The port does the same. Every answer is compared; where GEOS fails (returns 2), the port must throw.
+
+| Function | Compared | Equal |
+|---|---:|---:|
+| intersects, contains, within, covers, coveredBy, touches, crosses, overlaps, disjoint, equalsTopo (each `GEOS<name>`), each pair both ways | 8,000 each | 8,000 each |
+| the intersection matrix (`GEOSRelate`), as text | 4,000 (48 failing alike: a point against an empty collection, `Unknown target dimension: -1`) | 4,000 |
+| prepared contains, intersects, covers, within (`GEOSPrepared<name>`), a new prepared geometry per pair | 4,000 each | 4,000 each |
+| distance (`GEOSDistance`), pairs meeting and apart | 8,000 | 8,000 |
+| nearest points (`GEOSNearestPoints`) | 8,000 | 8,000 |
+
+The pairs are those of the overlays, a quarter of them a point near the geometry or one of its vertices; half of the distance pairs are moved apart by up to twice their size.
+
+Every recorded call:
+
+| Function | Recorded calls | Equal | Port, optimized | GEOS | Port / GEOS |
+|---|---:|---:|---:|---:|---:|
+| intersects | 1,428,861 | 1,428,861 | 1.46 s | 0.77 s | 1.9 |
+| contains | 16,649 | 16,649 | 63 ms | 27 ms | 2.4 |
+| Prepared.contains (14 prepared geometries) | 175,334 | 175,334 | 283 ms | 56 ms | 5.0 |
+| distance | 100,452 | 100,452 | 92 ms | 29 ms | 3.1 |
+| nearestPoints | 34 | 34 | 2 ms | 1 ms | 1.6 |
+
+`within` and `Prepared.intersects` are never called by the pipeline. The STR tree's recorded nearest searches (279) and its random ones (5,495) now find the nearest item with the port's own distance on the port's side, all GEOS's.
+
+The JTS XML suites, the predicates and distance: the port passes exactly the tests GEOS passes, and all 9,195 results of the operations it has are GEOS's.
+
+| Operation | Tests | Passed (as GEOS) |
+|---|---:|---:|
+| `intersects` | 592 | 592 |
+| `contains` | 583 | 582 |
+| `within` | 526 | 526 |
+| `covers` | 561 | 561 |
+| `coveredBy` | 535 | 535 |
+| `touches` | 525 | 525 |
+| `crosses` | 525 | 525 |
+| `overlaps` | 525 | 525 |
+| `disjoint` | 525 | 525 |
+| `equalsTopo` | 525 | 524 |
+| `relate` (patterns) | 589 | 589 |
+| `distance` | 32 | 32 |
+| `isWithinDistance` | 22 | 22 |
+
+#### Where GEOS 3.13 differs from JTS 1.20 in the predicates and distance
+
+- **The dispatch**: RelateNG for every predicate (JTS 1.20's `Geometry` methods run its old relate by default).
+- **RelateNG on two empty inputs**: evaluated as any others (JTS returns the predicate's final value at once). Its `equalsTopo` takes two empty geometries as equal whatever their dimensions, and needs no interaction (52 of 8,000 random `equalsTopo` differed before).
+- **Sorts** of node sections by libc++'s `std::sort` (JTS: a stable sort), the nodes of the topology evaluated in coordinate order (an ordered map), the pairs of chains of one index by `queryPairs` (JTS: a Hilbert R-tree queried chain by chain).
+- **The rectangle's intersects**: its last test meets each segment of the rectangle's ring with each segment of the other's lines (JTS: each segment with the rectangle's diagonals). The answers agree.
+- **Prepared polygons**: the point locator is the simple one the first time and the indexed one afterwards (JTS: always indexed); on invalid polygons they locate some points differently (14 of 16,000 random prepared predicates differed before). `contains` and `covers` decide first on the outermost location of the test components (JTS: whether all are in), as GEOS's `OutermostLocationFilter` has it.
+- **Distance**: the second geometry's polygons are tried first for containment (JTS: the first's), segment envelopes are compared by their squared distance with the minimum's square, envelope distance is the root of GEOS's `distanceSquared` (JTS: `hypot` of the gaps), and `isWithinDistance` of an empty geometry is false. These were read in GEOS's sources; the random and recorded inputs give the same results with JTS's forms, so they are not observed differences, but they are GEOS's arithmetic.

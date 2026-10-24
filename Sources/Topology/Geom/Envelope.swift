@@ -154,15 +154,17 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
         return o.minX >= minX && o.maxX <= maxX && o.minY >= minY && o.maxY <= maxY
     }
 
-    public func distance(_ e: Envelope) -> Double {
-        if intersects(e) { return 0 }
-        var dx = 0.0
-        if maxX < e.minX { dx = e.minX - maxX } else if minX > e.maxX { dx = minX - e.maxX }
-        var dy = 0.0
-        if maxY < e.minY { dy = e.minY - maxY } else if minY > e.maxY { dy = minY - e.maxY }
-        if dx == 0.0 { return dy }
-        if dy == 0.0 { return dx }
-        return hypot(dx, dy)
+    /// The distance between the envelopes, 0 when they meet: as GEOS 3.13
+    /// computes it, the root of `distanceSquared` (JTS 1.20: the gaps on
+    /// each axis, joined by `hypot`), which rounds otherwise.
+    public func distance(_ e: Envelope) -> Double { distanceSquared(e).squareRoot() }
+
+    /// The squared distance between the envelopes, GEOS 3.13's: the gap on
+    /// each axis as the joint extent less both extents, at least 0.
+    public func distanceSquared(_ e: Envelope) -> Double {
+        let dx = cxxMax(0.0, cxxMax(maxX, e.maxX) - cxxMin(minX, e.minX) - (maxX - minX) - (e.maxX - e.minX))
+        let dy = cxxMax(0.0, cxxMax(maxY, e.maxY) - cxxMin(minY, e.minY) - (maxY - minY) - (e.maxY - e.minY))
+        return fusedAdd(dx, dx, dy * dy)
     }
 
     public static func == (a: Envelope, b: Envelope) -> Bool {
