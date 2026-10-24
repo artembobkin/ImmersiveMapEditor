@@ -59,7 +59,7 @@ The package is MIT (`LICENSE`). Only port from sources whose licence allows it, 
 | rstar 0.11 / 0.12, petgraph 0.6.5, polylabel 3.2.0, ordered-float | MIT or Apache-2.0 | Port what is used, or replace by an equivalent Swift structure if the results are provably the same. |
 | earcutr 0.4.3 | ISC | Port. |
 | country-boundaries 1.2.0 | code Apache-2.0, data ODbL (OpenStreetMap) | Port the lookup, carry the data with ODbL attribution (as OSM's). |
-| **Muv** (`muv-osm`, GitLab LeLuxNet/Muv rev `2404d40`) | MPL-2.0 (apps GPL-3.0) | **Do not port.** osm2streets uses only `muv_osm::lanes::highway::driving_side`, the side of the road a country drives on. Write that table yourself from public facts (left-hand traffic countries), not from Muv's source, and test that it gives the same answer for every country code Muv knows. |
+| **Muv** (`muv-osm`, GitLab LeLuxNet/Muv rev `2404d40`) | MPL-2.0 for `muv-osm` (some apps of the repository GPL-3.0, not used) | **Port only its lane reading, as the target `MuvLanes`, under MPL-2.0** (decided 2026-10-25, after phase 10 showed osm2lanes reads every lane's tags through Muv's `lanes()`, not only `driving_side`). MPL-2.0 is a file-level licence: the files of `MuvLanes` stay MPL with their notice, the rest of the package stays MIT, and an app may link them. Never port the GPL-3.0 parts. The driving side keeps its own table (`CountryBoundaries`). |
 
 Each ported target gets a `LICENSE` (or `NOTICE` for Apache-2.0) file in its source folder naming the original project, its licence, the revision ported and that the code was translated to Swift. The package `README.md` lists them.
 

@@ -25,13 +25,16 @@ let package = Package(
         .target(name: "StreetGeom", dependencies: ["GeoAlgorithms", "Earcut"], path: "Sources/StreetGeom", exclude: ["NOTICE"]),
         .target(name: "OSMReader", path: "Sources/OSMReader", exclude: ["NOTICE"]),
         .target(name: "CountryBoundaries", path: "Sources/CountryBoundaries", exclude: ["NOTICE"]),
-        .target(name: "Streets", dependencies: ["StreetGeom", "GeoAlgorithms", "OSMReader", "CountryBoundaries"],
+        // Muv's reading of lanes from OSM tags (muv-osm, rev 2404d40), the one
+        // MPL-2.0 target: its files stay under the MPL, the rest of the package MIT.
+        .target(name: "MuvLanes", path: "Sources/MuvLanes", exclude: ["LICENSE"]),
+        .target(name: "Streets", dependencies: ["StreetGeom", "GeoAlgorithms", "OSMReader", "CountryBoundaries", "MuvLanes"],
                 path: "Sources/Streets", exclude: ["NOTICE"]),
         // GEOS stays as the oracle of the Topology tests until the port is done.
         .testTarget(name: "TopologyTests", dependencies: ["Topology", "Geometry", .product(name: "geos", package: "geos")],
                     path: "Tests/TopologyTests"),
         .testTarget(name: "StreetsTests", dependencies: ["Streets", "StreetGeom", "GeoAlgorithms", "Earcut", "OSMReader",
-                                                         "CountryBoundaries"], path: "Tests/StreetsTests"),
+                                                         "CountryBoundaries", "MuvLanes"], path: "Tests/StreetsTests"),
         // glTF binaries read and written.
         .target(name: "GLTF", path: "Sources/GLTF"),
         // The light map's bake on the GPU: Metal ray tracing.
