@@ -15,6 +15,23 @@ let package = Package(
     targets: [
         // GEOS in Swift: what the build does with polygons and lines.
         .target(name: "Geometry", dependencies: [.product(name: "geos", package: "geos")], path: "Sources/Geometry"),
+
+        // The ports (Docs/PortingGoal.md). Topology: the JTS Topology Suite
+        // 1.20.0 in Swift (EDL-1.0), to replace GEOS under Geometry.
+        .target(name: "Topology", path: "Sources/Topology", exclude: ["LICENSE"]),
+        // osm2streets (rev fc119c4) and what it stands on, each its own target.
+        .target(name: "Earcut", path: "Sources/Earcut", exclude: ["LICENSE"]),
+        .target(name: "GeoAlgorithms", path: "Sources/GeoAlgorithms", exclude: ["LICENSE"]),
+        .target(name: "StreetGeom", dependencies: ["GeoAlgorithms", "Earcut"], path: "Sources/StreetGeom", exclude: ["NOTICE"]),
+        .target(name: "OSMReader", path: "Sources/OSMReader", exclude: ["NOTICE"]),
+        .target(name: "CountryBoundaries", path: "Sources/CountryBoundaries", exclude: ["NOTICE"]),
+        .target(name: "Streets", dependencies: ["StreetGeom", "GeoAlgorithms", "OSMReader", "CountryBoundaries"],
+                path: "Sources/Streets", exclude: ["NOTICE"]),
+        // GEOS stays as the oracle of the Topology tests until the port is done.
+        .testTarget(name: "TopologyTests", dependencies: ["Topology", "Geometry", .product(name: "geos", package: "geos")],
+                    path: "Tests/TopologyTests"),
+        .testTarget(name: "StreetsTests", dependencies: ["Streets", "StreetGeom", "GeoAlgorithms", "Earcut", "OSMReader",
+                                                         "CountryBoundaries"], path: "Tests/StreetsTests"),
         // glTF binaries read and written.
         .target(name: "GLTF", path: "Sources/GLTF"),
         // The light map's bake on the GPU: Metal ray tracing.

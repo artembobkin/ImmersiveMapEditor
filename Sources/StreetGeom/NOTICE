@@ -1,0 +1,5 @@
+This target is a translation to Swift of geom (https://github.com/a-b-street/geom, revision
+9bb49fc), used under the Apache License, Version 2.0
+(https://www.apache.org/licenses/LICENSE-2.0). The translation changes the
+language; where it changes behaviour, the change is described in
+Docs/PortingParity.md of this package.

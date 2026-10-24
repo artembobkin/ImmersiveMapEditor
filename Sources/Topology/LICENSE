@@ -1,0 +1,5 @@
+This target is a translation to Swift of parts of the JTS Topology Suite,
+version 1.20.0 (https://github.com/locationtech/jts, tag 1.20.0, commit
+6e95fe82feb986a7aa657f4ffa406d8c290af509), used under the Eclipse
+Distribution License 1.0 (BSD-3-Clause), whose text follows.
+
