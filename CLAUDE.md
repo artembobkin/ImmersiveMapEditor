@@ -94,7 +94,7 @@ $TP fit detsky-mir
 .build/release/ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png
 ```
 
-The package needs macOS 15 and Swift tools 6.0 (in the Swift 5 language mode). The first build compiles GEOS from source (about a minute). With no argument the app opens the workspace opened last, else `~/Desktop/TilePipeline`. Started from the Finder, macOS asks once for access to the Desktop folder.
+The package needs macOS 15 and Swift tools 6.0 (in the Swift 5 language mode). In Xcode, use the shared schemes in `.swiftpm/xcode/xcshareddata/xcschemes/` (`ImmersiveMapEditor`, `ImmersiveMapEditor-Package`): they keep code coverage off, because GEOS comes as a dynamic library of a dependency and fails to link when Xcode instruments it for coverage (`___llvm_profile_runtime`), which Xcode does to every target once coverage is on. Do not turn it back on. The first build compiles GEOS from source (about a minute). With no argument the app opens the workspace opened last, else `~/Desktop/TilePipeline`. Started from the Finder, macOS asks once for access to the Desktop folder.
 
 ## History
 

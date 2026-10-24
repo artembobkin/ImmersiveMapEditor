@@ -1,4 +1,8 @@
 .build/
 build/
-.swiftpm/
 .DS_Store
+# Xcode's per-user state; the shared schemes in .swiftpm/xcode/xcshareddata are kept.
+.swiftpm/xcode/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/
+.swiftpm/configuration/
+xcuserdata/
