@@ -18,7 +18,7 @@ let package = Package(
 
         // The ports (Docs/PortingGoal.md). Topology: the JTS Topology Suite
         // 1.20.0 in Swift (EDL-1.0), to replace GEOS under Geometry.
-        .target(name: "Topology", path: "Sources/Topology", exclude: ["LICENSE"]),
+        .target(name: "Topology", path: "Sources/Topology", exclude: ["LICENSE", "LICENSE-LLVM"]),
         // osm2streets (rev fc119c4) and what it stands on, each its own target.
         .target(name: "Earcut", path: "Sources/Earcut", exclude: ["LICENSE"]),
         .target(name: "GeoAlgorithms", path: "Sources/GeoAlgorithms", exclude: ["LICENSE"]),

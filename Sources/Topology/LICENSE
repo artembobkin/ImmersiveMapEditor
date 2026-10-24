@@ -49,3 +49,5 @@ of libc++, part of the LLVM Project, as found in the macOS SDK of Xcode
 sift_down.h, make_heap.h). That code is under the Apache License v2.0 with
 LLVM Exceptions (SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception),
 https://llvm.org/LICENSE.txt. Copyright the LLVM Project contributors.
+Its full text, as libc++ carries it (llvm-project, tag llvmorg-19.1.7,
+libcxx/LICENSE.TXT), is in LICENSE-LLVM next to this file.
