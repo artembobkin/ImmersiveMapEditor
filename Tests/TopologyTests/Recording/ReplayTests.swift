@@ -108,3 +108,43 @@ struct ReplayTests {
         tally.report()
     }
 }
+
+/// The recorded trees (`STRtree.init`) rebuilt on both sides, their
+/// recorded queries and nearest searches replayed. The nearest item is found
+/// with GEOS's distance on both sides (the port's comes in phase 4).
+@Suite(.enabled(if: Recording.available, "no recordings in .build/recording (see Docs/PortingTopologyProgress.md)"))
+struct STRtreeReplayTests {
+    @Test func treesQueriesAndNearest() {
+        let o = GEOSOracle()
+        var query = ParityTally("replay STRtree.query")
+        var nearest = ParityTally("replay STRtree.nearest")
+        for r in (try? Recording.load()) ?? [] {
+            let inputs = ReplayTests.Inputs(r, o)
+            var trees: [Double: (STRtree<Int>, STRtreeParityTests.GEOSTree)] = [:]
+            for c in r.calls {
+                switch c.name {
+                case "STRtree.init":
+                    let port = STRtree<Int>(nodeCapacity: 10, tieOrder: .geos)
+                    for (i, id) in c.geometries.enumerated() { port.insert(inputs.port(id).getEnvelopeInternal(), i) }
+                    trees[c.numbers[0]] = (port, STRtreeParityTests.GEOSTree(o, c.geometries.map { inputs.geos($0) }))
+                case "STRtree.query":
+                    guard let (port, geos) = trees[c.numbers[0]] else { continue }
+                    let g = inputs.geos(c.geometries[0])
+                    let mine = port.query(inputs.port(c.geometries[0]).getEnvelopeInternal()).sorted()
+                    query.check(mine == geos.query(g), "\(r.name) #\(c.geometries[0])")
+                case "STRtree.nearest":
+                    guard let (port, geos) = trees[c.numbers[0]] else { continue }
+                    let g = inputs.geos(c.geometries[0])
+                    let p = inputs.port(c.geometries[0])
+                    let mine = geos.items.isEmpty ? nil : port.nearestNeighbour(p.getEnvelopeInternal(), -1) { i, _ in
+                        geos.items[i].measure(g, GEOSDistance_r) ?? .nan
+                    }
+                    nearest.check(mine == geos.nearest(g), "\(r.name) #\(c.geometries[0]): \(String(describing: mine)) vs \(String(describing: geos.nearest(g)))")
+                default: break
+                }
+            }
+        }
+        query.report()
+        nearest.report()
+    }
+}

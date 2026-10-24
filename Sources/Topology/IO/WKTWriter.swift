@@ -139,7 +139,7 @@ public struct WKTWriter {
         return (d.sign == .minus, digits, point)
     }
 
-    /// The first `n` digits, rounded half to even by the rest; one more
+    /// The first `n` digits, rounded half to even by the rest, with one more
     /// digit when the rounding carries out (`999` to `1000`).
     static func round(_ digits: [Int], _ n: Int) -> [Int] {
         if digits.count <= n { return digits + [Int](repeating: 0, count: n - digits.count) }

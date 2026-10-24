@@ -36,3 +36,15 @@ public enum CoordinateArrays {
     /// Whether the two arrays are equal, point for point.
     public static func equals(_ a: [Coordinate], _ b: [Coordinate]) -> Bool { a == b }
 }
+
+extension CoordinateArrays {
+    /// 1 when the array reads the same or "increases" from its start (its
+    /// first point differing from its mirror is the lesser), -1 otherwise.
+    public static func increasingDirection(_ pts: [Coordinate]) -> Int {
+        for i in 0..<(pts.count / 2) {
+            let c = pts[i].compareTo(pts[pts.count - 1 - i])
+            if c != 0 { return c }
+        }
+        return 1
+    }
+}

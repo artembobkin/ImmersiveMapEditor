@@ -18,6 +18,14 @@ struct Shape: Equatable, CustomStringConvertible {
             && zip(a.coordinates, b.coordinates).allSatisfy { $0.bitPattern == $1.bitPattern }
     }
 
+    /// Equal but for the sign of zeros: the structure exactly, every
+    /// coordinate equal as a value (`0.0 == -0.0`), NaN as NaN.
+    func equalsIgnoringZeroSign(_ o: Shape) -> Bool {
+        kind == o.kind && parts.count == o.parts.count && coordinates.count == o.coordinates.count
+            && zip(coordinates, o.coordinates).allSatisfy { $0 == $1 || $0.bitPattern == $1.bitPattern }
+            && zip(parts, o.parts).allSatisfy { $0.equalsIgnoringZeroSign($1) }
+    }
+
     /// Equal within `tolerance` on every coordinate, the structure exactly.
     func equals(_ o: Shape, tolerance: Double) -> Bool {
         kind == o.kind && parts.count == o.parts.count && coordinates.count == o.coordinates.count

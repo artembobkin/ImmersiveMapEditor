@@ -53,7 +53,7 @@ public class LineString: Geometry {
     override func copyInternal() -> Geometry { LineString(points, factory: factory) }
 
     /// GEOS 3.13's normal form: a closed line as a clockwise ring from its
-    /// least point; an open one in the direction whose first differing end
+    /// least point, an open one in the direction whose first differing end
     /// is the lesser (the only case of JTS 1.20).
     override public func normalize() {
         if isClosed() && points.count >= 3 {

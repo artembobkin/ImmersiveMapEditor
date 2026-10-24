@@ -75,6 +75,24 @@ Each was found by a parity test and confirmed on GEOS's output. The port keeps J
 - **Interior point**: by the geometry's dimension, not by the dimension of its non-empty parts (`TestInteriorPoint` 22, 23: a collection of an empty polygon and a line gives `POINT EMPTY`).
 - **Envelope**: a rectangle counter-clockwise from the lower left corner, flat when the envelope is (JTS: clockwise, and a line for a flat envelope).
 - **Boundary of a polygon**: line strings, not the rings.
-- **Normal form**: members of collections and holes sorted in descending order; lines compared by their number of points first; a closed line normalized as a clockwise ring; a polygon's ring re-closed only when it does not already end at its first point, so a repeated closing point goes.
+- **Normal form**: members of collections and holes sorted in descending order, lines compared by their number of points first, a closed line normalized as a clockwise ring, and a polygon's ring re-closed only when it does not already end at its first point, so a repeated closing point goes.
 - **Convex hull of two points**: in the order they first occur (JTS: Java's hash order).
 - **WKT with a rounding precision**: GEOS's trimmed numbers (scientific below 1e-4 and from 1e17, fewer decimals below 1, the shortest digits rounded half to even).
+
+### Phase 3: indexes and noding against GEOS
+
+| What | Compared | Equal |
+|---|---:|---:|
+| STR tree query (`GEOSSTRtree_query`, capacity 10), random item sets of 0 to 1,500 geometries: random, on a grid, with duplicates | 6,000 | 6,000 |
+| STR tree nearest (`GEOSSTRtree_nearest`, distance by `GEOSDistance` on both sides), ties included | 5,495 | 5,495 |
+| replay: the recorded trees, their queries | 1,051 | 1,051 |
+| replay: the recorded trees, their nearest searches | 279 | 279 |
+| MC index noder in an iterated noder, duplicates dropped (`GEOSNode`) | 4,861 | 4,860, and 1 differing only in the sign of a zero |
+
+The tree breaks ties as GEOS does only with libc++'s algorithms: JTS's stable sort and Java's `PriorityQueue` give the same nearest item on 4,609 of 5,495 searches (all the others are ties: equal envelope centres, equal distances), libc++'s `std::sort` and heap (`CxxAlgorithms`) on all 5,495. Queries are the same either way.
+
+`GEOSNode` is not compared on a collection holding an empty geometry: GEOS 3.13 crashes on it (a segmentation fault, `GEOMETRYCOLLECTION (LINESTRING (0 0, 1 1), LINESTRING EMPTY)`). 139 of the 5,000 random inputs.
+
+The open difference (Docs/PortingTopologyProgress.md, "Blocked"): a zero-length segment between `0.0` and `-0.0`. Smallest input: `LINESTRING (1 0, 0 0, -0 0, -1 -1)`, noded: the port gives `(1 0, 0 0), (0 0, -0 0), (0 0, -1 -1)`, GEOS `(1 0, 0 0), (-0 0, -0 0), (-0 0, -1 -1)`. The values are equal, only the sign of the zero differs.
+
+Snap rounding is not exposed alone by GEOS's C API (its overlays at a precision and `GEOSGeom_setPrecision` of polygons use it): it is compared with GEOS through those in phases 4 and 6. Here it passes JTS's own cases (`SnapRoundingNoderTest`, 18 of 18, each result checked fully noded), and the KD-tree JTS's `KdTreeTest`.
