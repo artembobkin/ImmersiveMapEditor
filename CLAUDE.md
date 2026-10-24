@@ -96,6 +96,10 @@ $TP fit detsky-mir
 
 The package needs macOS 15 and Swift tools 6.0 (in the Swift 5 language mode). In Xcode, use the shared schemes in `.swiftpm/xcode/xcshareddata/xcschemes/` (`ImmersiveMapEditor`, `ImmersiveMapEditor-Package`): they keep code coverage off, because GEOS comes as a dynamic library of a dependency and fails to link when Xcode instruments it for coverage (`___llvm_profile_runtime`), which Xcode does to every target once coverage is on. Do not turn it back on. The first build compiles GEOS from source (about a minute). With no argument the app opens the workspace opened last, else `~/Desktop/TilePipeline`. Started from the Finder, macOS asks once for access to the Desktop folder.
 
+## Planned
+
+- Port GEOS (from JTS, for its licence) and osm2streets to Swift as targets of this package, with proven parity: `Docs/PortingGoal.md` is the task.
+
 ## History
 
 - 2026-10-24: the pipeline ported from TilePipeline's Python and Blender to Swift, then the Python removed. Checked on 15/19808/10243 against the Python build: the same triangles of every kind but walls and roofs (6 and 3 more of 205 thousand, from triangulating concave faces), the same landmark windows, roads, markings and shelters, the light map within 0.001 per channel, the seeded road document the same but one point of 22 thousand, the fitted Detsky Mir the same. A tile builds in 10 to 20 s, three to five times faster.
