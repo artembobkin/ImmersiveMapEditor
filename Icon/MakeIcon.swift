@@ -2,7 +2,7 @@
 // isometric view on a sky, in the tiles' own palette: a crossroads with a
 // zebra, warm plaster houses under cool roofs, two trees.
 //
-//   swift Icon/make_icon.swift Icon/AppIcon.png
+//   swift Icon/MakeIcon.swift Icon/AppIcon.png
 import AppKit
 
 let size = 1024.0

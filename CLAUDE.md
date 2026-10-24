@@ -49,7 +49,7 @@ Targets:
 - `GLTF`: glTF binaries read (landmark models, their textures through ImageIO) and written (the tile: one mesh, palette and light map embedded; a fitted model of several materials).
 - `LightBaker`: the light map's bake on the GPU, Metal ray tracing: the tile from straight above, every surface white, an even sky a little brighter toward the zenith, three bounces. Needs Apple silicon.
 - `TileKit`: the pipeline. `Common` (tile and range projections, OSM, tags), `Constants` (shared levels and sizes, `pipelineRoot`), `Palette`, `PNG`, `Mesh` (the triangle builder, `clean`, `cut`), `Buildings`, `Landmarks` (sorting OSM buildings), `Imported` (the landmark models of Modeling, fitted by their recipes), `Construction`, `Furniture`, `Markings`, `Roads` (the road document: format, seeding, loading), `Ground`, `Lighting`, `Export`, `Build` (one tile or a lab square), `Fetch` (Overpass), `Seed` (osm2streets and the road document of a range), `Validate`, `Fit` (a downloaded landmark fitted to OSM), `Pipeline` (the whole run over a set of tiles).
-- `tilepipeline`: the command line over TileKit.
+- `TilePipelineCommand`: the command line over TileKit, built as the program `tilepipeline` (a command keeps the lowercase name of the terminal).
 - `ImmersiveMapEditor`: the app. It builds tiles by running `tilepipeline` beside its own executable, so a build never blocks the window and GEOS keeps its one thread.
 
 The app's sources (`Sources/ImmersiveMapEditor/`), a folder per area:
@@ -73,6 +73,7 @@ Keep the code clean as it grows (the user asked for it, 2026-10-24):
 - **Open for extension**: a new tool is a new `RoadToolHandler`, a new mode a new view and panel, not a new branch in a switch spread over files.
 - **One source of truth.** A format, a constant or a rule lives once: the road document's format and the markings' constants are TileKit's, the app uses them.
 - **No hidden globals.** What a function reads or writes comes in as a parameter (`WorkspacePaths`), not a mutable global.
+- **Names** follow Swift's: types, targets, source folders and files in UpperCamelCase (a file named after the type it holds), everything else in lowerCamelCase, local constants too (no `A`, `X`). The one lowercase name is a program run from the terminal (`tilepipeline`), set by the executable product, not the target. Shell scripts are lowercase (`make_app.sh`).
 - **Tests** (`Tests/`, swift-testing) cover the plain parts. A new rule of geometry, editing or a camera comes with a test.
 
 ## Commands

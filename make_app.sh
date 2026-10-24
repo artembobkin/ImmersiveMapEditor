@@ -10,7 +10,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ImmersiveMapEditor "$APP/Contents/MacOS/ImmersiveMapEditor"
 # The pipeline the editor runs to build tiles, beside it.
 cp .build/release/tilepipeline "$APP/Contents/MacOS/tilepipeline"
-# The icon: Icon/AppIcon.png (drawn by Icon/make_icon.swift) at every size macOS asks for.
+# The icon: Icon/AppIcon.png (drawn by Icon/MakeIcon.swift) at every size macOS asks for.
 SET=build/AppIcon.iconset
 rm -rf "$SET" && mkdir -p "$SET"
 for s in 16 32 128 256 512; do

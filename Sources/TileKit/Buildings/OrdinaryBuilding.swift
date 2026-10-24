@@ -288,12 +288,14 @@ func facade(_ b: Builder, _ a: P2, _ c: P2, _ z0: Double, _ z1: Double, _ floors
 func window(_ b: Builder, _ p: (Double, Double, Double) -> V3, _ t0: Double, _ t1: Double, _ lo: Double,
             _ hi: Double, _ family: String, _ side: String) {
     let d = windowDepth
-    let A = p(t0, lo, 0), B = p(t1, lo, 0), C = p(t1, hi, 0), D = p(t0, hi, 0)
-    let A2 = p(t0, lo, d), B2 = p(t1, lo, d), C2 = p(t1, hi, d), D2 = p(t0, hi, d)
+    // The opening's corners on the wall, then at the glass, a depth in.
+    let bottomLeft = p(t0, lo, 0), bottomRight = p(t1, lo, 0), topRight = p(t1, hi, 0), topLeft = p(t0, hi, 0)
+    let glassBottomLeft = p(t0, lo, d), glassBottomRight = p(t1, lo, d), glassTopRight = p(t1, hi, d),
+        glassTopLeft = p(t0, hi, d)
     let reveal = "\(family).reveal.\(side)"
-    b.flat([A, B, B2, A2], "rim", "windows")        // sill, facing up
-    b.flat([D2, C2, C, D], reveal, "windows")       // head, facing down
-    b.flat([A2, D2, D, A], reveal, "windows")       // left reveal
-    b.flat([B, C, C2, B2], reveal, "windows")       // right reveal
-    b.flat([A2, B2, C2, D2], "\(family).glass.\(side)", "windows")
+    b.flat([bottomLeft, bottomRight, glassBottomRight, glassBottomLeft], "rim", "windows")    // sill, facing up
+    b.flat([glassTopLeft, glassTopRight, topRight, topLeft], reveal, "windows")               // head, facing down
+    b.flat([glassBottomLeft, glassTopLeft, topLeft, bottomLeft], reveal, "windows")           // left reveal
+    b.flat([bottomRight, topRight, glassTopRight, glassBottomRight], reveal, "windows")       // right reveal
+    b.flat([glassBottomLeft, glassBottomRight, glassTopRight, glassTopLeft], "\(family).glass.\(side)", "windows")
 }

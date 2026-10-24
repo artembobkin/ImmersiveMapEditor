@@ -66,9 +66,9 @@ extension Imported {
             if i0 > i1 || j0 > j1 { continue }
             for j in j0...j1 {
                 for i in i0...i1 {
-                    let X = gx[i], Y = gy[j]
-                    let l1 = ((b.y - c.y) * (X - c.x) + (c.x - b.x) * (Y - c.y)) / det
-                    let l2 = ((c.y - a.y) * (X - c.x) + (a.x - c.x) * (Y - c.y)) / det
+                    let cellX = gx[i], cellY = gy[j]
+                    let l1 = ((b.y - c.y) * (cellX - c.x) + (c.x - b.x) * (cellY - c.y)) / det
+                    let l2 = ((c.y - a.y) * (cellX - c.x) + (a.x - c.x) * (cellY - c.y)) / det
                     let l3 = 1 - l1 - l2
                     guard l1 >= -1e-6, l2 >= -1e-6, l3 >= -1e-6 else { continue }
                     let u = l1 * ua + l2 * ub + l3 * uc, v = l1 * va + l2 * vb + l3 * vc

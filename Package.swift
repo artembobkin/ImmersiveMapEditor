@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "ImmersiveMapEditor", targets: ["ImmersiveMapEditor"]),
-        .executable(name: "tilepipeline", targets: ["tilepipeline"]),
+        .executable(name: "tilepipeline", targets: ["TilePipelineCommand"]),
     ],
     dependencies: [
         // GEOS, the C++ geometry library shapely stands on, built from source.
@@ -24,7 +24,8 @@ let package = Package(
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
-        .executableTarget(name: "tilepipeline", dependencies: ["TileKit", "Geometry", "GLTF"], path: "Sources/tilepipeline"),
+        // The command line over TileKit; the program is `tilepipeline`.
+        .executableTarget(name: "TilePipelineCommand", dependencies: ["TileKit", "Geometry", "GLTF"], path: "Sources/TilePipelineCommand"),
     ],
     swiftLanguageModes: [.v5]
 )
