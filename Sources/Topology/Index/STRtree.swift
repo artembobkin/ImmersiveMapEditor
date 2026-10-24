@@ -21,6 +21,9 @@ public final class STRtree<Item> {
     final class Node {
         let level: Int
         var children: [Boundable] = []
+        /// For a node of the lowest level, the index of its first item
+        /// among the leaves in the order the tree packed them.
+        var firstLeaf = 0
         private var cached: Envelope?
 
         init(level: Int) { self.level = level }
@@ -45,6 +48,9 @@ public final class STRtree<Item> {
     public enum TieOrder { case jts, geos }
     public let tieOrder: TieOrder
     private var itemBoundables: [Boundable] = []
+    /// The items in the order the tree packed them (sorted by x, then each
+    /// slice by y), the order GEOS keeps its leaves in.
+    private var leaves: [(Envelope, Item)] = []
     private var root: Node?
 
     public init(nodeCapacity: Int = 10, tieOrder: TieOrder = .geos) {
@@ -139,6 +145,12 @@ public final class STRtree<Item> {
             if parents.last!.children.count == nodeCapacity { parents.append(Node(level: newLevel)) }
             parents.last!.children.append(c)
         }
+        if newLevel == 0 {
+            for p in parents {
+                p.firstLeaf = leaves.count
+                for case .item(let e, let item) in p.children { leaves.append((e, item)) }
+            }
+        }
         return parents.map { .node($0) }
     }
 
@@ -166,6 +178,37 @@ public final class STRtree<Item> {
             case .item(_, let item): visit(item)
             }
         }
+    }
+
+    /// The items in the order the tree packed them: sorted by the x of
+    /// their envelope's centre, then each vertical slice by the y.
+    public func itemsInPackedOrder() -> [Item] {
+        build()
+        return leaves.map(\.1)
+    }
+
+    /// Every pair of items whose envelopes meet, once: for each item in the
+    /// packed order, the items after it in that order that the tree finds
+    /// for its envelope, in the tree's depth-first order. This is the order
+    /// GEOS 3.13's STR tree reports pairs in (JTS queries the tree for each
+    /// item in insertion order instead). The visit returns false to stop.
+    public func queryPairs(_ visit: (Item, Item) -> Bool) {
+        build()
+        guard leaves.count >= 2, let root else { return }
+        for i in leaves.indices where !queryPairs(i, root, visit) { return }
+    }
+
+    private func queryPairs(_ i: Int, _ node: Node, _ visit: (Item, Item) -> Bool) -> Bool {
+        let (queryEnv, queryItem) = leaves[i]
+        for (k, child) in node.children.enumerated() {
+            switch child {
+            case .item(let env, let item):
+                if node.firstLeaf + k > i && env.intersects(queryEnv) && !visit(queryItem, item) { return false }
+            case .node(let n):
+                if n.bounds.intersects(queryEnv) && !queryPairs(i, n, visit) { return false }
+            }
+        }
+        return true
     }
 
     // MARK: Nearest neighbour

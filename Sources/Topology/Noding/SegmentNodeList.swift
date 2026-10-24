@@ -1,31 +1,51 @@
-/// The nodes of a segment string, sorted along it (a `TreeMap` in JTS: a
-/// sorted array here), and the split edges between them: JTS's
-/// `SegmentNodeList`.
+/// The nodes of a segment string, sorted along it, and the split edges
+/// between them: JTS's `SegmentNodeList`.
+///
+/// JTS keeps the nodes in a `TreeMap`, so the first of two equal nodes
+/// stays. GEOS 3.13, as its results show, appends them as they come, sorts
+/// them with libc++'s `std::sort` when they are next read and drops the
+/// duplicates, keeping the first of each run of equal nodes. Which of two
+/// equal nodes (`0.0` and `-0.0`) stays follows from that, so the port does
+/// the same, with the sort translated in `CxxAlgorithms`.
 public final class SegmentNodeList {
-    private(set) var nodes: [SegmentNode] = []
+    private var nodes: [SegmentNode] = []
+    /// Whether `nodes` is sorted and free of duplicates.
+    private var ready = true
     unowned let edge: NodedSegmentString
 
     init(_ edge: NodedSegmentString) { self.edge = edge }
 
-    public func size() -> Int { nodes.count }
+    /// The nodes in order along the string, each once.
+    var sortedNodes: [SegmentNode] {
+        prepare()
+        return nodes
+    }
+
+    public func size() -> Int {
+        prepare()
+        return nodes.count
+    }
+
     public func getEdge() -> NodedSegmentString { edge }
 
-    /// The node at a point of a segment, added if it is not there.
+    /// Adds a node at a point of a segment (a duplicate goes when the list
+    /// is next read).
     @discardableResult
     public func add(_ intPt: Coordinate, _ segmentIndex: Int) -> SegmentNode {
         let n = SegmentNode(edge, intPt, segmentIndex, edge.getSegmentOctant(segmentIndex))
-        var lo = 0, hi = nodes.count
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            let c = nodes[mid].compareTo(n)
-            if c == 0 {
-                precondition(nodes[mid].coord.equals2D(intPt), "Found equal nodes with different coordinates")
-                return nodes[mid]
-            }
-            if c < 0 { lo = mid + 1 } else { hi = mid }
-        }
-        nodes.insert(n, at: lo)
+        nodes.append(n)
+        ready = false
         return n
+    }
+
+    private func prepare() {
+        if ready { return }
+        CxxAlgorithms.sort(&nodes) { $0.compareTo($1) < 0 }
+        var unique: [SegmentNode] = []
+        unique.reserveCapacity(nodes.count)
+        for n in nodes where unique.last.map({ $0.compareTo(n) != 0 }) ?? true { unique.append(n) }
+        nodes = unique
+        ready = true
     }
 
     func addEndpoints() {
@@ -51,8 +71,9 @@ public final class SegmentNodeList {
     }
 
     func findCollapsesFromInsertedNodes(_ collapsed: inout [Int]) {
-        guard var prev = nodes.first else { return }
-        for ei in nodes.dropFirst() {
+        let sorted = sortedNodes
+        guard var prev = sorted.first else { return }
+        for ei in sorted.dropFirst() {
             if let i = findCollapseIndex(prev, ei) { collapsed.append(i) }
             prev = ei
         }
@@ -69,8 +90,9 @@ public final class SegmentNodeList {
     public func addSplitEdges(_ edgeList: inout [SegmentString]) {
         addEndpoints()
         addCollapsedNodes()
-        var prev = nodes[0]
-        for ei in nodes.dropFirst() {
+        let sorted = sortedNodes
+        var prev = sorted[0]
+        for ei in sorted.dropFirst() {
             edgeList.append(NodedSegmentString(createSplitEdgePts(prev, ei), edge.getData()))
             prev = ei
         }
@@ -96,9 +118,10 @@ public final class SegmentNodeList {
     /// in a row.
     public func getSplitCoordinates() -> [Coordinate] {
         addEndpoints()
+        let sorted = sortedNodes
         var list: [Coordinate] = []
-        var prev = nodes[0]
-        for ei in nodes.dropFirst() {
+        var prev = sorted[0]
+        for ei in sorted.dropFirst() {
             for p in createSplitEdgePts(prev, ei) where list.last != p { list.append(p) }
             prev = ei
         }

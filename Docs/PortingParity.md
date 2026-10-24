@@ -87,12 +87,13 @@ Each was found by a parity test and confirmed on GEOS's output. The port keeps J
 | STR tree nearest (`GEOSSTRtree_nearest`, distance by `GEOSDistance` on both sides), ties included | 5,495 | 5,495 |
 | replay: the recorded trees, their queries | 1,051 | 1,051 |
 | replay: the recorded trees, their nearest searches | 279 | 279 |
-| MC index noder in an iterated noder, duplicates dropped (`GEOSNode`) | 4,861 | 4,860, and 1 differing only in the sign of a zero |
+| MC index noder in an iterated noder, duplicates dropped (`GEOSNode`) | 4,861 | 4,861 |
+| the two inputs that differed in the sign of a zero in phase 3 | 2 | 2 |
 
 The tree breaks ties as GEOS does only with libc++'s algorithms: JTS's stable sort and Java's `PriorityQueue` give the same nearest item on 4,609 of 5,495 searches (all the others are ties: equal envelope centres, equal distances), libc++'s `std::sort` and heap (`CxxAlgorithms`) on all 5,495. Queries are the same either way.
 
 `GEOSNode` is not compared on a collection holding an empty geometry: GEOS 3.13 crashes on it (a segmentation fault, `GEOMETRYCOLLECTION (LINESTRING (0 0, 1 1), LINESTRING EMPTY)`). 139 of the 5,000 random inputs.
 
-The open difference (Docs/PortingTopologyProgress.md, "Blocked"): a zero-length segment between `0.0` and `-0.0`. Smallest input: `LINESTRING (1 0, 0 0, -0 0, -1 -1)`, noded: the port gives `(1 0, 0 0), (0 0, -0 0), (0 0, -1 -1)`, GEOS `(1 0, 0 0), (-0 0, -0 0), (-0 0, -1 -1)`. The values are equal, only the sign of the zero differs.
+The difference phase 3 left open, a zero-length segment between `0.0` and `-0.0` (`LINESTRING (1 0, 0 0, -0 0, -1 -1)`: the port gave `(1 0, 0 0), (0 0, -0 0), (0 0, -1 -1)`, GEOS `(1 0, 0 0), (-0 0, -0 0), (-0 0, -1 -1)`), is gone in phase 4: the port now meets the pairs of chains in the order GEOS 3.13 does (its STR tree's packed leaf order, `STRtree.queryPairs`) and keeps the nodes of a string as GEOS does (an array sorted with libc++'s `std::sort` when read, the first of equal nodes kept). Found by reading GEOS's noding sources for the order, as the main session allowed. The code is JTS's with these two changes. No result differs in the sign of a zero any more, and the test fails on any difference.
 
 Snap rounding is not exposed alone by GEOS's C API (its overlays at a precision and `GEOSGeom_setPrecision` of polygons use it): it is compared with GEOS through those in phases 4 and 6. Here it passes JTS's own cases (`SnapRoundingNoderTest`, 18 of 18, each result checked fully noded), and the KD-tree JTS's `KdTreeTest`.

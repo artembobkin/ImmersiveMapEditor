@@ -11,10 +11,11 @@ import geos
 /// back as it is. GEOS crashes (a segmentation fault) on a collection that
 /// holds an empty geometry, so those inputs are counted and not given to it.
 ///
-/// One difference is known and open (Docs/PortingTopologyProgress.md,
-/// "Blocked"): at a zero-length segment between `0.0` and `-0.0`, which of
-/// the two equal values a node takes. Results that differ only in the sign of
-/// a zero are counted and printed apart, and any other difference fails.
+/// Bit for bit includes the sign of a zero: at a zero-length segment between
+/// `0.0` and `-0.0`, which of the two equal values a node takes follows the
+/// order GEOS meets the pairs of chains in (`STRtree.queryPairs`) and keeps
+/// its nodes in (`SegmentNodeList`). The two inputs that showed it in phase 3
+/// are checked by name.
 @Suite struct NodingParityTests {
     /// The lines of a geometry, rings included, in order.
     static func lines(_ g: Topology.Geometry) -> [[Coordinate]] {
@@ -47,38 +48,47 @@ import geos
         return g.factory.createMultiLineString(out)
     }
 
+    static func compare(_ s: Shape, _ o: GEOSOracle, _ tally: inout ParityTally) {
+        let g = s.topology()
+        guard let expected = o.geometry(s)!.unary(GEOSNode_r) else {
+            let mine = try? NodingParityTests.node(g)
+            tally.check(mine == nil, "\(s): GEOS fails (\(o.takeError() ?? "")), the port does not")
+            return
+        }
+        guard let mine = try? NodingParityTests.node(g) else {
+            tally.check(false, "\(s): the port fails")
+            return
+        }
+        tally.check(Shape(mine) == expected.shape, "\(s):\n  port \(Shape(mine))\n  GEOS \(expected.shape)")
+    }
+
     @Test func nodeLikeGEOSNode() {
         let o = GEOSOracle()
         var tally = ParityTally("MCIndexNoder, IteratedNoder (GEOSNode)")
         var r = RandomGeometries(seed: 60)
         var crashing = 0
-        var zeroSign: [String] = []
         for _ in 0..<5000 {
             var s = r.geometry()
             if r.chance(0.3) { s = Shape(kind: .geometryCollection, parts: [s, r.lineString(), r.lineString()]) }
-            let g = s.topology()
             if s.kind.rawValue >= 4 && NodingParityTests.hasEmptyPart(s) {
                 crashing += 1
                 continue
             }
-            guard let expected = o.geometry(s)!.unary(GEOSNode_r) else {
-                let mine = try? NodingParityTests.node(g)
-                tally.check(mine == nil, "\(s): GEOS fails (\(o.takeError() ?? "")), the port does not")
-                continue
-            }
-            guard let mine = try? NodingParityTests.node(g) else {
-                tally.check(false, "\(s): the port fails")
-                continue
-            }
-            if Shape(mine) != expected.shape && Shape(mine).equalsIgnoringZeroSign(expected.shape) {
-                zeroSign.append("\(s)")
-                continue
-            }
-            tally.check(Shape(mine) == expected.shape, "\(s):\n  port \(Shape(mine))\n  GEOS \(expected.shape)")
+            NodingParityTests.compare(s, o, &tally)
         }
         tally.report()
-        print("parity GEOSNode: \(zeroSign.count) differ only in the sign of a zero (known, open)")
-        for z in zeroSign { print("  zero sign: \(z.prefix(200))") }
         print("parity GEOSNode: \(crashing) inputs with an empty geometry in a collection, which crash GEOS, not compared")
+    }
+
+    /// The inputs whose nodes took the other zero in phase 3.
+    @Test func theSignOfAZeroAtANode() throws {
+        let o = GEOSOracle()
+        var tally = ParityTally("GEOSNode, the sign of a zero")
+        for wkt in ["LINESTRING (1 0, 0 0, -0 0, -1 -1)",
+                    "POLYGON ((300 -225, -37.5 37.5, -150 -0, -149.99999999975554 -75, -150 -150, -262.5 -225, -75 -450, -0 -525, 0 -525, 37.5 -487.5, 225 -412.5, 225 -300, 300 -225))"] {
+            NodingParityTests.compare(Shape(try WKTReader().read(wkt)), o, &tally)
+        }
+        tally.report()
+        #expect(tally.compared == 2)
     }
 }
