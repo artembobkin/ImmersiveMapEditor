@@ -76,6 +76,11 @@ struct Recording {
     /// Whether there are recordings to replay (they stay outside git).
     static var available: Bool { !files().isEmpty }
 
+    /// Whether to replay the long recorded runs too (the overlays, the
+    /// predicates, the buffer: tens of minutes in a debug build), which the
+    /// tests do only with `TOPOLOGY_LONG_REPLAY=1` and the recordings there.
+    static var longReplay: Bool { available && ProcessInfo.processInfo.environment["TOPOLOGY_LONG_REPLAY"] == "1" }
+
     /// Every recording on disk, read.
     static func load() throws -> [Recording] {
         try files().map { try Recording(url: $0.url, name: $0.name) }

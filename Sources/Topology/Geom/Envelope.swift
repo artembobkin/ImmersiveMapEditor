@@ -186,3 +186,11 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
 
     public var description: String { "Env[\(minX) : \(maxX), \(minY) : \(maxY)]" }
 }
+
+extension Envelope {
+    /// Whether `o` lies inside this envelope and is not equal to it.
+    public func containsProperly(_ o: Envelope) -> Bool {
+        if self == o { return false }
+        return covers(o)
+    }
+}

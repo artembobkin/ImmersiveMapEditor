@@ -97,3 +97,81 @@ The tree breaks ties as GEOS does only with libc++'s algorithms: JTS's stable so
 The difference phase 3 left open, a zero-length segment between `0.0` and `-0.0` (`LINESTRING (1 0, 0 0, -0 0, -1 -1)`: the port gave `(1 0, 0 0), (0 0, -0 0), (0 0, -1 -1)`, GEOS `(1 0, 0 0), (-0 0, -0 0), (-0 0, -1 -1)`), is gone in phase 4: the port now meets the pairs of chains in the order GEOS 3.13 does (its STR tree's packed leaf order, `STRtree.queryPairs`) and keeps the nodes of a string as GEOS does (an array sorted with libc++'s `std::sort` when read, the first of equal nodes kept). Found by reading GEOS's noding sources for the order, as the main session allowed. The code is JTS's with these two changes. No result differs in the sign of a zero any more, and the test fails on any difference.
 
 Snap rounding is not exposed alone by GEOS's C API (its overlays at a precision and `GEOSGeom_setPrecision` of polygons use it): it is compared with GEOS through those in phases 4 and 6. Here it passes JTS's own cases (`SnapRoundingNoderTest`, 18 of 18, each result checked fully noded), and the KD-tree JTS's `KdTreeTest`.
+
+### Phase 4: overlay and union against GEOS
+
+Results in GEOS's normal form, compared bit for bit; where GEOS fails (returns NULL), the port must throw. The results are compared as they come as well (not normalized): every one is GEOS's, the order of parts, rings and points included. The random pairs (`OverlayParityTests`) are a random geometry and one that meets it: another random geometry moved onto it, the same shifted by a share of its size, by 1e-10 of it, along an axis by a quarter of it (edges shared exactly on grids), turned half round about its centre, or itself. Many are invalid (rings of the random generator cross now and then, collections hold overlapping parts), which is where GEOS fails.
+
+| Function | Compared | Equal | GEOS and the port failing alike | Results equal as they come |
+|---|---:|---:|---:|---:|
+| intersection (`GEOSIntersection`) | 4,000 | 4,000 | 441 | 3,559 of 3,559 |
+| union (`GEOSUnion`) | 4,000 | 4,000 | 522 | 3,478 of 3,478 |
+| difference (`GEOSDifference`) | 4,000 | 4,000 | 512 | 3,488 of 3,488 |
+| symmetric difference (`GEOSSymDifference`) | 4,000 | 4,000 | 553 | 3,447 of 3,447 |
+| unary union (`GEOSUnaryUnion`), 2 to 7 parts | 2,000 | 2,000 | 491 | 1,509 of 1,509 |
+| intersection at a fixed precision (`GEOSIntersectionPrec`) | 1,677 | 1,677, 3 of them equal but for the sign of zeros | 262 | 1,412 of 1,415 |
+| union at a fixed precision (`GEOSUnionPrec`) | 1,696 | 1,696, 10 equal but for the sign of zeros | 324 | 1,362 of 1,372 |
+| difference at a fixed precision (`GEOSDifferencePrec`) | 1,707 | 1,707, 3 equal but for the sign of zeros | 307 | 1,397 of 1,400 |
+| symmetric difference at a fixed precision (`GEOSSymDifferencePrec`) | 1,685 | 1,685, 6 equal but for the sign of zeros | 336 | 1,343 of 1,349 |
+
+The fixed precision grids are a seventh, a hundredth and a ten-thousandth of the geometry's size, 1 and 0.001.
+
+**The sign of zeros at a fixed precision is GEOS's own randomness.** GEOS 3.13's snap rounding adds a string's vertices to its hot pixel index in a random order (`std::shuffle` seeded by `std::random_device`; JTS shuffles with `Random(13)`, as the port does). Where two vertices of one pixel round to `0.0` and `-0.0`, the pixel keeps the first one added, so GEOS's results change sign from run to run: on each of the 22 inputs above GEOS itself gave a different result within ten more runs (on 7 checked by hand, 2 to 8 distinct results in 20 runs). As the main session decided, such results are compared by value (`0.0 == -0.0`) and counted apart; every other coordinate is equal bit for bit.
+
+Every recorded call (`OverlayReplayTests`), GEOS's normal form and as they come:
+
+| Function | Recorded calls | Equal |
+|---|---:|---:|
+| intersection | 14,804 | 14,804 |
+| difference | 2,462 | 2,462 |
+| union | 6 | 6 |
+| unaryUnion | 41,654 (41,629 given to GEOS: the wrapper answers 25 of only empty parts itself) | 41,629 |
+
+Time of the recorded calls, the operation alone, in an optimized build (a throwaway executable in the scratchpad, `swiftc -O` against the release build's `Topology` objects and GEOS's library from the same build; `swift test -c release` cannot run here, see Docs/PortingTopologyProgress.md, "Timing"):
+
+| Function | Calls | Port | GEOS | Port / GEOS |
+|---|---:|---:|---:|---:|
+| intersection | 14,804 | 33.7 s | 7.0 s | 4.8 |
+| difference | 2,462 | 2.2 s | 0.56 s | 3.9 |
+| union | 6 | 0.41 s | 0.12 s | 3.4 |
+| unaryUnion | 41,629 | 47.4 s | 12.9 s | 3.7 |
+
+The port is a faithful translation not yet optimized ("port, then optimise"): its speed is the next work on it, with these parity tests green before and after.
+
+
+The JTS XML suites, the overlay operations: the port passes exactly the tests GEOS passes (`JTSXMLTopologyTests.portPassesWhatGEOSPasses`), and its results are GEOS's bit for bit on every test of an operation it has (`portResultsAreGEOSs`: 3,130 of 3,130, phase 2's included).
+
+| Operation | Tests | Passed (as GEOS) |
+|---|---:|---:|
+| `intersection` | 219 | 215 |
+| `intersectionNG` | 63 | 63 |
+| `intersectionSR` | 20 | 20 |
+| `union` | 115 | 82 |
+| `unionNG` | 63 | 51 |
+| `unionSR` | 20 | 20 |
+| `difference` | 131 | 131 |
+| `differenceNG` | 109 | 109 |
+| `differenceSR` | 40 | 40 |
+| `symdifference` | 99 | 99 |
+| `symdifferenceNG` | 63 | 54 |
+| `symdifferenceSR` | 20 | 20 |
+| `unionArea` | 8 | 8 |
+| `unionLength` | 11 | 10 |
+| `overlayAreaTest` | 2,039 | 2,039 |
+
+The JTS unit cases of snap rounding (`SnapRoundingNoderTests`) are now checked against JTS's expected lines made precise by the port's model, which rounds as GEOS's does (below): in `testMCIndexNoderTolerance` the scale 0.0016339869 is 1 / 612.0000105, just outside GEOS's integer tolerance, so GEOS rounds on that grid size and JTS by the scale, a difference in the last digits.
+
+#### Where GEOS 3.13 differs from JTS 1.20 in phase 4, and the port follows GEOS
+
+Each was found by a parity test, then understood from GEOS's sources (read, never translated), and confirmed on GEOS's output.
+
+- **Noding order** (phase 3's open difference): pairs of chains by the STR tree's packed leaf order (`STRtree.queryPairs`), a segment string's nodes kept in an array sorted with libc++'s `std::sort` when read.
+- **The nodes of the overlay graph** are iterated in the order of GEOS's libc++ `unordered_map` keyed by its coordinate hash (`CxxUnorderedMap`; JTS: a Java `HashMap`). Where a nearly collinear edge gets conflicting line locations at its two ends, the node labelled last decides; with the nodes in insertion order, 1 of 2,000 random unary unions differed by a vertex.
+- **The area check of an overlay result** (`isResultAreaConsistent`): GEOS checks results of lines and points too (their area is 0, so a union of areas collapsed to lines fails and the robust overlay goes on to snapping), and checks a difference as at least the difference of the areas less a tenth (JTS: less a tenth of the first area). 12 of 2,000 random unary unions differed before.
+- **The precision model**: a scale or grid size within 1e-5 of an integer is made that integer, the grid size is kept beside the scale, a value is rounded on the grid size when it is above 1 (else by the scale), and with GEOS's rounding (`java_math_round` of `floor` and `ceil`: a value in (-0.5, 0] rounds to `-0.0`, where Java's `Math.round` gives `0.0`). About 10% of the random fixed precision overlays differed before, in last digits and zero signs. The same rounding is used by the hot pixels and the scaled noder.
+- **The safe scale of snap rounding** with an empty input: GEOS's null envelope has NaN ordinates (JTS's 0 and -1), so an empty input does not change the scale.
+- **Duplicate edges** are merged by their key's value (GEOS: an ordered map, JTS: a hash map, where `-0.0` and `0.0` hash apart).
+- **Point results** come in coordinate order: GEOS keeps the points of a point overlay in an ordered map and sorts the points of a mixed overlay (JTS: hash map and hash set orders). The union of points with a polygonal input takes every non-empty member of the unioned input, lines too (JTS fails on a collection there).
+- **The overlay methods** (`GeometryOverlay`): no shortcuts for empty inputs (OverlayNG's empty results apply), but a union or symmetric difference of inputs with disjoint envelopes (an empty one included) is their members put together; a collection of mixed dimensions is overlaid dimension by dimension (`MixedDimensionOverlay`, JTS refuses it).
+- **The unary union** (`UnaryUnionOp`, `CascadedPolygonUnion`, `PointGeometryUnion`): every point, line and polygon extracted, empty ones included; lines and points cleaned by a union with an empty collection (JTS: an empty point, which sends points through the point overlay instead of the mixed one); polygons in an STR tree of capacity 10, unioned in its packed order by halving the list (JTS: capacity 4, node by node); each partial result restricted to its polygons; an empty collection when nothing is left; empty points skipped where points are added to a union.
+- **GEOS's first robust stage catches every error** (any `std::runtime_error`: topology failures, failed assertions, illegal arguments), its later stages only topology failures, as JTS does with `RuntimeException`: the port throws JTS's exception kinds as errors and catches the same ones.

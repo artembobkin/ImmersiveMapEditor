@@ -56,6 +56,8 @@ import geos
                         tally.check(x == y, "\(id): port \(x) GEOS \(y)")
                     case (.boolean(let m)?, .boolean(let g)?):
                         tally.check(m == g, "\(id): port \(m) GEOS \(g)")
+                    case (.number(let m)?, .number(let g)?):
+                        tally.check(m.bitPattern == g.bitPattern, "\(id): port \(m) GEOS \(g)")
                     case (nil, nil):
                         tally.check(true, "")
                     default:

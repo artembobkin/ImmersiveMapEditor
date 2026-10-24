@@ -1,6 +1,6 @@
 # The Topology port: progress
 
-The port of JTS 1.20.0 to Swift (`Sources/Topology`), phases 1 to 3 of `Docs/PortingGoal.md`, on the branch `port/topology`. The parity numbers are in `Docs/PortingParity.md`, section Topology.
+The port of JTS 1.20.0 to Swift (`Sources/Topology`), phases 1 to 5 of `Docs/PortingGoal.md` (phases 4 and 5 in progress), on the branch `port/topology`. The parity numbers are in `Docs/PortingParity.md`, section Topology.
 
 ## Done
 
@@ -39,11 +39,19 @@ Calls of each function, over all six recordings: `intersects` 1,428,861, `Prepar
 
 Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 0, 0 0, -0 0, -1 -1)` through `GEOSNode`, the port's nodes took `0.0` and GEOS's `-0.0` (equal values). Four orders tried then (JTS's; the other chain first; the higher id first; a lazily sorted node list alone) each left one of two inputs differing. The main session then allowed GEOS's noding sources to be read to find its order (never copied). They show two things together, both now in the port: GEOS's STR tree reports the pairs of chains by its packed leaf order, each leaf against the leaves after it (`STRtree.queryPairs`, used by `MCIndexNoder`), and GEOS keeps a segment string's nodes in an array, sorted with `std::sort` when read and de-duplicated keeping the first of equal nodes (`SegmentNodeList`). With both, all 4,861 random inputs and both inputs of phase 3 are GEOS's bit for bit, the sign of every zero included.
 
+### Phase 4, step 1: overlay and union
+
+- **OverlayNG** (`Operation/OverlayNG/`): `OverlayNG` (floating precision, fixed precision with snap rounding, the strict mode), `OverlayNGRobust` (floating, then snapping with a growing tolerance, then snap rounding at a safe scale), `EdgeNodingBuilder` (clipping with `RingClipper` and `LineLimiter`, the `RobustClipEnvelopeComputer`), `Edge`, `EdgeKey`, `EdgeMerger`, `EdgeSourceInfo`, `OverlayLabel`, `OverlayEdge`, `OverlayGraph`, `OverlayLabeller`, `MaximalEdgeRing`, `OverlayEdgeRing`, `PolygonBuilder`, `LineBuilder`, `IntersectionPointBuilder`, `OverlayPoints`, `OverlayMixedPoints`, `IndexedPointOnLineLocator`, `InputGeometry`, `OverlayUtil`, `PrecisionUtil`. `EdgeGraph/HalfEdge`. `Noding/Snap/` (`SnappingNoder`, `SnappingPointIndex`, `SnappingIntersectionAdder`). `Algorithm/Locate/` (`PointOnGeometryLocator`, `IndexedPointInAreaLocator` over `Index/IntervalRTree/SortedPackedIntervalRTree`, `SimplePointInAreaLocator`). `Geom`: `Position`, `CoordinateList`, `Util/LinearComponentExtracter`, `Util/GeometryCombiner`. `Util/Exceptions` (the errors the robust overlay catches).
+- **Union** (`Operation/Union/`): `UnaryUnionOp`, `CascadedPolygonUnion`, `PointGeometryUnion`, `UnionStrategy`, `GeometryOverlay` (the `Geometry` methods `intersection`, `union`, `difference`, `symDifference`, `union()` as GEOS 3.13 runs them), `MixedDimensionOverlay` (GEOS's overlay of collections of mixed dimensions, which JTS refuses).
+- **Index**: `CxxUnorderedMap` (the iteration order of libc++'s `unordered_map`, see the licence), `STRtree.itemsInPackedOrder` and `queryPairs`.
+- Checked against GEOS (`Docs/PortingParity.md`, phase 4): random and near-degenerate inputs, the JTS XML suites, and every recorded `intersection`, `difference`, `union` and `unaryUnion` call, all GEOS's bit for bit, results in GEOS's normal form and as they come. Tests: `Parity/OverlayParityTests`, `Recording/OverlayReplayTests` (long: `TOPOLOGY_LONG_REPLAY=1`), the overlays in `JTSXML/TopologyEngine`, `Parity/DebugCaseTests` (one case on both sides, from `DEBUG_OP`, `DEBUG_A`, `DEBUG_B`).
+- How differences were found: the parity helpers write every difference in full to the file named by `PARITY_DUMP`; a case is run on both sides with `DebugCaseTests`; and GEOS's internal stages are observed with lldb on the test binary (breakpoints on GEOS's functions and on C++ throws, its edges printed at `OverlayGraph::addEdge`), which showed which stage of the robust overlay each side ended at.
+
 ## Left
 
-- Phases 4 and after (overlay, predicates, distance, buffer, validity, precision, simplify, triangulation, polygonize, line merge, linear referencing, then the swap of `Geometry`).
-- `MCIndexSnapRounder` and `MCIndexPointSnapper` (JTS's older snap rounder, which the buffer uses at a fixed precision): with the buffer, phase 5.
-- Snap rounding against GEOS: through the overlays at a precision (phase 4) and `setPrecision` (phase 6).
+- Phase 4: predicates (RelateNG, prepared geometries), distance and nearest points.
+- Phase 5: buffer and offset curve. `UnionStrategy.classic` then gets its buffer by zero for two areas whose overlay fails (until then that failure stands).
+- Phases 6 and after (validity, precision, simplify, triangulation, polygonize, line merge, linear referencing, then the swap of `Geometry`).
 
 ## Decisions
 
@@ -57,5 +65,7 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 - **Programming errors trap** (`precondition`), as JTS's `IllegalArgumentException` and assertions do: a ring that is not closed, the boundary of a collection. The readers check their input and throw instead.
 - **GEOS here is built with fused multiply-add.** The `GEOSwift/geos` package compiles GEOS with SwiftPM's default flags, and Apple clang's default `-ffp-contract=on` fuses `a * b + c` inside one expression into one `fmadd` on arm64, in debug and release alike (checked on a two-line function: `fmadd` at `-O0` and `-O2`). JTS on the JVM never fuses. So the GEOS this package runs today does not compute JTS's arithmetic exactly wherever an expression multiplies and adds. The port follows JTS's operations and adds the fusion clang makes (`Fused.swift`, `addingProduct`): the rule is clang's, the left product of a sum or difference first. Every such place is checked against GEOS, and the tests fail without it.
 - The oracle and the runner read the JTS sources from `.build/ports/jts` of the package or of a folder above it (a worktree), or `JTS_ROOT`. The XML suites are not copied into the package: 16 MB, and a test target cannot hold non-Swift files without declaring them in `Package.swift`.
-- The recordings are outside git. The tests that read them run only when they are there (`.enabled(if: Recording.available)`), the JTS XML tests always.
+- The recordings are outside git. The tests that read them run only when they are there (`.enabled(if: Recording.available)`), the JTS XML tests always. The long replays (overlays and on: tens of minutes in a debug build) run only with `TOPOLOGY_LONG_REPLAY=1` as well (`Recording.longReplay`).
+- **Timing.** `swift test -c release` does not work in this package: the release test bundle links the app's executable target and runs its SwiftUI `main`, which waits for events. The replays are timed in a debug build with optimization in its own scratch path: `TOPOLOGY_LONG_REPLAY=1 swift test --scratch-path .build/opt -Xswiftc -O -Xcc -O2 -Xcxx -O2 --filter OverlayReplayTests` (Swift at `-O`, GEOS at `-O2`; GEOS's fused multiply-add is the same at every optimization level).
+- **`MCIndexSnapRounder` is not ported.** Phase 3 deferred it to the buffer, but GEOS 3.13's buffer snaps at a fixed precision with `SnapRoundingNoder`, as JTS 1.20 does (`MCIndexSnapRounder` appears in GEOS only in code disabled by `#if` and in `GeometryNoder` at a fixed precision, which nothing the package calls reaches). Nothing would test it against GEOS.
 - `GEOSEngine` maps JTS's old overlay names (`intersection`, `union`) to GEOS's overlay (OverlayNG), the `SR` overlays to the `Prec` functions with grid `1 / scale`, and a fixed precision model to coordinates rounded on reading (as JTS's `WKTReader`) and the `Prec` overlays. GEOS has no oriented Hausdorff distance, so the buffer matcher uses the symmetric one, the stricter check.

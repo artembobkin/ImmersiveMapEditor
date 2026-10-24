@@ -44,7 +44,7 @@ struct Shape: Equatable, CustomStringConvertible {
 
     var isEmpty: Bool { coordinates.isEmpty && parts.allSatisfy(\.isEmpty) }
 
-    /// WKT with every digit (Swift's shortest round-trip form).
+    /// WKT with every digit (Swift's shortest round-trip form), readable back.
     var description: String {
         func list(_ c: [Double]) -> String {
             stride(from: 0, to: c.count, by: 2).map { "\(c[$0]) \(c[$0 + 1])" }.joined(separator: ", ")
@@ -56,8 +56,19 @@ struct Shape: Equatable, CustomStringConvertible {
             return coordinates.isEmpty ? "\(name) EMPTY" : "\(name) (\(list(coordinates)))"
         case .polygon:
             return parts.isEmpty ? "\(name) EMPTY" : "\(name) (" + parts.map { "(\(list($0.coordinates)))" }.joined(separator: ", ") + ")"
-        default:
+        case .geometryCollection:
             return parts.isEmpty ? "\(name) EMPTY" : "\(name) (" + parts.map(\.description).joined(separator: ", ") + ")"
+        default:
+            // The members of a multi-geometry untagged, as WKT writes them.
+            return parts.isEmpty ? "\(name) EMPTY" : "\(name) (" + parts.map(\.untagged).joined(separator: ", ") + ")"
         }
+    }
+
+    /// The text of a shape without its type name.
+    var untagged: String {
+        let d = description
+        if d.hasSuffix(" EMPTY") { return "EMPTY" }
+        guard let i = d.firstIndex(of: "(") else { return d }
+        return String(d[i...])
     }
 }

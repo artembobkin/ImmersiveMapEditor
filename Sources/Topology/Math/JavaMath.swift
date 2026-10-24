@@ -15,18 +15,6 @@
     return a >= b ? a : b
 }
 
-/// Java's `Math.round` of a double, as a double: the nearest integer, ties
-/// toward positive infinity. NaN gives 0, and values beyond the range of a
-/// `long` clamp to it, as in Java.
-@inline(__always) func javaRound(_ v: Double) -> Double {
-    if v.isNaN { return 0 }
-    let f = v.rounded(.down)
-    let r = v - f >= 0.5 ? f + 1 : f
-    if r >= 9.223372036854775807e18 { return 9.223372036854775807e18 }
-    if r <= -9.223372036854775808e18 { return -9.223372036854775808e18 }
-    return r
-}
-
 /// A stable merge sort by a JTS `compareTo`: Java's `Arrays.sort` of objects
 /// keeps equal elements in their order, so this does too.
 func javaSorted<T>(_ a: [T], _ compare: (T, T) -> Int) -> [T] {
@@ -42,4 +30,21 @@ func javaSorted<T>(_ a: [T], _ compare: (T, T) -> Int) -> [T] {
     out.append(contentsOf: left[i...])
     out.append(contentsOf: right[j...])
     return out
+}
+
+/// GEOS's rounding (`util::round`, its `java_math_round`): the nearest
+/// integer, halves toward positive infinity, as Java's `Math.round`, but
+/// from `floor` and `ceil`, so a value in (-0.5, 0] rounds to `-0.0` (Java
+/// gives `0.0`), and with no clamping to a `long`. NaN stays NaN.
+@inline(__always) func geosRound(_ val: Double) -> Double {
+    let n = val.rounded(.towardZero)
+    let f = abs(val - n)
+    if val >= 0 {
+        if f < 0.5 { return val.rounded(.down) }
+        if f > 0.5 { return val.rounded(.up) }
+        return n + 1.0
+    }
+    if f < 0.5 { return val.rounded(.up) }
+    if f > 0.5 { return val.rounded(.down) }
+    return n
 }

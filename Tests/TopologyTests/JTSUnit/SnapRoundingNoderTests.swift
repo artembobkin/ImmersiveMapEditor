@@ -6,7 +6,8 @@ import Topology
 /// as JTS runs them: the lines noded, the result checked to be fully noded
 /// (`ValidatingNoder`), and, where JTS gives one, compared with the expected
 /// lines, both normalized. GEOS does not expose the snap-rounding noder alone:
-/// it is compared with GEOS through the overlays at a precision (phase 4).
+/// it is compared with GEOS through the overlays at a precision (phase 4,
+/// `OverlayParityTests.fixedPrecisionOverlay`).
 @Suite struct SnapRoundingNoderTests {
     static let cases: [(String, String, Double, String?)] = [
         ("testSimple", "MULTILINESTRING ((1 1, 9 2), (3 3, 3 0))", 1, "MULTILINESTRING ((1 1, 3 1), (3 1, 9 2), (3 3, 3 1), (3 1, 3 0))"),
@@ -41,7 +42,11 @@ import Topology
         let noded = noder.getNodedSubstrings().map { geom.factory.createLineString($0.getCoordinates()) }
         let result: Geometry = noded.count == 1 ? noded[0] : geom.factory.createMultiLineString(noded)
         guard let expected else { return }
-        let e = try WKTReader().read(expected)
+        // JTS's expected points are on JTS's grid (`k / scale`). The port rounds
+        // as GEOS 3.13 does (on the grid size `1 / scale` when it is above 1):
+        // the expected points made precise by the model are on its grid.
+        let pm = PrecisionModel(scale: scale)
+        let e = try WKTReader(GeometryFactory(precisionModel: pm)).read(expected)
         #expect(result.norm().equalsExact(e.norm()), "\(name): \(result)")
     }
 }

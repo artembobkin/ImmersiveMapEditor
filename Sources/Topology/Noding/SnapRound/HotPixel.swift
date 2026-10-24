@@ -15,8 +15,8 @@ public final class HotPixel {
         coordinate = pt
         self.scaleFactor = scaleFactor
         if scaleFactor != 1.0 {
-            hpx = javaRound(pt.x * scaleFactor)
-            hpy = javaRound(pt.y * scaleFactor)
+            hpx = geosRound(pt.x * scaleFactor)
+            hpy = geosRound(pt.y * scaleFactor)
         } else {
             hpx = pt.x
             hpy = pt.y
