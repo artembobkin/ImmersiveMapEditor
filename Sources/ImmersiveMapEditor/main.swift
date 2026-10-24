@@ -2,44 +2,72 @@ import AppKit
 import SwiftUI
 
 /// Immersive Map Editor: the desktop tool for the ImmersiveMap engine's
-/// content. Today it corrects the road document of a range of tiles of
-/// TilePipeline by hand (its build/roads.py has the format) and shows the
-/// built tiles in 3D. Opens the document given as the first argument, else
-/// the last one opened, else TilePipeline's first, else asks for one.
+/// content. It works on a TilePipeline folder (its workspace): a map to pick
+/// tiles on, fetch their OSM and build them, the road documents corrected by
+/// hand (TilePipeline's build/roads.py has the format), and the built tiles
+/// shown together in 3D.
 ///
-///   swift run -c release ImmersiveMapEditor ~/Desktop/TilePipeline/roads/15_19808_10242_19809_10243.json
+///   swift run -c release ImmersiveMapEditor [TILEPIPELINE | ROAD DOCUMENT]
+///
+/// With no argument it opens the workspace opened last, else
+/// ~/Desktop/TilePipeline.
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow?
-    var model: EditorModel?
-    var map: MapView?
+    var session: Session?
     var build: BuildRunner?
+    private var watches: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = menu()
         let args = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }
+        var document: URL?
+        var root = UserDefaults.standard.string(forKey: "workspace").map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/TilePipeline")
         if let path = args.first {
-            open(URL(fileURLWithPath: path))
-        } else if let url = lastDocument() ?? pipelineDocument() {
-            open(url)
-        } else {
-            openDocument(nil)
+            let url = URL(fileURLWithPath: path)
+            if url.pathExtension == "json" {
+                document = url
+                root = url.deletingLastPathComponent().deletingLastPathComponent()
+            } else {
+                root = url
+            }
         }
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("pipeline.py").path) else {
+            openWorkspace(nil)
+            return
+        }
+        start(root)
+        if let document { openRoads(document) }
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// The document opened last, if it is still there.
-    private func lastDocument() -> URL? {
-        guard let path = UserDefaults.standard.string(forKey: "lastDocument"),
-              FileManager.default.fileExists(atPath: path) else { return nil }
-        return URL(fileURLWithPath: path)
+    /// The window over a TilePipeline folder.
+    func start(_ root: URL) {
+        let workspace = Workspace(root: root)
+        let session = Session(workspace: workspace)
+        let window = self.window ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
+                                             styleMask: [.titled, .closable, .resizable, .miniaturizable],
+                                             backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView(session: session, workspace: workspace))
+        window.title = "Immersive Map Editor: \(root.lastPathComponent)"
+        window.delegate = self
+        window.setFrameAutosaveName("ImmersiveMapEditor")
+        if self.window == nil { window.center() }
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
+        self.session = session
+        UserDefaults.standard.set(root.path, forKey: "workspace")
+        watches = [session.$model.sink { [weak self] model in self?.watch(model) }]
     }
 
-    /// The first road document of TilePipeline, next to this project on the Desktop.
-    private func pipelineDocument() -> URL? {
-        let roads = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/TilePipeline/roads")
-        let files = (try? FileManager.default.contentsOfDirectory(at: roads, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }.first
+    /// The open road document's unsaved state, on the window.
+    private func watch(_ model: EditorModel?) {
+        guard let model else { return }
+        window?.representedURL = model.url
+        watches.append(model.$dirty.sink { [weak window] dirty in window?.isDocumentEdited = dirty })
     }
+
+    private var model: EditorModel? { session?.model }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
@@ -57,44 +85,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.addButton(withTitle: "Don't Save")
         switch alert.runModal() {
         case .alertFirstButtonReturn: model.save(); return !model.dirty
-        case .alertThirdButtonReturn: return true
+        case .alertThirdButtonReturn: model.dirty = false; return true
         default: return false
         }
     }
 
-    func open(_ url: URL) {
+    func openRoads(_ url: URL) {
+        guard let session, confirmDiscard() else { return }
         do {
-            let model = try EditorModel(url: url)
-            let map = MapView()
-            map.model = model
-            let content = NSHostingView(rootView: ContentView(model: model, map: map, tiles: TileView(model: model)))
-            let window = self.window ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1400, height: 900),
-                                                 styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                                                 backing: .buffered, defer: false)
-            window.contentView = content
-            window.title = "Immersive Map Editor: \(url.lastPathComponent)"
-            window.representedURL = url
-            window.delegate = self
-            window.setFrameAutosaveName("ImmersiveMapEditor")
-            UserDefaults.standard.set(url.path, forKey: "lastDocument")
-            if self.window == nil { window.center() }
-            window.makeKeyAndOrderFront(nil)
-            window.makeFirstResponder(map)
-            self.window = window
-            self.model = model
-            self.map = map
-            DispatchQueue.main.async { map.frameAll() }
-            watchDirty(model, window)
+            try session.open(url)
+            session.workspace.viewMode = .roads
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "Cannot open \(url.lastPathComponent): \(error.localizedDescription)"
             alert.runModal()
         }
-    }
-
-    private var dirtyWatch: Any?
-    private func watchDirty(_ model: EditorModel, _ window: NSWindow) {
-        dirtyWatch = model.$dirty.sink { [weak window] dirty in window?.isDocumentEdited = dirty }
     }
 
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { model?.undo }
@@ -103,17 +108,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: Actions
 
-    @objc func openDocument(_ sender: Any?) {
+    @objc func openWorkspace(_ sender: Any?) {
         guard confirmDiscard() else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.message = "A road document: roads/<z>_<x0>_<y0>_<x1>_<y1>.json"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "A TilePipeline folder (the one with pipeline.py)"
         if panel.runModal() == .OK, let url = panel.url {
-            model?.dirty = false
-            open(url)
+            start(url)
         } else if window == nil {
             NSApp.terminate(nil)
         }
+    }
+
+    @objc func openDocument(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.directoryURL = session?.workspace.root.appendingPathComponent("roads")
+        panel.message = "A road document: roads/<z>_<x0>_<y0>_<x1>_<y1>.json"
+        if panel.runModal() == .OK, let url = panel.url { openRoads(url) }
     }
 
     @objc func saveDocument(_ sender: Any?) { model?.save() }
@@ -121,28 +134,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func revertDocument(_ sender: Any?) {
         guard let model else { return }
         model.dirty = false
-        open(model.url)
+        openRoads(model.url)
     }
 
-    @objc func deleteSelection(_ sender: Any?) { model?.deleteSelection() }
+    @objc func selectNone(_ sender: Any?) {
+        if session?.workspace.viewMode == .map { session?.workspace.selection = [] } else { model?.selection = [] }
+    }
 
-    @objc func selectNone(_ sender: Any?) { model?.selection = [] }
-
-    /// Saves, then runs the pipeline over the document's tiles.
-    @objc func buildTiles(_ sender: Any?) {
-        guard let model else { return }
-        if model.dirty { model.save() }
-        let t = model.doc.tiles
+    /// Fetches what is missing and builds `tiles` with the pipeline (the road
+    /// document open is saved first), then shows them.
+    func build(_ tiles: [TileKey]) {
+        guard let session, !tiles.isEmpty, let z = tiles.first?.z else { return }
+        if let model, model.dirty { model.save() }
         let runner = build ?? BuildRunner()
         build = runner
-        runner.run(root: model.root, arguments: ["pipeline.py", "\(t.z)", "\(t.x0)", "\(t.y0)", "\(t.x1)", "\(t.y1)"]) {
-            model.tilesRevision += 1
+        let workspace = session.workspace
+        workspace.building = true
+        runner.run(root: workspace.root, arguments: ["pipeline.py", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }) {
+            workspace.building = false
+            workspace.scan()
+            let built = tiles.filter { workspace.built.contains($0) }
+            if !built.isEmpty { workspace.shown = built } else { workspace.tilesRevision += 1 }
         }
     }
 
-    @objc func showRoads(_ sender: Any?) { model?.viewMode = .roads }
+    /// Builds the tiles picked on the map, or else those of the road document open.
+    @objc func buildTiles(_ sender: Any?) {
+        guard let session else { return }
+        var tiles = session.workspace.selection.sorted()
+        if session.workspace.viewMode != .map || tiles.isEmpty, let t = model?.doc.tiles {
+            tiles = (t.y0...t.y1).flatMap { y in (t.x0...t.x1).map { TileKey(z: t.z, x: $0, y: y) } }
+        }
+        build(tiles)
+    }
 
-    @objc func showTiles(_ sender: Any?) { model?.viewMode = .tiles }
+    @objc func showMap(_ sender: Any?) { session?.workspace.viewMode = .map }
+
+    @objc func showRoads(_ sender: Any?) { session?.workspace.viewMode = .roads }
+
+    @objc func showTiles(_ sender: Any?) { session?.workspace.viewMode = .tiles }
 
     @objc func showBuildLog(_ sender: Any?) { build?.window.makeKeyAndOrderFront(nil) }
 
@@ -163,7 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return i
         }
         submenu("Immersive Map Editor", [item("Quit Immersive Map Editor", #selector(NSApplication.terminate(_:)), "q")])
-        submenu("File", [item("Open…", #selector(openDocument(_:)), "o"),
+        submenu("File", [item("Open Workspace…", #selector(openWorkspace(_:)), "o", [.command, .shift]),
+                         item("Open Road Document…", #selector(openDocument(_:)), "o"),
                          item("Save", #selector(saveDocument(_:)), "s"),
                          item("Revert to Saved", #selector(revertDocument(_:))),
                          .separator(),
@@ -175,9 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                          item("Copy", #selector(NSText.copy(_:)), "c"),
                          item("Paste", #selector(NSText.paste(_:)), "v"),
                          item("Select None", #selector(selectNone(_:)), "d")])
-        submenu("View", [item("Roads", #selector(showRoads(_:)), "1"),
-                         item("Tiles 3D", #selector(showTiles(_:)), "2")])
-        submenu("Tiles", [item("Build Tiles", #selector(buildTiles(_:)), "b"),
+        submenu("View", [item("Map", #selector(showMap(_:)), "1"),
+                         item("Roads", #selector(showRoads(_:)), "2"),
+                         item("Tiles 3D", #selector(showTiles(_:)), "3")])
+        submenu("Tiles", [item("Fetch and Build", #selector(buildTiles(_:)), "b"),
                           item("Show Build Log", #selector(showBuildLog(_:)), "l")])
         return main
     }
@@ -196,27 +228,41 @@ if let i = CommandLine.arguments.firstIndex(of: "--resave"), CommandLine.argumen
     }
 }
 
-// `--snapshot DOCUMENT OUT.png [X Y]`: the built tiles of a document (or
-// one of them) rendered in 3D from above at a slant, no window.
-if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), CommandLine.arguments.count > i + 2 {
+// `--snapshot TILEPIPELINE OUT.png X/Y...`: built tiles rendered together in
+// 3D from above at a slant, no window.
+if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), CommandLine.arguments.count > i + 3 {
     let a = CommandLine.arguments
+    let workspace = Workspace(root: URL(fileURLWithPath: a[i + 1]))
+    workspace.shown = a[(i + 3)...].compactMap { t in
+        let p = t.split(separator: "/").compactMap { Int($0) }
+        return p.count == 2 ? TileKey(z: Workspace.zoom, x: p[0], y: p[1]) : nil
+    }
+    guard let view = TileView(model: workspace) else { exit(1) }
+    view.frame = NSRect(x: 0, y: 0, width: 1600, height: 1000)
     do {
-        let model = try EditorModel(url: URL(fileURLWithPath: a[i + 1]))
-        if a.count > i + 4, let x = Int(a[i + 3]), let y = Int(a[i + 4]) {
-            model.tileScope = .one
-            model.tileX = x
-            model.tileY = y
-        }
-        guard let view = TileView(model: model) else { exit(1) }
-        view.frame = NSRect(x: 0, y: 0, width: 1600, height: 1000)
-        view.frameTiles()
         try view.snapshot(to: URL(fileURLWithPath: a[i + 2]), width: 1600, height: 1000)
-        print(model.tileStatus)
+        print(workspace.tileStatus)
         exit(0)
     } catch {
         FileHandle.standardError.write("\(error.localizedDescription)\n".data(using: .utf8)!)
         exit(1)
     }
+}
+
+// `--map-snapshot TILEPIPELINE OUT.png`: the map of tiles as it opens,
+// after a few seconds for OpenStreetMap's tiles to come, no window.
+if let i = CommandLine.arguments.firstIndex(of: "--map-snapshot"), CommandLine.arguments.count > i + 2 {
+    let a = CommandLine.arguments
+    let picker = MapPicker(workspace: Workspace(root: URL(fileURLWithPath: a[i + 1])))
+    picker.frame = NSRect(x: 0, y: 0, width: 1400, height: 900)
+    let rep = picker.bitmapImageRepForCachingDisplay(in: picker.bounds)!
+    for _ in 0..<4 {
+        picker.cacheDisplay(in: picker.bounds, to: rep)
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+    }
+    picker.cacheDisplay(in: picker.bounds, to: rep)
+    try? rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: a[i + 2]))
+    exit(0)
 }
 
 let app = NSApplication.shared

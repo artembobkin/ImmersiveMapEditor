@@ -50,18 +50,6 @@ enum Tool: String, CaseIterable, Identifiable {
     }
 }
 
-enum ViewMode: String, CaseIterable, Identifiable {
-    case roads = "Roads"
-    case tiles = "Tiles 3D"
-    var id: String { rawValue }
-}
-
-enum TileScope: String, CaseIterable, Identifiable {
-    case one = "One tile"
-    case all = "All tiles"
-    var id: String { rawValue }
-}
-
 final class EditorModel: ObservableObject {
     @Published var doc: RoadDocument
     @Published var selection: Set<Item> = []
@@ -74,16 +62,6 @@ final class EditorModel: ObservableObject {
     @Published var showMarkings = true
     @Published var showHandles = true
     @Published var status = ""
-    // The 3D view of the built tiles.
-    @Published var viewMode: ViewMode = .roads
-    @Published var tileScope: TileScope = .all
-    @Published var tileX = 0
-    @Published var tileY = 0
-    @Published var flying = false
-    @Published var showLightMap = true
-    @Published var tileStatus = ""
-    /// Bumped when the tiles have been built again, so the 3D view reloads them.
-    @Published var tilesRevision = 0
     /// Bumped whenever the document's geometry changes, so the view rebuilds.
     @Published private(set) var revision = 0
 
@@ -98,8 +76,6 @@ final class EditorModel: ObservableObject {
         let root = url.deletingLastPathComponent().deletingLastPathComponent()
         let ctx = root.appendingPathComponent("data/regions/\(doc.name)/context.json")
         context = Underlay.read(ctx, doc.projection)
-        tileX = doc.tiles.x0
-        tileY = doc.tiles.y0
         undo.levelsOfUndo = 200
     }
 

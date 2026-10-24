@@ -5,15 +5,17 @@ import simd
 
 /// The built tiles in 3D, drawn as the engine draws a model tile: the
 /// palette times the light map, raw values, no lighting of its own, back
-/// faces culled. One tile or every tile of the document, each placed and
-/// scaled as the engine places it, so the seams show as they will on the map.
+/// faces culled. The tiles picked on the map (`Workspace.shown`), each placed
+/// and scaled as the engine places it, so the seams show as they will on the
+/// map.
 ///
 /// The mouse as in the engine: drag to move over the ground, right-drag (or
-/// option-drag) to turn and tilt, scroll or pinch to zoom. Flight (Tab):
+/// option-drag) to turn and tilt, scroll or pinch to zoom toward the cursor.
+/// Flight (Tab):
 /// W A S D, Q down, E up, shift faster, right-drag to look, scroll to change
 /// speed. F frames the tiles.
 final class TileView: MTKView {
-    let model: EditorModel
+    let model: Workspace
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let depth: MTLDepthStencilState
@@ -34,7 +36,7 @@ final class TileView: MTKView {
     private var lastFrame = CACurrentMediaTime()
     private var lastDrag: NSPoint?
 
-    init?(model: EditorModel) {
+    init?(model: Workspace) {
         self.model = model
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return nil }
         self.queue = queue
@@ -110,33 +112,31 @@ final class TileView: MTKView {
 
     // MARK: Tiles
 
-    /// Reads the built tiles of the document's range again.
+    /// Reads the tiles shown again, placed in the projection of their range.
     private func reload() {
         loaded = model.tilesRevision
-        guard let device else { return }
-        let t = model.doc.tiles
-        let region = model.doc.projection
+        guard let device, let region = model.shownProjection else {
+            tiles = []
+            model.tileStatus = "No tiles shown: pick them on the Map"
+            return
+        }
         var made: [TileModel] = [], missing: [String] = []
-        for y in t.y0...t.y1 {
-            for x in t.x0...t.x1 {
-                do {
-                    made.append(try TileModel.load(device: device, root: model.root, z: t.z, x: x, y: y, region: region))
-                } catch {
-                    missing.append("\(t.z)/\(x)/\(y): \(error.localizedDescription)")
-                }
+        for t in model.shown {
+            do {
+                made.append(try TileModel.load(device: device, root: model.root, z: t.z, x: t.x, y: t.y, region: region))
+            } catch {
+                missing.append(t.name)
             }
         }
-        let first = tiles.isEmpty
+        let before = Set(tiles.map { "\($0.x)/\($0.y)" })
         tiles = made
         let triangles = made.reduce(0) { $0 + $1.triangles }
         model.tileStatus = "\(made.count) tiles, \(triangles / 1000)k triangles" +
-            (missing.isEmpty ? "" : ". Not built: " + missing.joined(separator: "; "))
-        if first { frameTiles() }
+            (missing.isEmpty ? "" : ". Not built: " + missing.joined(separator: ", "))
+        if before != Set(made.map { "\($0.x)/\($0.y)" }) { frameTiles() }
     }
 
-    private var shown: [TileModel] {
-        model.tileScope == .all ? tiles : tiles.filter { $0.x == model.tileX && $0.y == model.tileY }
-    }
+    private var shown: [TileModel] { tiles }
 
     /// The camera over the tiles shown, looking down at a slant.
     func frameTiles() {
@@ -364,13 +364,32 @@ final class TileView: MTKView {
             model.tileStatus = String(format: "Flight speed %.0f m/s", speed)
         } else {
             let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 100 : event.scrollingDeltaY / 10
-            distance = min(20000, max(5, distance * exp(-dy)))
+            zoom(by: exp(-dy), at: convert(event.locationInWindow, from: nil))
         }
         needsDisplay = true
     }
 
     override func magnify(with event: NSEvent) {
-        distance = min(20000, max(5, distance / (1 + event.magnification)))
+        zoom(by: 1 / (1 + event.magnification), at: convert(event.locationInWindow, from: nil))
+    }
+
+    /// Zooms toward the ground under the cursor, as the engine does: the
+    /// camera comes closer along the way to that point, which stays under
+    /// the cursor. Off the ground, toward the target.
+    private func zoom(by factor: Double, at p: NSPoint) {
+        let k = min(20000, max(5, distance * factor)) / distance
+        let w = max(Double(bounds.width), 1), h = max(Double(bounds.height), 1)
+        let f = forward
+        let right = simd_normalize(simd_cross(f, SIMD3(0, 1, 0)))
+        let up = simd_cross(right, f)
+        let t = tan(25 * Double.pi / 180)
+        let ray = f + right * ((Double(p.x) / w * 2 - 1) * t * w / h) + up * ((Double(p.y) / h * 2 - 1) * t)
+        let e = eye
+        if ray.y < -1e-3 {
+            let ground = e + ray * (-e.y / ray.y)
+            target = ground + (target - ground) * k
+        }
+        distance *= k
         needsDisplay = true
     }
 
