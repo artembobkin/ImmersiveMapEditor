@@ -6,3 +6,4 @@ build/
 .swiftpm/xcode/package.xcworkspace/
 .swiftpm/configuration/
 xcuserdata/
+/.worktrees/
