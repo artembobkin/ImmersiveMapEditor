@@ -22,3 +22,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The target also translates robust 1.2.0 (https://github.com/georust/robust),
+Copyright (c) 2017 The Spade Developers and Copyright (c) 2020 The GeoRust
+Project Developers, and float_next_after 1.0.0 (https://crates.io/crates/float_next_after),
+Copyright (c) 2020 Scripta Qumranica Electronica, created by Bronson
+Brown-deVost, both used under the MIT License above. Its `Support/` folder
+translates pieces of the Rust standard library (`BinaryHeap`, `binary_search`,
+the insertion sort), Copyright (c) The Rust Project Developers, used under the
+MIT License above.
