@@ -1,6 +1,7 @@
 import AppKit
 
-/// Runs the pipeline (pipeline.py) in the project's folder and shows its
+/// Runs the pipeline (the `tilepipeline` program next to the editor) on the
+/// workspace and shows its
 /// output as it comes, so a correction can be seen in the built tiles.
 final class BuildRunner {
     let window: NSWindow
@@ -29,10 +30,10 @@ final class BuildRunner {
         text.string = ""
         let p = Process()
         // Homebrew's or the system's: the pipeline needs only the standard library.
-        let python = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/usr/bin/python3"
-        p.executableURL = URL(fileURLWithPath: python)
-        p.arguments = ["-u"] + arguments
+        // Built with the editor, in the same folder (or the app's MacOS folder).
+        let tool = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("tilepipeline")
+        p.executableURL = tool
+        p.arguments = ["--root", root.path] + arguments
         p.currentDirectoryURL = root
         let pipe = Pipe()
         p.standardOutput = pipe
@@ -49,7 +50,7 @@ final class BuildRunner {
                 done()
             }
         }
-        append("$ \(python) \(arguments.joined(separator: " "))\n")
+        append("$ tilepipeline \(arguments.joined(separator: " "))\n")
         do {
             try p.run()
             process = p

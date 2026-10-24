@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 root = url
             }
         }
-        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("pipeline.py").path) else {
+        guard FileManager.default.fileExists(atPath: root.appendingPathComponent("data").path) else {
             openWorkspace(nil)
             return
         }
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.message = "A TilePipeline folder (the one with pipeline.py)"
+        panel.message = "A TilePipeline folder (the one with data/, roads/, out/)"
         if panel.runModal() == .OK, let url = panel.url {
             start(url)
         } else if window == nil {
@@ -150,7 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         build = runner
         let workspace = session.workspace
         workspace.building = true
-        runner.run(root: workspace.root, arguments: ["pipeline.py", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }) {
+        runner.run(root: workspace.root, arguments: ["build", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }) {
             workspace.building = false
             workspace.scan()
             let built = tiles.filter { workspace.built.contains($0) }

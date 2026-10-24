@@ -2,11 +2,14 @@
 # Builds the editor and wraps it into build/Immersive Map Editor.app.
 set -e
 cd "$(dirname "$0")"
-swift build -c release
+swift build -c release --product ImmersiveMapEditor
+swift build -c release --product tilepipeline
 APP="build/Immersive Map Editor.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ImmersiveMapEditor "$APP/Contents/MacOS/ImmersiveMapEditor"
+# The pipeline the editor runs to build tiles, beside it.
+cp .build/release/tilepipeline "$APP/Contents/MacOS/tilepipeline"
 # The icon: Icon/AppIcon.png (drawn by Icon/make_icon.swift) at every size macOS asks for.
 SET=build/AppIcon.iconset
 rm -rf "$SET" && mkdir -p "$SET"
