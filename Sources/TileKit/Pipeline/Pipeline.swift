@@ -50,6 +50,8 @@ public enum Pipeline {
     public static func ensureRoads(_ paths: WorkspacePaths, z: Int, tiles: [(Int, Int)]) throws -> [String] {
         var seeded: [String] = []
         for (x, y) in tiles where RoadDocument.find(z: z, x: x, y: y, in: paths) == nil {
+            // Only a tile with no road document: one there is never seeded again.
+            Progress.report("Seeding the roads of \(z)/\(x)/\(y): it has no road document")
             _ = try Seed.run(paths, z: z, x: x, y: y)
             seeded.append("\(z)/\(x)/\(y)")
         }
@@ -64,7 +66,6 @@ public enum Pipeline {
                 try Fetch.tile(paths, z: z, x: x, y: y, force: options.refetch)
             }
         }
-        Progress.report("Seeding the roads where no document holds them")
         let seeded = try ensureRoads(paths, z: z, tiles: tiles)
         if !seeded.isEmpty { print("roads seeded for " + seeded.joined(separator: ", ")) }
         let indexURL = out.appendingPathComponent("index.json")

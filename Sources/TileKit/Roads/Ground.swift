@@ -17,7 +17,7 @@ public enum Ground {
     public static func document(_ osm: Osm, _ tile: Tile, work: Geometry, paths: WorkspacePaths,
                                 url: URL? = nil) throws -> RoadDocument {
         if let url = url ?? RoadDocument.find(z: tile.z, x: tile.x, y: tile.y, in: paths) {
-            print("[ground] roads from \(url.lastPathComponent)")
+            print("[ground] roads laid from the road document, as it is: \(url.path.components(separatedBy: "/tiles/").last ?? url.lastPathComponent)")
             return try RoadDocument.read(url)
         }
         print("[ground] no road document holds the tile: seeded from its own streets/")
