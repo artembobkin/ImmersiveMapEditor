@@ -1,8 +1,7 @@
 import Foundation
 
 /// Where the build reads and writes: the app's data folder (its workspace,
-/// "Immersive Map Editor Data" by default) and the hand-made models of
-/// Modeling. Passed to whatever reads or writes a file, never kept in a
+/// "Immersive Map Editor Data" by default), everything in it. Passed to whatever reads or writes a file, never kept in a
 /// global, so two workspaces can be built side by side and every function
 /// says what it touches.
 ///
@@ -20,15 +19,9 @@ import Foundation
 ///   config/                         what OSM shows but the place does not have
 public struct WorkspacePaths: Sendable {
     public let root: URL
-    /// Hand-made models of ~/Desktop/Modeling, read only.
-    public let modeling: URL
 
-    public static let defaultModeling = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Desktop/Modeling")
-
-    public init(root: URL, modeling: URL = WorkspacePaths.defaultModeling) {
+    public init(root: URL) {
         self.root = root.standardizedFileURL
-        self.modeling = modeling
     }
 
     public var landmarks: URL { root.appendingPathComponent("landmarks") }

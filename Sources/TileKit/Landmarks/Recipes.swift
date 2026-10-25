@@ -2,8 +2,8 @@ import Foundation
 import Geometry
 import GLTF
 
-/// The landmark models' recipes (landmarks/models.json) and where the
-/// models are (their placement.json, in Modeling and in landmarks/models/).
+/// The landmark models' recipes (landmarks/models.json of the data folder)
+/// and where the models are: the tile's own landmarks/ folders.
 extension Imported {
     static func recipes(_ paths: WorkspacePaths) -> [String: [String: Any]] {
         let url = paths.landmarks.appendingPathComponent("models.json")
@@ -28,42 +28,30 @@ extension Imported {
         return out
     }
 
-    /// The placements of the models near `work`.
+    /// The placements of the tile's own landmarks: each folder of its
+    /// landmarks/ (made in the editor's Buildings view) with a model in it.
+    /// Its landmark.json says where it stands (`centre`, longitude and
+    /// latitude: the model's origin) and what of OSM it stands for (its
+    /// `buildings`' `osm` ids, left out of the build); its model is the
+    /// first GLB of the folder, in metres around that origin, +Y up. A
+    /// landmark with no model yet is left alone: its buildings are built as
+    /// any other.
     static func placements(_ tile: Tile, _ work: Geometry, _ paths: WorkspacePaths) -> [Placement] {
-        let (x0, y0, x1, y1) = work.buffer(modelReach).bounds
         let fm = FileManager.default
-        var files: [String] = []
-        let base = paths.modeling.appendingPathComponent("14")
-        if let walk = fm.enumerator(at: base, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-            for case let url as URL in walk where url.lastPathComponent == "placement.json" {
-                // 14/*/*/**/placement.json: two folders at least below 14.
-                if url.pathComponents.count - base.pathComponents.count >= 3 { files.append(url.path) }
-            }
-        }
-        files.sort()
-        let own = paths.landmarks.appendingPathComponent("models")
-        files += ((try? fm.contentsOfDirectory(atPath: own.path)) ?? []).sorted().compactMap { name in
-            let p = own.appendingPathComponent(name).appendingPathComponent("placement.json").path
-            return fm.fileExists(atPath: p) ? p : nil
-        }
+        let root = paths.tileLandmarks(z: tile.z, x: tile.x, y: tile.y)
         var found: [Placement] = []
-        for path in files where !path.contains("_revisions") && !path.contains("/sources/") {
-            guard let data = fm.contents(atPath: path),
-                  let p = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let o = p["origin"] as? [String: Any], let lat = (o["latitude"] as? NSNumber)?.doubleValue,
-                  let lon = (o["longitude"] as? NSNumber)?.doubleValue, let model = p["model"] as? String, !model.isEmpty
+        for name in ((try? fm.contentsOfDirectory(atPath: root.path)) ?? []).sorted() {
+            let folder = root.appendingPathComponent(name)
+            guard let data = fm.contents(atPath: folder.appendingPathComponent("landmark.json").path),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let centre = json["centre"] as? [Double], centre.count == 2,
+                  let glb = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+                    .filter({ $0.pathExtension.lowercased() == "glb" }).sorted(by: { $0.path < $1.path }).first
             else { continue }
-            let xy = tile.metres(lat: lat, lon: lon)
-            let glb = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent(model)
-            guard x0 <= xy.x, xy.x <= x1, y0 <= xy.y, xy.y <= y1, fm.fileExists(atPath: glb.path) else { continue }
-            var ids = Set<String>()
-            if let r = p["replaces"] as? [String: [Any]] {
-                for v in r.values { for i in v { ids.insert("\(i)") } }
-            } else if let r = p["replaces"] as? [Any] {
-                for i in r { ids.insert("\(i)") }
-            }
-            found.append(Placement(id: p["id"] as? String ?? "", glb: glb, origin: xy, latitude: lat,
-                                   altitude: (p["altitude_m"] as? NSNumber)?.doubleValue ?? 0, replaces: ids))
+            let (lon, lat) = (centre[0], centre[1])
+            let replaces = Set((json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String })
+            found.append(Placement(id: name, glb: glb, origin: tile.metres(lat: lat, lon: lon), latitude: lat,
+                                   altitude: (json["altitude_m"] as? NSNumber)?.doubleValue ?? 0, replaces: replaces))
         }
         return found
     }

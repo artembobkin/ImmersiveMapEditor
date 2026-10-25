@@ -2,15 +2,14 @@ import Foundation
 import Geometry
 import GLTF
 
-/// Landmarks: the hand-made models of ~/Desktop/Modeling, read only, never
-/// changed there, and the downloaded models of landmarks/models/ (fitted to
-/// OSM by the fit tool), each fitted to the tile by hand through its recipe
-/// in landmarks/models.json. Every model has a `placement.json` (its GLB,
-/// the coordinate of its origin and the OSM elements it replaces) and a GLB
-/// in metres around that origin.
+/// Landmarks: the models of the tile's own landmarks (its landmarks/<id>/
+/// folders, made in the editor's Buildings view: a landmark.json of where it
+/// stands and what of OSM it stands for, and its model, a GLB in metres
+/// around that place), each fitted to the tile through its recipe in the
+/// data folder's landmarks/models.json, or the defaults. Nothing outside the
+/// app's data folder is read (the user, 2026-10-25).
 ///
-/// A model whose origin lies within `modelReach` of the work area is brought
-/// into the tile the way the engine's baker places it: its origin moved to
+/// A model is brought into the tile the way the engine's baker places it: its origin moved to
 /// its coordinate, its metres scaled by the Mercator scale there against the
 /// tile's, standing on the ground. The OSM buildings it replaces are left
 /// out of the procedural build.
