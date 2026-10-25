@@ -19,6 +19,7 @@ extension Imported {
             let f = Face()
             f.corners = t.corners.map { $0 * scale + offset }
             f.image = t.image
+            f.material = t.material
             f.uvs = t.uvs
             f.colour = f.image != nil ? mainColour(f, images) : t.base
             let n = (f.corners[1] - f.corners[0]).cross(f.corners[2] - f.corners[0])

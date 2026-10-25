@@ -26,8 +26,9 @@ import Geometry
 ///                  "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
 ///                 {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18,
 ///                  "height": 4, "depth": 2, "colour": "lm_cream"},
-///                 {"kind": "statue", "at": [x, y], "base": 23, "height": 5, "width": 3,
-///                  "colour": "lm_dark"},
+///                 {"kind": "statue", "shape": "figure" | "horse" | "quadriga" | "equestrian" | "obelisk"
+///                                             | "cross" | "star", "at": [x, y], "heading": 180,
+///                  "base": 23, "pedestal": 1, "height": 5, "width": 3, "colour": "lm_dark"},
 ///                 {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2,
 ///                  "colour": "lm_stone"},
 ///                 {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4,
@@ -91,6 +92,11 @@ public struct LandmarkRecipe: Codable {
         public var columns: Int?
         public var count: Int?
         public var colour: String?
+        /// A statue's shape, which way it faces (a compass bearing) and the
+        /// pedestal under it.
+        public var shape: String?
+        public var heading: Double?
+        public var pedestal: Double?
     }
 
     public init() {}
@@ -110,18 +116,25 @@ public struct LandmarkRecipe: Codable {
                  "base": 0, "top": 23, "colour": "lm_cream",
                  "plinth": {"height": 1.5, "depth": 0.15, "colour": "lm_stone"},
                  "cornice": {"height": 0.8, "depth": 0.4, "colour": "lm_white"},
-                 "windows": {"storeys": 3, "spacing": 3.5, "width": 1.4, "height": 2.4, "arched": false, "colour": "lm_dark"},
+                 "windows": {"storeys": 3, "spacing": 3.5, "width": 1.4, "height": 2.4, "arched": false},
                  "roof": {"shape": "flat|gabled|skillion|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green"}}],
      "features": [{"kind": "colonnade", "from": [x, y], "to": [x, y], "base": 1.5, "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
                   {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18, "height": 4, "depth": 2, "colour": "lm_cream"},
-                  {"kind": "statue", "at": [x, y], "base": 23, "height": 5, "width": 3, "colour": "lm_dark"},
+                  {"kind": "statue", "shape": "quadriga", "at": [x, y], "heading": 180, "base": 23, "pedestal": 1, "height": 5, "width": 8, "colour": "lm_dark"},
                   {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2, "colour": "lm_stone"},
                   {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4, "height": 1.5, "count": 5, "colour": "lm_stone"}]}
 
     - A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
-    standing proud, window panes storey by storey on every wall long enough, and a roof on its top. Gabled, skillion (one slope, \
+    standing proud, windows storey by storey on every wall long enough, and a roof on its top. A window is a recess cut \
+    into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
+    reads as storeys of windows, with the storeys and spacing the photos show. Gabled, skillion (one slope, \
     rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
     outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.
+    - A statue is a sculpture by its shape: figure (a standing person), horse, quadriga (a chariot drawn by four horses, \
+    as over a theatre's portico), equestrian (a rider on a horse), obelisk, cross (a church), star (a tower's). It faces \
+    `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
+    under it) with an optional `pedestal`, `height` tall and about `width` wide. Use it for the sculpture that makes the \
+    building recognisable, nothing else.
     - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
     outside on the right. Steps rise from the ground at `depth` to the right of the line up to `height` at the line.

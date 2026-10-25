@@ -59,6 +59,8 @@ public enum Imported {
         public var uvs: [P2]?
         public var image: String?
         public var colour: (Int, Int, Int) = (200, 200, 200)
+        /// Its material's name: a generated model names its palette colour.
+        public var material: String?
         public var area = 0.0
         public var normal = V3.zero
     }
@@ -102,6 +104,11 @@ public enum Imported {
             }
             let recipe = recipe(place.id, book)
             let colours = recipe["colours"] as? [String: String] ?? [:]
+            // A model generated from a recipe names every face's palette colour
+            // in its material (a wall's family, its reveal and glass tones, the
+            // sill's rim), and has its own windows.
+            let generated = FileManager.default.fileExists(atPath: place.glb.deletingLastPathComponent()
+                .appendingPathComponent("recipe.json").path)
             replaced.formUnion(place.replaces)
             let group = groups(faces, panelAngle)
             // Votes per panel, in the order the colours came, so a tie goes
@@ -121,6 +128,11 @@ public enum Imported {
                 chosen[g] = best.0
             }
             var fam = group.map { chosen[$0]! }
+            if generated {
+                for (i, f) in faces.enumerated() {
+                    if let name = f.material, Palette.names.contains(name) || Palette.names.contains(name + ".lit") { fam[i] = name }
+                }
+            }
             // A roof the atlas paints blue-grey is not glass: the recipe's
             // flat_glass repaints each plane holding a large glass face looking
             // up (a roof, a slope), while the small facets of a dome or a vault
@@ -157,9 +169,6 @@ public enum Imported {
             }
             let height = faces.isEmpty ? 0 : faces.flatMap { $0.corners.map(\.z) }.max()! - Level.ground
             let sky = recipe["skyscraper"] as? Bool ?? (height > skyscraper)
-            // A model generated from a recipe has its own windows.
-            let generated = FileManager.default.fileExists(atPath: place.glb.deletingLastPathComponent()
-                .appendingPathComponent("recipe.json").path)
             models.append(Model(id: place.id, origin: place.origin, faces: faces, images: images, family: fam,
                                 windows: recipe["windows"] as? Bool ?? !generated, fill: recipe["fill_windows"] as? Bool ?? !generated,
                                 bays: recipe["bays"] as? [String: Any], glass: sky ? "lm_sky_glass" : nil))
@@ -247,7 +256,7 @@ public enum Imported {
             }
             for (i, f) in faces.enumerated() where !done.contains(i) {
                 let fam = family[i]
-                let n = fam == "lm_glass" ? b.flat(f.corners, m.glass ?? fam, kind) : b.sided(f.corners, fam, kind)
+                let n = fam == "lm_glass" ? b.flat(f.corners, m.glass ?? fam, kind) : b.paint(f.corners, fam, kind)
                 if n > 0 { made += 1 }
             }
         }

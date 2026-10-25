@@ -30,6 +30,8 @@ public enum GLTF {
         public var uvs: [SIMD2<Double>]?
         public var image: String?
         public var base: (Int, Int, Int)
+        /// The material's name, when it has one.
+        public var material: String?
     }
 
     /// An image as RGBA floats 0...1, rows from the bottom.
@@ -235,8 +237,9 @@ public enum GLTF {
             return key
         }
 
-        func material(_ index: Int?) -> (String?, (Int, Int, Int)) {
-            guard let index else { return (nil, (200, 200, 200)) }
+        func material(_ index: Int?) -> (String?, (Int, Int, Int), String?) {
+            guard let index else { return (nil, (200, 200, 200), nil) }
+            let name = doc.array("materials")[index]["name"] as? String
             let pbr = doc.array("materials")[index]["pbrMetallicRoughness"] as? [String: Any] ?? [:]
             let lin = (pbr["baseColorFactor"] as? [Double] ?? [1, 1, 1, 1]).prefix(3).map { $0 }
             func srgb(_ c: Double) -> Int {
@@ -244,8 +247,8 @@ public enum GLTF {
             }
             let base = (srgb(lin[0]), srgb(lin[1]), srgb(lin[2]))
             guard let tex = pbr["baseColorTexture"] as? [String: Any], let t = tex["index"] as? Int,
-                  let source = doc.array("textures")[t]["source"] as? Int else { return (nil, base) }
-            return (image(source), base)
+                  let source = doc.array("textures")[t]["source"] as? Int else { return (nil, base, name) }
+            return (image(source), base, name)
         }
 
         var out: [Triangle] = []
@@ -256,11 +259,11 @@ public enum GLTF {
                 let v = accessor(doc, a).values
                 return (0..<(v.count / 2)).map { SIMD2(v[2 * $0], 1 - v[2 * $0 + 1]) }
             }
-            let (img, base) = material(prim["material"] as? Int)
+            let (img, base, name) = material(prim["material"] as? Int)
             for t in stride(from: 0, to: idx.count, by: 3) {
                 let tri = [idx[t], idx[t + 1], idx[t + 2]]
                 out.append(Triangle(corners: tri.map { pos[$0] }, uvs: uv.map { u in tri.map { u[$0] } },
-                                    image: uv != nil ? img : nil, base: base))
+                                    image: uv != nil ? img : nil, base: base, material: name))
             }
         }
         return (out, images)

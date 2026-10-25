@@ -62,6 +62,17 @@ public enum Palette {
         ("lm_stone", "#ABA7A3"), ("lm_dark", "#4B4752"),
     ]
 
+    /// Every colour name the palette has.
+    public static let names: Set<String> = Set(all.map(\.0))
+
+    /// A colour's hex by its name: a cell's, or a wall tone's family
+    /// ("lm_cream.reveal": its side tone) for a preview.
+    public static func hex(_ name: String) -> String? {
+        if let h = hexByName[name] { return h }
+        return hexByName[name + ".side"] ?? hexByName[name + ".lit"]
+    }
+    static let hexByName: [String: String] = Dictionary(all, uniquingKeysWith: { a, _ in a })
+
     public static func rgb(_ hex: String) -> (Int, Int, Int) {
         let h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         let v = Int(h, radix: 16) ?? 0

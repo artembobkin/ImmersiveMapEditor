@@ -34,6 +34,9 @@ public enum LandmarkGenerator {
         }
     }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
+    public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
+    /// How deep a window is cut into its wall.
+    static let windowDepth = 0.25
 
     /// What is wrong with a recipe, one line each: nothing when it builds.
     public static func check(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
@@ -65,6 +68,7 @@ public enum LandmarkGenerator {
                 if (f.height ?? 0) <= 0 { out.append("\(at): needs a height") }
             case "statue":
                 if f.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
+                if let shape = f.shape, !statueShapes.contains(shape) { out.append("\(at): shape \(shape) is not one of \(statueShapes.joined(separator: ", "))") }
             case "box":
                 if (f.polygon?.count ?? 0) < 3 { out.append("\(at): needs a polygon of 3 points at least") }
                 if (f.top ?? 0) <= (f.base ?? 0) { out.append("\(at): top must be above base") }
@@ -118,9 +122,8 @@ public enum LandmarkGenerator {
         }
 
         public func write(_ url: URL, name: String) throws {
-            let hex = Dictionary(uniqueKeysWithValues: Palette.landmark)
             let parts = tris.keys.sorted().map { c -> GLTF.Part in
-                let (r, g, b) = Palette.rgb(hex[c] ?? "#FF00FF")
+                let (r, g, b) = Palette.rgb(Palette.hex(c) ?? "#FF00FF")
                 return GLTF.Part(material: .init(name: c, factor: [Double(r) / 255, Double(g) / 255, Double(b) / 255, 1]),
                                  tris: tris[c]!, uvs: nil)
             }
@@ -151,13 +154,72 @@ public enum LandmarkGenerator {
         }
 
         /// Walls of a ring from `z0` to `z1`, looking out (a counter-clockwise
-        /// ring's right).
-        func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
+        /// ring's right), with their windows cut in: a recess of windowDepth,
+        /// reveals a tone darker than the wall, the glass darker still, the
+        /// sill light, as an ordinary building's.
+        func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String, windows: LandmarkRecipe.Windows? = nil) {
             guard z1 > z0 else { return }
             for i in ring.indices {
-                let a = ring[i], b = ring[(i + 1) % ring.count]
-                face([V3(a.x, a.y, z0), V3(b.x, b.y, z0), V3(b.x, b.y, z1), V3(a.x, a.y, z1)], outward(a, b), colour)
+                let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
+                guard len > 1e-6 else { continue }
+                let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
+                // A point of the wall: along it, up, and in from its face.
+                func p(_ t: Double, _ z: Double, _ depth: Double = 0) -> V3 {
+                    let q = a + d * t - o2 * depth
+                    return V3(q.x, q.y, z)
+                }
+                let holes = windows.map { openings(len, z0, z1, $0) } ?? []
+                guard !holes.isEmpty else {
+                    face([p(0, z0), p(len, z0), p(len, z1), p(0, z1)], o, colour)
+                    continue
+                }
+                let shape = Geometry.polygon([P2(0, z0), P2(len, z0), P2(len, z1), P2(0, z1), P2(0, z0)],
+                                             holes: holes.map { $0 + [$0[0]] })
+                for t in shape.constrainedDelaunay() where t.count == 3 {
+                    tri(p(t[0].x, t[0].y), p(t[1].x, t[1].y), p(t[2].x, t[2].y), o, colour)
+                }
+                for hole in holes {
+                    let c = hole.reduce(P2.zero, +) / Double(hole.count)
+                    for k in hole.indices {
+                        let e0 = hole[k], e1 = hole[(k + 1) % hole.count]
+                        let sill = abs(e0.y - e1.y) < 1e-9 && e0.y < c.y
+                        let dir = c - (e0 + e1) / 2
+                        face([p(e0.x, e0.y), p(e1.x, e1.y), p(e1.x, e1.y, LandmarkGenerator.windowDepth), p(e0.x, e0.y, LandmarkGenerator.windowDepth)],
+                             V3(d.x * dir.x, d.y * dir.x, dir.y), sill ? "rim" : "\(colour).reveal")
+                    }
+                    face(hole.map { p($0.x, $0.y, LandmarkGenerator.windowDepth) }, o, "\(colour).glass")
+                }
             }
+        }
+
+        /// The openings of a wall `len` long from `lo` to `hi`, in (along,
+        /// up): a row a storey, spaced along the wall, never at its ends, an
+        /// arched one topped by a half circle.
+        func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
+            guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
+            let storey = (hi - lo) / Double(w.storeys)
+            let height = min(w.height, storey * 0.65), width = min(w.width, w.spacing * 0.7), h = width / 2
+            let n = Int((len - 1) / w.spacing)
+            guard n >= 1, height > 0.3 else { return [] }
+            var out: [[P2]] = []
+            for k in 0..<n {
+                let t = len / 2 + (Double(k) - Double(n - 1) / 2) * w.spacing
+                for s in 0..<w.storeys {
+                    let zc = lo + storey * (Double(s) + 0.5), zb = zc - height / 2
+                    if w.arched == true, height > width {
+                        let zt = zb + height - h
+                        var ring = [P2(t - h, zb), P2(t + h, zb), P2(t + h, zt)]
+                        for j in 1..<6 {
+                            let a = Double.pi * Double(j) / 6
+                            ring.append(P2(t + h * cos(a), zt + h * sin(a)))
+                        }
+                        out.append(ring + [P2(t - h, zt)])
+                    } else {
+                        out.append([P2(t - h, zb), P2(t + h, zb), P2(t + h, zb + height), P2(t - h, zb + height)])
+                    }
+                }
+            }
+            return out
         }
 
         func prism(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
@@ -172,7 +234,7 @@ public enum LandmarkGenerator {
             let plinth = m.plinth.map { min($0.height, (m.top - m.base) * 0.4) } ?? 0
             let cornice = m.cornice.map { min($0.height, (m.top - m.base) * 0.3) } ?? 0
             let lo = m.base + plinth, hi = m.top - cornice
-            walls(ring, lo, hi, m.colour)
+            walls(ring, lo, hi, m.colour, windows: m.windows)
             if m.base > 0.01 { cap(ring, m.base, up: false, m.colour) }
             if let p = m.plinth, plinth > 0 {
                 let out = grown(ring, p.depth ?? 0.15)
@@ -186,47 +248,7 @@ public enum LandmarkGenerator {
                 cap(out, holes: [ring], hi, up: false, c.colour ?? "lm_white")
                 cap(out, holes: [ring], m.top, up: true, c.colour ?? "lm_white")
             }
-            if let w = m.windows { windows(ring, lo, hi, w, wall: m.colour) }
             roof(ring, m.top, m.roof)
-        }
-
-        /// Window panes standing a little proud of the walls, storey by
-        /// storey, spaced along every wall long enough.
-        func windows(_ ring: [P2], _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows, wall: String) {
-            guard w.storeys >= 1, hi - lo > 1 else { return }
-            let colour = w.colour ?? "lm_dark", storey = (hi - lo) / Double(w.storeys)
-            let height = min(w.height, storey * 0.65), width = min(w.width, w.spacing * 0.7), proud = 0.08
-            for i in ring.indices {
-                let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
-                let n = Int((len - 1) / w.spacing)
-                guard n >= 1 else { continue }
-                let d = (b - a) / len, o = outward(a, b), out2 = P2(o.x, o.y)
-                for k in 0..<n {
-                    let t = len / 2 + (Double(k) - Double(n - 1) / 2) * w.spacing
-                    for s in 0..<w.storeys {
-                        let zc = lo + storey * (Double(s) + 0.5), z0 = zc - height / 2
-                        let z1 = z0 + height - (w.arched == true ? width / 2 : 0)
-                        func p(_ u: Double, _ z: Double, _ off: Double) -> V3 {
-                            let q = a + d * (t + u) + out2 * off
-                            return V3(q.x, q.y, z)
-                        }
-                        let h = width / 2
-                        face([p(-h, z0, proud), p(h, z0, proud), p(h, z1, proud), p(-h, z1, proud)], o, colour)
-                        face([p(-h, z0, 0), p(h, z0, 0), p(h, z0, proud), p(-h, z0, proud)], V3(0, 0, -1), colour)
-                        face([p(-h, z1, 0), p(h, z1, 0), p(h, z1, proud), p(-h, z1, proud)], V3(0, 0, 1), colour)
-                        face([p(-h, z0, 0), p(-h, z1, 0), p(-h, z1, proud), p(-h, z0, proud)], V3(-d.x, -d.y, 0), colour)
-                        face([p(h, z0, 0), p(h, z1, 0), p(h, z1, proud), p(h, z0, proud)], V3(d.x, d.y, 0), colour)
-                        if w.arched == true {
-                            let steps = 4
-                            for j in 0..<steps {
-                                let a0 = Double.pi * Double(j) / Double(steps), a1 = Double.pi * Double(j + 1) / Double(steps)
-                                tri(p(0, z1, proud), p(h * cos(a0), z1 + h * sin(a0), proud),
-                                    p(h * cos(a1), z1 + h * sin(a1), proud), o, colour)
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // MARK: Roofs
@@ -363,10 +385,16 @@ public enum LandmarkGenerator {
                 if base > 0.01 { face([v(a, base), v(b, base), v(b + n, base), v(a + n, base)], -up, colour) }
             case "statue":
                 guard let at = p2(f.at) else { return }
-                let w = (f.width ?? 2) / 2, h = f.height ?? 4
-                let ring = (0..<8).map { k -> P2 in let t = Double(k) / 8 * 2 * .pi; return at + P2(cos(t), sin(t)) * w }
-                if base > 0.01 { cap(ring, base, up: false, colour) }
-                loft(ring, at, base, [(1, 0), (0.7, 0.15 * h), (0.55, 0.7 * h), (0.3, 0.76 * h), (0.38, 0.88 * h), (0, h)], colour)
+                let h = f.height ?? 4, w = f.width ?? h * 0.6
+                let heading = (f.heading ?? 180) * .pi / 180
+                // Facing, and its left.
+                let u = P2(sin(heading), cos(heading)), v = P2(-u.y, u.x)
+                var z = base
+                if let pedestal = f.pedestal, pedestal > 0 {
+                    box(at, u, v, w, w, z, z + pedestal, colour)
+                    z += pedestal
+                }
+                sculpture(f.shape ?? "figure", at, u, v, z, h, w, colour)
             case "box":
                 let ring = (f.polygon ?? []).compactMap(p2)
                 guard ring.count >= 3, let top = f.top, top > base else { return }
@@ -398,6 +426,82 @@ public enum LandmarkGenerator {
                 }
             default:
                 break
+            }
+        }
+
+        // MARK: Sculptures
+
+        /// A box standing on `c`, `lu` along `u` by `lv` along `v`.
+        func box(_ c: P2, _ u: P2, _ v: P2, _ lu: Double, _ lv: Double, _ z0: Double, _ z1: Double, _ colour: String) {
+            let a = u * (lu / 2), b = v * (lv / 2)
+            prism(ccw([c - a - b, c + a - b, c + a + b, c - a + b]), z0, z1, colour)
+        }
+
+        /// A sculpture of a shape, `h` tall, facing `u`, standing at `c` on `z`.
+        func sculpture(_ shape: String, _ c: P2, _ u: P2, _ v: P2, _ z: Double, _ h: Double, _ w: Double, _ colour: String) {
+            switch shape {
+            case "horse":
+                horse(c, u, v, z, h, colour)
+            case "quadriga":
+                let hh = h * 0.72, step = max(w, hh * 1.4) / 4
+                for k in 0..<4 { horse(c + u * (h * 0.25) + v * ((Double(k) - 1.5) * step), u, v, z, hh, colour) }
+                box(c - u * (h * 0.7), u, v, h * 0.55, h * 0.65, z + h * 0.05, z + h * 0.5, colour)
+                box(c - u * (h * 0.45), u, v, h * 0.08, h * 0.65, z + h * 0.5, z + h * 0.62, colour)
+                figure(c - u * (h * 0.78), u, v, z + h * 0.45, h * 0.55, colour)
+            case "equestrian":
+                horse(c, u, v, z, h * 0.75, colour)
+                figure(c, u, v, z + h * 0.55, h * 0.45, colour)
+            case "obelisk":
+                let a = u * (w / 2), b = v * (w / 2)
+                loft(ccw([c - a - b, c + a - b, c + a + b, c - a + b]), c, z, [(1, 0), (0.62, h * 0.86), (0, h)], colour)
+            case "cross":
+                let t = max(0.08, h * 0.08)
+                box(c, u, v, t, t, z, z + h, colour)
+                box(c, u, v, t, h * 0.6, z + h * 0.68, z + h * 0.68 + t, colour)
+            case "star":
+                star(c, u, v, z + h / 2, h / 2, colour)
+            default:
+                figure(c, u, v, z, h, colour)
+            }
+        }
+
+        /// A standing person in three blocks: legs, torso, head.
+        func figure(_ c: P2, _ u: P2, _ v: P2, _ z: Double, _ h: Double, _ colour: String) {
+            box(c, u, v, h * 0.2, h * 0.3, z, z + h * 0.48, colour)
+            box(c, u, v, h * 0.22, h * 0.38, z + h * 0.48, z + h * 0.83, colour)
+            let r = h * 0.09
+            let head = (0..<8).map { k -> P2 in let t = Double(k) / 8 * 2 * .pi; return c + P2(cos(t), sin(t)) * r }
+            prism(head, z + h * 0.83, z + h, colour)
+        }
+
+        /// A horse `h` tall to its head, facing `u`: body, four legs, neck,
+        /// head and tail.
+        func horse(_ c: P2, _ u: P2, _ v: P2, _ z: Double, _ h: Double, _ colour: String) {
+            box(c, u, v, h * 1.0, h * 0.3, z + h * 0.45, z + h * 0.78, colour)
+            for du in [-0.38, 0.38] {
+                for dv in [-0.1, 0.1] { box(c + u * (h * du) + v * (h * dv), u, v, h * 0.09, h * 0.09, z, z + h * 0.46, colour) }
+            }
+            box(c + u * (h * 0.5), u, v, h * 0.2, h * 0.18, z + h * 0.66, z + h * 0.96, colour)
+            box(c + u * (h * 0.66), u, v, h * 0.3, h * 0.15, z + h * 0.8, z + h * 0.97, colour)
+            box(c - u * (h * 0.52), u, v, h * 0.08, h * 0.08, z + h * 0.5, z + h * 0.76, colour)
+        }
+
+        /// A five-pointed star standing upright, its face toward `u`, `r`
+        /// to a point, centred at `zc`.
+        func star(_ c: P2, _ u: P2, _ v: P2, _ zc: Double, _ r: Double, _ colour: String) {
+            let t = max(0.1, r * 0.2)
+            let pts: [(P2, Double)] = (0..<10).map { k in
+                let rr = k % 2 == 0 ? r : r * 0.4, a = Double.pi / 2 + Double(k) * .pi / 5
+                return (c + v * (rr * cos(a)), zc + rr * sin(a))
+            }
+            func p(_ q: (P2, Double), _ side: Double) -> V3 { let s = q.0 + u * (side * t / 2); return V3(s.x, s.y, q.1) }
+            let front = V3(u.x, u.y, 0), centre: (P2, Double) = (c, zc)
+            for k in 0..<10 {
+                let e0 = pts[k], e1 = pts[(k + 1) % 10]
+                tri(p(centre, 1), p(e0, 1), p(e1, 1), front, colour)
+                tri(p(centre, -1), p(e0, -1), p(e1, -1), -front, colour)
+                let mid = ((e0.0 + e1.0) / 2 - c, (e0.1 + e1.1) / 2 - zc)
+                face([p(e0, 1), p(e1, 1), p(e1, -1), p(e0, -1)], V3(mid.0.x, mid.0.y, mid.1), colour)
             }
         }
     }
