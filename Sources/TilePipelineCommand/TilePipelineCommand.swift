@@ -83,6 +83,9 @@ enum TilePipelineCommand {
                 let n = args.list.compactMap { Int($0) }
                 guard n.count == 3 else { usage() }
                 _ = try Seed.run(paths, z: n[0], x: n[1], y: n[2], force: force)
+            case "interface":
+                // The editor's check that this pipeline is its own.
+                print(PipelineInterface.version)
             case "migrate":
                 guard let from = args.list.first else { usage() }
                 try Migration.run(from: URL(fileURLWithPath: (from as NSString).expandingTildeInPath), to: paths)
