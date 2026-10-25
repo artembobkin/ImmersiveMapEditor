@@ -134,7 +134,9 @@ final class Session {
             landmarkView = LandmarkView.make()
             landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
         }
-        landmarkView?.show(candidates.first { $0.id == pickedLandmark }?.model)
+        // Its model, or its OSM buildings as boxes while it has none.
+        guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return landmarkView?.show(nil) ?? () }
+        landmarkView?.show(landmark.model.map { .model($0) } ?? .boxes(id: landmark.id, landmark.boxes))
     }
 
     /// The tile open is what every view works on, alone: entering the Roads

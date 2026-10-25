@@ -16,7 +16,7 @@ struct LandmarksSections: View {
                 Button { session.pickedLandmark = landmark.id } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(landmark.name)
-                        Text(verbatim: "\(landmark.buildings.count) buildings · " + (landmark.model == nil ? "no model yet" : landmark.model!.lastPathComponent))
+                        Text(verbatim: "\(landmark.buildings.count) buildings · " + (landmark.model == nil ? "no model yet: its OSM boxes" : landmark.model!.lastPathComponent))
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

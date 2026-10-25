@@ -1,4 +1,5 @@
 import AppKit
+import Geometry
 import GLTF
 import MetalKit
 import simd
@@ -12,8 +13,23 @@ final class LandmarkView: MTKView {
     private var controller = CameraController()
     private var lastDrag: NSPoint?
     private var turning = false
-    /// The model shown, and the one on its way.
-    private(set) var url: URL?
+    /// What to show: a model's GLB, or a landmark's OSM buildings as boxes
+    /// while it has no model.
+    enum Source: Equatable {
+        case model(URL)
+        case boxes(id: String, [TileLandmark.Box])
+
+        static func == (a: Source, b: Source) -> Bool {
+            switch (a, b) {
+            case let (.model(x), .model(y)): x == y
+            case let (.boxes(x, _), .boxes(y, _)): x == y
+            default: false
+            }
+        }
+    }
+
+    /// What is shown, and what is on its way.
+    private(set) var source: Source?
     private var mesh: LandmarkRenderer.Model?
     /// What went wrong reading the model, or how big it is.
     var status: (String) -> Void = { _ in }
@@ -40,27 +56,37 @@ final class LandmarkView: MTKView {
 
     private var size: SIMD2<Double> { SIMD2(Double(bounds.width), Double(bounds.height)) }
 
-    /// Shows a model: read off the main thread, then framed.
-    func show(_ glb: URL?) {
-        guard glb != url else { return }
-        url = glb
+    /// Shows a model or boxes: made off the main thread, then framed.
+    func show(_ next: Source?) {
+        guard next != source else { return }
+        source = next
         mesh = nil
-        guard let glb else { return }
+        guard let next else { return }
         let device = renderer.device
-        status("Reading \(glb.lastPathComponent)…")
+        let name: String
+        switch next {
+        case .model(let url): name = url.lastPathComponent
+        case .boxes: name = "OSM boxes"
+        }
+        status("Reading \(name)…")
         Task.detached {
-            let result = Result { try LandmarkRenderer.Model.load(glb, device: device) }
+            let result = Result {
+                switch next {
+                case .model(let url): try LandmarkRenderer.Model.load(url, device: device)
+                case .boxes(_, let boxes): try LandmarkRenderer.Model.extruded(boxes, device: device)
+                }
+            }
             await MainActor.run {
-                guard self.url == glb else { return }
+                guard self.source == next else { return }
                 switch result {
                 case .success(let model):
                     self.mesh = model
                     self.frameModel()
                     let s = model.size
                     self.status(String(format: "%@: %dk triangles, %.0f × %.0f m, %.0f m high",
-                                       glb.lastPathComponent, model.triangles / 1000, s.x, s.z, s.y))
+                                       name, model.triangles / 1000, s.x, s.z, s.y))
                 case .failure(let error):
-                    self.status("Cannot read \(glb.lastPathComponent): \(error.localizedDescription)")
+                    self.status("Cannot read \(name): \(error.localizedDescription)")
                 }
             }
         }
@@ -69,6 +95,7 @@ final class LandmarkView: MTKView {
     /// A model rendered to a PNG without a window, framed as the view frames
     /// it: `--landmark-snapshot`.
     func snapshot(_ glb: URL, to out: URL, width: Int, height: Int) throws {
+        source = .model(glb)
         mesh = try LandmarkRenderer.Model.load(glb, device: renderer.device)
         frameModel()
         let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))
@@ -225,6 +252,50 @@ final class LandmarkRenderer {
                 parts.append(Part(vertices: buffer, count: v.count / 8, texture: texture, colour: SIMD4(f[0], f[1], f[2], 1)))
                 triangles += v.count / 24
             }
+            return try make(parts: parts, lo: lo, hi: hi, triangles: triangles, device: device)
+        }
+
+        /// Boxes extruded from outlines, as a map of OSM data shows
+        /// buildings: walls light, roofs a little darker.
+        static func extruded(_ boxes: [TileLandmark.Box], device: MTLDevice) throws -> Model {
+            var walls: [Float] = [], roofs: [Float] = []
+            var lo = SIMD3<Double>(repeating: .infinity), hi = -lo
+            // East, up, south: the view's axes.
+            func add(_ v: inout [Float], _ p: SIMD3<Double>, _ n: SIMD3<Double>) {
+                lo = simd_min(lo, p)
+                hi = simd_max(hi, p)
+                v += [Float(p.x), Float(p.y), Float(p.z), Float(n.x), Float(n.y), Float(n.z), 0, 0]
+            }
+            func at(_ q: Vec2, _ h: Double) -> SIMD3<Double> { SIMD3(q.x, h, -q.y) }
+            for box in boxes {
+                for rings in box.polygons where !rings.isEmpty && rings[0].count >= 3 {
+                    for ring in rings {
+                        for i in ring.indices {
+                            let a = ring[i], b = ring[(i + 1) % ring.count]
+                            let d = b - a
+                            guard simd_length(d) > 1e-6 else { continue }
+                            let n = simd_normalize(SIMD3(d.y, 0, d.x))
+                            let (a0, b0, a1, b1) = (at(a, box.base), at(b, box.base), at(a, box.top), at(b, box.top))
+                            for p in [a0, b0, b1, a0, b1, a1] { add(&walls, p, n) }
+                        }
+                    }
+                    let shape = Geometry.polygon(rings[0].map { P2($0.x, $0.y) }, holes: rings.dropFirst().map { $0.map { P2($0.x, $0.y) } })
+                    for t in shape.constrainedDelaunay() where t.count == 3 {
+                        for p in t { add(&roofs, at(Vec2(p.x, p.y), box.top), SIMD3(0, 1, 0)) }
+                    }
+                }
+            }
+            var parts: [Part] = []
+            for (v, colour) in [(walls, SIMD4<Float>(0.86, 0.84, 0.80, 1)), (roofs, SIMD4<Float>(0.66, 0.66, 0.70, 1))] where !v.isEmpty {
+                parts.append(Part(vertices: device.makeBuffer(bytes: v, length: v.count * 4)!, count: v.count / 8,
+                                  texture: nil, colour: colour))
+            }
+            return try make(parts: parts, lo: lo, hi: hi, triangles: (walls.count + roofs.count) / 24, device: device)
+        }
+
+        /// The model of its parts, over a ground plane under its foot.
+        private static func make(parts: [Part], lo: SIMD3<Double>, hi: SIMD3<Double>, triangles: Int,
+                                 device: MTLDevice) throws -> Model {
             guard !parts.isEmpty else { throw TileModel.Failure.glb("no triangles") }
             // The ground: a square under the model, a little below its foot.
             let c = (lo + hi) / 2, r = Float(max(hi.x - lo.x, hi.z - lo.z) * 1.5 + 40)

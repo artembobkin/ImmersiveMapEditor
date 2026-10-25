@@ -22,6 +22,35 @@ struct TileLandmark: Identifiable {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
     }
+
+    /// One of its OSM buildings as a box: its outline's polygons (rings in
+    /// metres around the landmark's centre, east and north), from its base
+    /// to its top.
+    struct Box {
+        let polygons: [[[Vec2]]]
+        let base, top: Double
+    }
+
+    /// Its OSM buildings as boxes, as a map of OSM data draws them in 3D:
+    /// its parts when it has any (the outline they stand in left out), else
+    /// its outlines, each from its min_height to its height (10 m a part or
+    /// 12 m a building that says none).
+    var boxes: [Box] {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("landmark.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let centre = json["centre"] as? [Double], centre.count == 2 else { return [] }
+        let all = json["buildings"] as? [[String: Any]] ?? []
+        let parts = all.filter { $0["part"] as? Bool == true }
+        let k = cos(centre[1] * .pi / 180) * 111_320.0
+        func metres(_ p: [Double]) -> Vec2 { Vec2((p[0] - centre[0]) * k, (p[1] - centre[1]) * 110_574) }
+        return (parts.isEmpty ? all : parts).map { b in
+            let outline = b["outline"] as? [[[[Double]]]] ?? []
+            let polygons = outline.map { $0.map { ring in Array(ring.dropLast()).filter { $0.count >= 2 }.map(metres) } }
+            let base = (b["min_height_m"] as? NSNumber)?.doubleValue ?? 0
+            let top = (b["height_m"] as? NSNumber)?.doubleValue ?? (b["part"] as? Bool == true ? 10 : 12)
+            return Box(polygons: polygons, base: base, top: max(top, base + 0.5))
+        }
+    }
 }
 
 enum LandmarkCandidates {
