@@ -1,6 +1,7 @@
 /// osm2lanes's `LaneSpec` (one lane: its type, direction, width and turns)
 /// with the typical widths, and the map configuration.
 
+import struct MuvLanes.Lane
 import StreetGeom
 
 public let normalLaneThickness = Distance(constMeters: 3.0)
@@ -8,25 +9,24 @@ let serviceRoadLaneThickness = Distance(constMeters: 2.0)
 public let sidewalkThickness = Distance(constMeters: 1.5)
 let shoulderThickness = Distance(constMeters: 0.5)
 
-/// One lane of a road. `muv` is the Muv lane osm2lanes keeps beside its own
-/// fields, carried as the JSON serde writes for it: the lane polygons output
-/// it as is. Rust compares it with the derived `PartialEq` of Muv's `Lane`;
-/// this port compares its JSON.
+/// One lane of a road. `lane` is the Muv lane osm2lanes keeps beside its
+/// own fields (none for a kerb it adds): the lane polygons write it as serde
+/// does, and lanes compare with its `PartialEq`, as in the Rust.
 public struct LaneSpec: Equatable, Sendable {
     public var lt: LaneType
     public var dir: Direction
     public var width: Distance
     /// No restriction indicated when empty.
     public var allowedTurns: TurnDirections
-    public var muv: JSONValue?
+    public var lane: MuvLanes.Lane?
 
     public init(lt: LaneType, dir: Direction, width: Distance, allowedTurns: TurnDirections = TurnDirections(),
-                muv: JSONValue? = nil) {
+                lane: MuvLanes.Lane? = nil) {
         self.lt = lt
         self.dir = dir
         self.width = width
         self.allowedTurns = allowedTurns
-        self.muv = muv
+        self.lane = lane
     }
 
     /// Likely widths for a lane type, the first the default.

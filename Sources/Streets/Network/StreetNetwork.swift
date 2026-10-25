@@ -73,7 +73,7 @@ public struct StreetNetwork {
     var intersectionIDCounter = 0
     var roadIDCounter = 0
 
-    public static func blank(laneSpecs: LaneSpecSource) -> StreetNetwork {
+    public static func blank(laneSpecs: LaneSpecSource = MuvLaneSpecs()) -> StreetNetwork {
         StreetNetwork(boundaryPolygon: .rectangle(1.0, 1.0), gpsBounds: GPSBounds(), config: MapConfig(),
                       laneSpecs: laneSpecs)
     }

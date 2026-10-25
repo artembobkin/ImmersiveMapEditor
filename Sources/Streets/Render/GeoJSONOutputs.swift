@@ -1,6 +1,7 @@
 /// osm2streets's plain GeoJSON (a polygon per road and intersection) and
 /// the lane polygons, written as serde_json pretty prints them.
 
+import enum MuvLanes.MuvJSON
 import StreetGeom
 
 /// Which roads and intersections to render.
@@ -67,7 +68,7 @@ extension StreetNetwork {
                 f.setProperty("direction", .string(lane.dir.rustDebug))
                 f.setProperty("allowed_turns", .array(lane.allowedTurns.members.map { .string($0.tagValue()) }))
                 f.setProperty("osm_way_ids", .array(road.osmIDs.map { .int($0.id) }))
-                if let muv = lane.muv { f.setProperty("muv", muv) }
+                if let muv = lane.lane { f.setProperty("muv", JSONValue(muv.muvJSON())) }
                 features.append(f)
             }
         }
@@ -79,4 +80,18 @@ extension StreetNetwork {
 func crossingJSON(_ crossing: Crossing?) -> JSONValue {
     guard let c = crossing else { return .null }
     return .object(["kind": .string(c.kind.rustName), "has_island": .bool(c.hasIsland)])
+}
+
+extension JSONValue {
+    /// What `serde_json::to_value` makes of a Muv value.
+    init(_ muv: MuvJSON) {
+        switch muv {
+        case .null: self = .null
+        case .bool(let b): self = .bool(b)
+        case .uint(let u): self = .uint(u)
+        case .string(let s): self = .string(s)
+        case .array(let a): self = .array(a.map(JSONValue.init))
+        case .object(let o): self = .object(o.mapValues(JSONValue.init))
+        }
+    }
 }

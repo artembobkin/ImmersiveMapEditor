@@ -96,3 +96,17 @@ The tree breaks ties as GEOS does only with libc++'s algorithms: JTS's stable so
 The open difference (Docs/PortingTopologyProgress.md, "Blocked"): a zero-length segment between `0.0` and `-0.0`. Smallest input: `LINESTRING (1 0, 0 0, -0 0, -1 -1)`, noded: the port gives `(1 0, 0 0), (0 0, -0 0), (0 0, -1 -1)`, GEOS `(1 0, 0 0), (-0 0, -0 0), (-0 0, -1 -1)`. The values are equal, only the sign of the zero differs.
 
 Snap rounding is not exposed alone by GEOS's C API (its overlays at a precision and `GEOSGeom_setPrecision` of polygons use it): it is compared with GEOS through those in phases 4 and 6. Here it passes JTS's own cases (`SnapRoundingNoderTest`, 18 of 18, each result checked fully noded), and the KD-tree JTS's `KdTreeTest`.
+
+## Streets
+
+The Swift osm2streets (`Streets` on `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OSMReader`, `CountryBoundaries`, `MuvLanes`) against the Rust binary of the pipeline (`osm2streets-cli`, rev `fc119c4`), the port reading every lane itself. The bar: byte-identical GeoJSON text. Details and the tag-set tests of `MuvLanes` in `Docs/PortingStreetsProgress.md`. Measured 2026-10-25, `swift test -c release -Xswiftc -enable-testing`.
+
+| Compared | Data | Result |
+|---|---|---|
+| The four outputs (plain, lanes, lane markings, intersection markings), pipeline configuration | osm2streets's 29 XML test cases | 29 of 29 identical in all four |
+| The same | Moscow 2x2 region with its clip (4874 roads, 943 tag sets) | identical in all four (9516, 7557, 58360, 229 features) |
+| The same | the five Moscow tiles, unclipped | identical, two tiles' lane markings equal to one of the Rust's own results (see below) |
+| `to_geojson`, `MapConfig::default()`, invariants checked | the committed `geometry.json` of the 29 cases | 29 of 29 identical |
+| The four outputs | synthetic ways: 280 hand-written and 400 random tag sets in each of 10 countries | 20 of 20 identical (one random way left out in FR: the Rust panics on it) |
+
+Accepted difference, none in the port: the Rust is not deterministic where two crossings or traffic signals set the same road end (streets_reader iterates a `HashMap`, random per process). When the first Rust run differs, the Rust runs 16 times, and the port's four files must equal one run's four files byte for byte: 15/19809/10242 (5 Rust results in 16 runs) and 15/19808/10243 (2 in 16) pass this way.
