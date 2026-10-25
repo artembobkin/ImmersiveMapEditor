@@ -7,6 +7,11 @@ import SwiftUI
 /// rendered to a PNG. nil when the arguments ask for none of these.
 @MainActor
 enum Headless {
+    /// Whether the arguments ask for a run without a window.
+    nonisolated static func asked(_ arguments: [String]) -> Bool {
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot"].contains($0) }
+    }
+
     static func run(_ arguments: [String]) async -> Int32? {
         func fail(_ message: String) -> Int32 {
             FileHandle.standardError.write("\(message)\n".data(using: .utf8)!)

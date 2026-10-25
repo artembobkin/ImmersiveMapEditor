@@ -16,11 +16,16 @@ import SwiftUI
 enum Entry {
     /// Synchronous on purpose: see `Platform.runMain`.
     static func main() {
-        Platform.runMain {
-            if let code = await Headless.run(CommandLine.arguments) { exit(code) }
-            Platform.activateBareExecutable()
-            EditorApp.main()
+        let arguments = CommandLine.arguments
+        if Headless.asked(arguments) {
+            Platform.runMain { exit(await Headless.run(arguments) ?? 1) }
         }
+        // The window on the main thread itself, as SwiftUI and AppKit want
+        // it: from a task on the main queue it would hold that queue for
+        // good, and no other main-actor task (the map's tiles, the build's
+        // log) would ever run.
+        MainActor.assumeIsolated { Platform.activateBareExecutable() }
+        EditorApp.main()
     }
 }
 
