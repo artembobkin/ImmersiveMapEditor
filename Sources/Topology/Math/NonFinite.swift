@@ -33,6 +33,19 @@ public enum NonFinite {
 
     private static func set(_ raised: Bool) { pthread_setspecific(key, raised ? UnsafeRawPointer(bitPattern: 1) : nil) }
 
+    /// Runs `body` and tells whether a non-finite coordinate reached the
+    /// orientation test inside it, for a computation that cannot go on past
+    /// GEOS's throw (its result is discarded by the enclosing scope). The
+    /// flag stays raised when it was raised inside or before.
+    static func watch<T>(_ body: () -> T) -> (result: T, raised: Bool) {
+        let outer = isRaised
+        if outer { set(false) }
+        let result = body()
+        let raised = isRaised
+        set(outer || raised)
+        return (result, raised)
+    }
+
     /// Runs `body`; if a non-finite coordinate reached the orientation test
     /// inside it, throws GEOS's error instead of its result or error.
     public static func scope<T>(_ body: () throws -> T) throws -> T {

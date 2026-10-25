@@ -382,6 +382,106 @@ Some were found by a parity test (the pairs of the STR tree, the validity messag
 
 GEOS 3.13's default `GEOSMakeValid` (the "linework" method) is GEOS's `MakeValid` and `BuildArea`, ported to GEOS from rttopo and PostGIS (LGPL): JTS 1.20 has no equivalent (only the structural `GeometryFixer`). The port's `MakeValid` and `BuildArea` are written for this port from the algorithm as GEOS documents and runs it (node the boundary by a union with its first point, keep the points that collapse, build areas from the cut edges by polygonizing, keeping faces with an even number of parents and dissolving them by a cascaded union, add each area by symmetric difference and remove its boundary from the cut edges until no area can be built), in GEOS's order of operations and with GEOS's containers, on the port's own JTS operations. They are not a translation of GEOS's code. This is a decision taken on the user's behalf (the conservative alternative, BLOCKED, would leave `GEOSMakeValid` without a port); it is listed in `Docs/PortingTopologyProgress.md`, Decisions, for the user to confirm.
 
+## Phase 8: `Geometry` on `Topology`
+
+`Geometry` now runs every operation on the port (Docs/PortingTopologyProgress.md, phase 8). Measured 2026-10-25: before, a release build of main at 50caf95 (GEOS) built from a scratch copy, `/private/tmp/claude-501/phase8/main-src` (main's own `.build/release/tilepipeline` was older than that commit); after, this branch's release build. Both have the same Swift osm2streets.
+
+### Every recorded call through both wrappers
+
+The old wrapper on GEOS (`Tests/TopologyTests/Oracle/GEOSWrapper.swift`, `Geometry.swift` at 50caf95) is the oracle: every call of the six recordings is replayed through it and through the new `Geometry`, and the results compared as they come, bit for bit: geometries by kind, WKB (every coordinate's bits, signs of zeros included) and the grid of the precision model each part carries; numbers by bits; answers, indices, text exactly (`Recording/WrapperReplayTests`, `TOPOLOGY_LONG_REPLAY=1`, release). Each input geometry is also read through the whole reading API and rebuilt through the constructors and the Swift transforms on both sides. The replay runs twice: inputs as recorded (floating, as WKB keeps no precision model), and every input first put on the grid of 0.01 by `setPrecision` on each side, as `clean` leaves the build's geometries (the overlays and buffers then snap-round on that grid, and `setPrecision(0.01)` of a cleaned geometry only copies it, as GEOS's C API does).
+
+| Function | Calls | Equal, as recorded | Equal, on the grid of 0.01 |
+|---|---:|---:|---:|
+| intersects | 1,428,861 | 1,428,861 | 1,428,861 |
+| Prepared.contains | 175,334 | 175,334 | 175,334 |
+| buffer | 112,586 | 112,586 | 112,586 |
+| area | 106,978 | 106,978 | 106,978 |
+| distance | 100,452 | 100,452 | 100,452 |
+| length | 48,044 | 48,044 | 48,044 |
+| isValid | 47,724 | 47,724 | 47,724 |
+| unaryUnion | 41,654 | 41,654 | 41,654 |
+| makeValid | 32,248 | 32,248 | 32,248 |
+| contains | 16,649 | 16,649 | 16,649 |
+| setPrecision | 16,124 | 16,124 | 16,124 |
+| bounds | 15,570 | 15,570 | 15,570 |
+| intersection | 14,804 | 14,804 | 14,804 |
+| lineMerge | 14,668 | 14,668 | 14,668 |
+| polygonize | 14,663 | 14,663 | 14,663 |
+| constrainedDelaunay | 9,495 | 9,495 | 9,495 |
+| simplify | 6,276 | 6,276 | 6,276 |
+| representativePoint | 4,367 | 4,367 | 4,367 |
+| interpolate | 3,062 | 3,062 | 3,062 |
+| difference | 2,462 | 2,462 | 2,462 |
+| minimumRotatedRectangle | 2,013 | 2,013 | 2,013 |
+| STRtree.query | 1,051 | 1,051 | 1,051 |
+| project | 311 | 311 | 311 |
+| STRtree.nearest | 279 | 279 | 279 |
+| offsetCurve | 273 | 273 | 273 |
+| centroid | 265 | 265 | 265 |
+| convexHull | 248 | 248 | 248 |
+| nearestPoints | 34 | 34 | 34 |
+| boundary | 15 | 15 | 15 |
+| union | 6 | 6 | 6 |
+| the inputs put on the grid (`setPrecision(0.01)`) | 757,210 geometries | | 757,210 |
+| the reading API (kind, empty, multi, x, y, coordinates, rings, parts and their grids, polygons, lines) | 757,210 geometries | 757,210 | |
+| constructors from what was read (point 141,302, line 50,117, polygon 548,385, collection 17,406), `map`, `rotate`, `scale`, `translate` (757,210 each), `oriented` both ways (548,385 each), `substring` (50,117) | | all | |
+
+No result needed GEOS's randomness of snap rounding (the sign of zeros, phase 4): every one is equal bit for bit. The WKB the port's new `WKBWriter` writes is the recorded WKB GEOS wrote, for all 757,210 recorded geometries (`wkbWriting`). The first 3,000 calls of every recording also run in the debug suite (`firstCalls`).
+
+The recording mode: `tilepipeline lab` with `GEOMETRY_RECORD`, `--samples 16`, after the swap, writes recordings byte-identical (the `.rec` and the `.counts`) to the ones GEOS's build wrote, for 15/19810/10243, 15/19808/10243 and 15/19809/10242: the same calls, the same inputs, in the same order.
+
+### Non-finite coordinates
+
+GEOS throws where its orientation test meets a NaN or infinite point, and its C API returns the failure value; the port raised a flag that only the overlays and the operations of phases 6 and 7 turned into an error. Every operation of `Geometry` now runs inside `NonFinite.scope`, the C API's catch, so the predicates, the buffer, the distance, the hulls and the prepared geometries fail where GEOS does. No recorded call has a non-finite coordinate, but the build computes its geometry (a direction normalized, a projected point) and could make one, so `Parity/WrapperNonFiniteTests` gives both wrappers 2,000 random pairs (polygons with holes, lines, points and collections, with a NaN, an infinity or a (NaN, NaN) point put in, now and then the first point) and compares every operation of the API on them as the replay does: all 2,000 pairs equal in every operation (about 60 comparisons each).
+
+The port went on past GEOS's throw, or computed otherwise, at these places, each now GEOS's (read in GEOS's sources, confirmed on GEOS's output; no finite result changed, the full suite and every replay green before and after):
+
+- The wrapper: a hole that is no ring (a NaN first point, too few points) makes the whole polygon an empty collection (the old wrapper gave GEOS a null hole, which it refused); the boundary of a geometry collection is empty (the port's precondition trapped).
+- The envelope of a line is GEOS's `std::min`/`std::max` from infinity (a NaN ordinate skipped); an envelope expands as GEOS's (a null one copies the other whatever it is, a NaN side never moves).
+- GEOS's ordered containers where a NaN key is equivalent to others (`CxxTree`): the unique points and the reduction of the convex hull, the nodes of the planar graph (polygonize, line merge), the boundary of lines, the points of `PointGeometryUnion`.
+- libc++'s sorts: the convex hull sorts the whole array by `std::sort`; the interior point of an area sorts its crossings by the system's `std::sort` of doubles (branchless networks for up to five, `CxxAlgorithms.sortDoubles`), and reads whole pairs where GEOS reads past an odd count.
+- Point location: rings are walked forward (JTS: from the end); `PointLocator` tests a ring's line before counting crossings and recurses into collections as GEOS; `IndexedPointInAreaLocator` keeps its segments in GEOS's one-dimensional STR tree (`IntervalSTRtree`, intervals by `std::minmax`).
+- After it is done, the mutual segment intersector still meets the first chain of every later query, as GEOS (JTS stops at once); `OverlayEdgeRing.findEdgeRingContaining` is GEOS's (equal envelopes skipped, envelope containment, the first vertex off the other ring not outside it).
+- The STR tree's nearest search keeps pairs of any distance while its bound is infinite and stops only once it has a pair; `DistanceOp` starts from infinity.
+- GEOS throws where the port trapped or went on: a hot pixel of scale 0 (the safe scale of non-finite input), a ring that is not closed (the convex hull, an envelope with a NaN side), a planar graph edge whose ends are one node, the minimum rectangle of a hull with no finite area.
+- Interior points of points and lines: no centroid, no interior point; the first candidate taken whatever its distance; GEOS's default (0, 0) where no distance is below infinity.
+- WKT at a rounding precision writes `NaN`, `Infinity`, `-Infinity` as GEOS's ryu; `interpolate` gives an empty point for a null coordinate.
+
+Where GEOS's own behaviour is undefined or crashes, the input is not compared: `polygonize` of non-finite lines (a null ring dereferenced in `EdgeRing::computeValid`), the minimum rectangle of a non-finite hull (it reads before the ring), the triangulation of invalid polygons.
+
+**Resolved: the last input (case 536).** The intersection of `POLYGON ((84.2563585577477 74.51183142897781, 81.99829880196077 77.9685070776905, 79.85676667877205 83.73743403849292, 75.47122430421575 79.39810095483487, 79.15893589950616 56.90308530281746, NaN 55.28349775588518, 81.55616715543691 58.59975189968331, 84.46540428073868 57.68117317553, 85.81132900290532 57.879591329111, 92.22263195338824 59.81952158882663, 84.2563585577477 74.51183142897781))` with `POLYGON ((75.57706816949573 86.1687209934793, 70.6338933443592 83.13362447463776, 67.1427115335806 88.96803582443742, 57.35329606448902 79.73405353068293, 61.985013621160995 66.14253733916115, 75.57706816949573 86.1687209934793))`: GEOS fails in every stage of its robust overlay, the last its snap rounding at the safe scale 1e12 (`Edge direction cannot be determined because endpoints are equal`); the port's snap rounding gave `POLYGON EMPTY`. Traced with lldb on both sides, stage by stage: the inputs of the snap-rounding noder were the same, its hot pixels the same (a NaN vertex never finds its pixel, `equals2D`, so each makes its own, which no query's envelope contains), and no snap added a node on either side. The difference was in `SegmentNodeList.getSplitCoordinates` (the noded coordinates the snap rounding starts from): GEOS begins with the first node paired with itself, two points, then adds without repeats by `equals2D`. For a finite first node the repeat is dropped, so the result is JTS's, but a NaN node never equals itself and stays twice, then a third time from the next pair: GEOS's edge starts with three NaN vertices, the port's started with one. With the first pair as GEOS has it (the split edges, `addSplitEdges`, start from the second node in both), the port's snap rounding leaves GEOS's edges and fails as GEOS does, and the test's 2,000 pairs are all equal.
+
+### The whole pipeline, end to end
+
+`tilepipeline lab ~/Desktop/TilePipeline/data/15_<x>_<y> <scratch> --whole --export --samples 64 --root ~/Desktop/TilePipeline`, three runs of each binary, interleaved, the machine otherwise idle. The geometry of the GLB is its five accessors (`POSITION`, `NORMAL`, `TEXCOORD_0`, `TEXCOORD_1`, indices) compared byte for byte.
+
+| Tile | Triangles | Bus shelters | Overhang (m) | Landmark windows | GLB geometry | `triangles_by_kind`, `stats.json` but its time | `palette.png` | Light map, before against before | Light map, after against before |
+|---|---:|---:|---:|---:|---|---|---|---|---|
+| 15/19808/10242 | 199,805 | 12 | 47.25 | 5,169 | identical | identical | identical | 0 to 1 pixels, at most 4/255 | 0 to 1 pixels, at most 4/255 |
+| 15/19809/10242 | 224,798 | 6 | 71.52 | 0 | identical | identical | identical | 5 pixels, at most 5/255 | 3 to 5 pixels, at most 7/255 |
+| 15/19808/10243 | 205,042 | 5 | 83.97 | 5,742 | identical | identical | identical | 3 to 4 pixels, at most 6/255 | 3 to 6 pixels, at most 7/255 |
+| 15/19809/10243 | 187,151 | 11 | 138.04 | 0 | identical | identical | identical | 55 to 57 pixels, at most 8/255 | 4 to 58 pixels, at most 8/255 |
+| 15/19810/10243 | 224,032 | 3 | 71.51 | 0 | identical | identical | identical | 1 to 16 pixels, at most 4/255 | 2 to 5 pixels, at most 4/255 |
+
+The light maps of 1,168 to 1,440 px differ in a few pixels from run to run of the same binary (the bake's noise), and the new one within the same range. Everything else is the same; the GEOS build's geometry is itself the same from run to run.
+
+| Whole tile build (s), three runs | Before (GEOS) | After (Topology) | After / before |
+|---|---:|---:|---:|
+| 15/19808/10242 | 9.44, 9.29, 9.28 | 12.39, 11.86, 11.88 | 1.29 |
+| 15/19809/10242 | 5.61, 5.59, 5.60 | 6.41, 6.41, 6.39 | 1.14 |
+| 15/19808/10243 | 13.63, 13.59, 13.60 | 17.52, 17.58, 17.49 | 1.29 |
+| 15/19809/10243 | 7.12, 7.08, 7.08 | 8.34, 8.34, 8.34 | 1.18 |
+| 15/19810/10243 | 3.42, 3.41, 3.41 | 3.61, 3.62, 3.62 | 1.06 |
+| seeding the 2x2 block | 15.27, 15.50, 15.52 | 17.62, 18.54, 17.81 | 1.17 |
+
+All within the goal's 1.5 times.
+
+**Seeding.** `tilepipeline --root <tmp> seed 15 19808 10242 19809 10243`, each run in a fresh root whose `data/` links to the four tile folders (and `config/`, `landmarks/` to the workspace's), `roads/` empty, three runs of each binary: the road document identical but its `"seeded"` date line; the four osm2streets outputs of `streets/` byte-identical; `streets/clip.geojson`, `context.json` and the merged `osm.json` equal under `jq -S`, their key order changing from run to run of either binary (`JSONSerialization` of dictionaries).
+
+**The editor.** `ImmersiveMapEditor --resave` of both road documents of `~/Desktop/TilePipeline/roads/` (copied to a scratch folder) gives the file byte for byte with either binary. `--snapshot` of the five built tiles of the workspace (copied to a scratch workspace) is the same PNG, byte for byte, from the old and the new editor. A snapshot of the tiles each binary built by `lab` differs in 1 pixel by 1/255, as do two GEOS builds of them (the light map's noise). The editor's tests pass.
+
+Tests: the full `swift test` (453 tests in 76 suites) passes in debug, and in release with `TOPOLOGY_LONG_REPLAY=1` (`-Xswiftc -enable-testing`). Builds, debug and release, have no warnings.
+
 ## Streets
 
 The Swift osm2streets (`Streets` on `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OSMReader`, `CountryBoundaries`, `MuvLanes`) against the Rust binary of the pipeline (`osm2streets-cli`, rev `fc119c4`), the port reading every lane itself. The bar: byte-identical GeoJSON text. Details and the tag-set tests of `MuvLanes` in `Docs/PortingStreetsProgress.md`. Measured 2026-10-25, `swift test -c release -Xswiftc -enable-testing`.

@@ -1,11 +1,11 @@
 import Darwin
 import Synchronization
-import geos
+import Topology
 
 /// The recording mode of `Geometry`: with the environment variable
-/// `GEOMETRY_RECORD` set to a folder, every operation the build asks of GEOS
+/// `GEOMETRY_RECORD` set to a folder, every operation the build asks of it
 /// is written there with its inputs, so the port of GEOS to Swift
-/// (`Topology`) can be replayed against GEOS on real data
+/// (`Topology`) was replayed against GEOS on real data
 /// (Docs/PortingGoal.md, "Parity"). Without the variable it does nothing:
 /// each operation only reads `Recorder.shared`, which is nil.
 ///
@@ -13,8 +13,8 @@ import geos
 /// eight bytes `GEOREC1\n`:
 ///
 /// - `G`: a geometry, written once, the first time it is an input. `u32` id,
-///   `u32` byte count, then its WKB (GEOS's writer, extended flavour, three
-///   dimensions when it has them), which keeps every coordinate exactly.
+///   `u32` byte count, then its WKB (`Topology`'s `WKBWriter`: two dimensions,
+///   little-endian, the bytes GEOS's writer gave), which keeps every coordinate exactly.
 /// - `C`: a call. `u8` name length and the name (as the public API names it,
 ///   `Prepared.contains`, `STRtree.query`), `u32` geometry count and the ids of
 ///   its geometry inputs in order, `u8` number count and the numbers (`f64`),
@@ -40,7 +40,6 @@ final class Recorder: @unchecked Sendable {
     }
 
     let state: Mutex<State>
-    let writer: OpaquePointer
 
     init?(folder: String) {
         mkdir(folder, 0o755)
@@ -52,9 +51,6 @@ final class Recorder: @unchecked Sendable {
         s.file = file
         s.countsPath = base + ".counts"
         state = Mutex(s)
-        writer = GEOSWKBWriter_create_r(ctx)!
-        GEOSWKBWriter_setOutputDimension_r(ctx, writer, 3)
-        GEOSWKBWriter_setByteOrder_r(ctx, writer, 1)
         atexit { Recorder.shared?.finish() }
     }
 
@@ -94,13 +90,11 @@ final class Recorder: @unchecked Sendable {
         let id = s.nextGeometry
         s.nextGeometry += 1
         g.recordID = id
-        var size = 0
-        guard let wkb = GEOSWKBWriter_write_r(ctx, writer, g.ptr, &size) else { return id }
-        defer { GEOSFree_r(ctx, wkb) }
+        let wkb = WKBWriter().write(g.geometry)
         put(UInt8(ascii: "G"), file)
         put(id, file)
-        put(UInt32(size), file)
-        fwrite(wkb, 1, size, file)
+        put(UInt32(wkb.count), file)
+        fwrite(wkb, 1, wkb.count, file)
         return id
     }
 

@@ -62,10 +62,15 @@ struct InteriorPointArea {
 
         mutating func findBestMidpoint(_ crossings: inout [Double]) {
             if crossings.isEmpty { return }
-            precondition(crossings.count % 2 == 0, "Interior Point robustness failure: odd number of scanline crossings")
-            crossings.sort()
+            // JTS asserts an even number of crossings here. GEOS 3.13 does not
+            // (its assertion is commented out) and reads the pairs on, past the
+            // end where the number is odd, which only a non-finite coordinate
+            // makes (undefined behaviour, not compared). The port reads the
+            // whole pairs. The sort is GEOS's `std::sort`, which places equal
+            // zeros of either sign and NaN crossings as GEOS does.
+            CxxAlgorithms.sortDoubles(&crossings)
             var i = 0
-            while i < crossings.count {
+            while i + 1 < crossings.count {
                 let x1 = crossings[i], x2 = crossings[i + 1]
                 let width = x2 - x1
                 if width > interiorSectionWidth {

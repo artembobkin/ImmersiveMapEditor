@@ -118,11 +118,14 @@ extension GeometryFactory {
 
 extension Geometry {
     /// The geometry on a grid of the size (`GEOSGeom_setPrecision` with
-    /// flags 0): snap-rounded, valid, collapsed parts removed. A grid of 0
-    /// copies it.
+    /// flags 0): snap-rounded, valid, collapsed parts removed. As GEOS's C
+    /// API does, a grid of 0, or the grid the geometry already has (its
+    /// precision model's `1 / scale`), only copies it into a factory of the
+    /// new precision model (floating for 0), without empty members.
     public func setPrecision(_ gridSize: Double) throws -> Geometry {
-        if gridSize == 0 { return factory.createGeometry(self) }
-        let pm = PrecisionModel(scale: 1.0 / abs(gridSize))
+        let pm = gridSize != 0 ? PrecisionModel(scale: 1.0 / abs(gridSize)) : PrecisionModel()
+        let current = precisionModel.isFloating ? 0 : 1.0 / precisionModel.scale
+        guard gridSize != 0 && current != gridSize else { return GeometryEditor.copy(self, GeometryFactory(precisionModel: pm)) }
         let reducer = GeometryPrecisionReducer(pm)
         reducer.setChangePrecisionModel(true)
         reducer.setPointwise(false)

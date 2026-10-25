@@ -16,24 +16,24 @@ public final class SnapRoundingNoder: Noder {
 
     public func getNodedSubstrings() -> [SegmentString] { NodedSegmentString.getNodedSubstrings(snappedResult) }
 
-    public func computeNodes(_ inputSegmentStrings: [SegmentString]) {
+    public func computeNodes(_ inputSegmentStrings: [SegmentString]) throws {
         let strings = inputSegmentStrings.map { $0 as! NodedSegmentString }
-        addIntersectionPixels(strings)
-        addVertexPixels(strings)
+        try addIntersectionPixels(strings)
+        try addVertexPixels(strings)
         snappedResult = computeSnaps(strings)
     }
 
-    func addIntersectionPixels(_ segStrings: [NodedSegmentString]) {
+    func addIntersectionPixels(_ segStrings: [NodedSegmentString]) throws {
         let snapGridSize = 1.0 / pm.scale
         let nearnessTol = snapGridSize / SnapRoundingNoder.nearnessFactor
         let intAdder = SnapRoundingIntersectionAdder(nearnessTol)
         let noder = MCIndexNoder(intAdder, overlapTolerance: nearnessTol)
         noder.computeNodes(segStrings)
-        pixelIndex.addNodes(intAdder.intersections)
+        try pixelIndex.addNodes(intAdder.intersections)
     }
 
-    func addVertexPixels(_ segStrings: [NodedSegmentString]) {
-        for ss in segStrings { pixelIndex.add(ss.getCoordinates()) }
+    func addVertexPixels(_ segStrings: [NodedSegmentString]) throws {
+        for ss in segStrings { try pixelIndex.add(ss.getCoordinates()) }
     }
 
     func round(_ pt: Coordinate) -> Coordinate { pm.makePrecise(pt) }

@@ -37,10 +37,20 @@ public class LineString: Geometry {
 
     public func isCoordinate(_ pt: Coordinate) -> Bool { points.contains(pt) }
 
+    /// GEOS 3.13's envelope of a sequence: `std::min` and `std::max` of each
+    /// ordinate from infinity, then sorted as `Envelope(x1, x2, y1, y2)`
+    /// sorts. For finite points it is JTS's; a NaN ordinate is skipped, and
+    /// a line whose x (or y) are all NaN spans from -infinity to infinity.
     override func computeEnvelopeInternal() -> Envelope {
-        var e = Envelope()
-        for p in points { e.expandToInclude(p.x, p.y) }
-        return e
+        if points.isEmpty { return Envelope() }
+        var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
+        for p in points {
+            minX = cxxMin(minX, p.x)
+            maxX = cxxMax(maxX, p.x)
+            minY = cxxMin(minY, p.y)
+            maxY = cxxMax(maxY, p.y)
+        }
+        return Envelope(minX, maxX, minY, maxY)
     }
 
     override public func equalsExact(_ other: Geometry, tolerance: Double) -> Bool {

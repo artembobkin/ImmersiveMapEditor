@@ -375,3 +375,57 @@ enum CxxAlgorithms {
         }
     }
 }
+
+// MARK: Doubles with the default comparator
+
+extension CxxAlgorithms {
+    /// `std::sort` of doubles with `operator<`, as the system's libc++ runs
+    /// it (`std::__sort<__less<double>&, double*>`): its arithmetic types
+    /// take the branchless sorting networks for two to five elements (each
+    /// step a conditional swap, `__cond_swap` and `__partially_sorted_swap`),
+    /// then insertion sort below 24, as the generic sort. For doubles that
+    /// compare in a total order every sort gives the same values in the same
+    /// places; the networks matter for NaN, which compares false with all,
+    /// and for zeros of either sign. Arrays of 24 and more, where libc++
+    /// partitions with bitsets, are sorted by the generic introsort here
+    /// (the same result for doubles without NaN, but for the order of equal
+    /// zeros).
+    static func sortDoubles(_ a: inout [Double]) {
+        let less: (Double, Double) -> Bool = { $0 < $1 }
+        switch a.count {
+        case 0, 1: return
+        case 2: if a[1] < a[0] { a.swapAt(0, 1) }
+        case 3: branchlessSort3(&a, 0, 1, 2)
+        case 4:
+            condSwap(&a, 0, 2); condSwap(&a, 1, 3); condSwap(&a, 0, 1); condSwap(&a, 2, 3); condSwap(&a, 1, 2)
+        case 5:
+            condSwap(&a, 0, 1); condSwap(&a, 3, 4); partiallySortedSwap(&a, 2, 3, 4)
+            condSwap(&a, 1, 4); partiallySortedSwap(&a, 0, 2, 3); partiallySortedSwap(&a, 1, 2, 3)
+        case ..<24: insertionSort(&a, 0, a.count, less)
+        default: sort(&a, less)
+        }
+    }
+
+    /// `__cond_swap`: `a[x] < a[y]` made true by a swap where needed.
+    static func condSwap(_ a: inout [Double], _ x: Int, _ y: Int) {
+        let r = a[x] < a[y]
+        let tmp = r ? a[x] : a[y]
+        a[y] = r ? a[y] : a[x]
+        a[x] = tmp
+    }
+
+    /// `__partially_sorted_swap`: the three ordered, `a[y]` and `a[z]` being so.
+    static func partiallySortedSwap(_ a: inout [Double], _ x: Int, _ y: Int, _ z: Int) {
+        let r1 = a[z] < a[x]
+        let tmp = r1 ? a[z] : a[x]
+        a[z] = r1 ? a[x] : a[z]
+        let r2 = tmp < a[y]
+        a[x] = r2 ? a[x] : a[y]
+        a[y] = r2 ? a[y] : tmp
+    }
+
+    static func branchlessSort3(_ a: inout [Double], _ x: Int, _ y: Int, _ z: Int) {
+        condSwap(&a, y, z)
+        partiallySortedSwap(&a, x, y, z)
+    }
+}

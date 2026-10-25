@@ -1,11 +1,21 @@
 /// The interior point of points: the one nearest the centroid.
+///
+/// As GEOS 3.13 has it where JTS 1.20 differs, which only non-finite
+/// coordinates show: a geometry with no centroid has no interior point, and
+/// where no point is nearer than infinity (every distance NaN) the interior
+/// point is GEOS's default coordinate, (0, 0).
 struct InteriorPointPoint {
     let centroid: Coordinate
-    var minDistance = Double.greatestFiniteMagnitude
+    var minDistance = Double.infinity
     var interiorPoint: Coordinate?
 
     init(_ g: Geometry) {
-        centroid = g.getCentroid().getCoordinate()!
+        guard let c = g.getCentroid().getCoordinate() else {
+            centroid = Coordinate(0, 0)
+            return
+        }
+        centroid = c
+        interiorPoint = Coordinate(0, 0)
         add(g)
     }
 

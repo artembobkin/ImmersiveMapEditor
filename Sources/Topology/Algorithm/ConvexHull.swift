@@ -35,23 +35,31 @@ public struct ConvexHull {
     }
 
     /// The distinct points in the order they first occur, nil when there
-    /// are more than `maxPts` (unless it is negative).
+    /// are more than `maxPts` (unless it is negative). Distinct as GEOS's
+    /// `std::set` of coordinates finds them (`CxxTree`): the same as a hash
+    /// set for finite points, while a point with a NaN ordinate is
+    /// equivalent to some point already there and left out.
     static func extractUnique(_ pts: [Coordinate], _ maxPts: Int = -1) -> [Coordinate]? {
-        var seen = Set<Coordinate>()
+        var seen = CxxTree<Coordinate, Void> { $0 < $1 }
         var out: [Coordinate] = []
-        for p in pts where seen.insert(p).inserted {
+        for p in pts where seen.insert(p, ()).1 {
             out.append(p)
             if maxPts >= 0 && out.count > maxPts { return nil }
         }
         return out
     }
 
+    /// GEOS's reduction: the points of the inner octagon and those outside
+    /// it, in GEOS's `std::set` (libc++'s tree): each once and in coordinate
+    /// order (JTS: a hash set). The order does not change the hull of
+    /// distinct finite points; a point with a NaN ordinate is equivalent to
+    /// one already there and left out, as in GEOS.
     func reduce(_ inputPts: [Coordinate]) -> [Coordinate] {
         guard let innerPolyPts = ConvexHull.computeInnerOctolateralRing(inputPts) else { return inputPts }
-        var seen = Set<Coordinate>()
-        var reduced: [Coordinate] = []
-        for p in innerPolyPts where seen.insert(p).inserted { reduced.append(p) }
-        for p in inputPts where !PointLocation.isInRing(p, innerPolyPts) && seen.insert(p).inserted { reduced.append(p) }
+        var reducedSet = CxxTree<Coordinate, Void> { $0 < $1 }
+        for p in innerPolyPts { reducedSet.insert(p, ()) }
+        for p in inputPts where !PointLocation.isInRing(p, innerPolyPts) { reducedSet.insert(p, ()) }
+        let reduced = reducedSet.inOrder().map { reducedSet.nodes[$0].key }
         if reduced.count < 3 { return ConvexHull.padArray3(reduced) }
         return reduced
     }
@@ -61,15 +69,19 @@ public struct ConvexHull {
     }
 
     /// The lowest point (leftmost of the lowest) first, the rest by angle
-    /// around it.
+    /// around it. As GEOS sorts: the whole array, the lowest point with
+    /// it, by libc++'s `std::sort` (JTS: a stable sort of the others). For
+    /// distinct finite points the order is total and the result the same;
+    /// with an infinite point the comparisons made decide whether the
+    /// orientation test meets it as its tested point, where GEOS throws.
     static func preSort(_ input: [Coordinate]) -> [Coordinate] {
         var pts = input
         for i in 1..<pts.count where (pts[i].y < pts[0].y) || ((pts[i].y == pts[0].y) && (pts[i].x < pts[0].x)) {
             pts.swapAt(0, i)
         }
         let origin = pts[0]
-        let rest = javaSorted(Array(pts[1...])) { polarCompare(origin, $0, $1) }
-        return [origin] + rest
+        CxxAlgorithms.sort(&pts) { polarCompare(origin, $0, $1) == -1 }
+        return pts
     }
 
     static func polarCompare(_ o: Coordinate, _ p: Coordinate, _ q: Coordinate) -> Int {
@@ -138,7 +150,14 @@ public struct ConvexHull {
     func lineOrPolygon(_ input: [Coordinate]) -> Geometry {
         let coordinates = ConvexHull.cleanRing(input)
         if coordinates.count == 3 { return factory.createLineString([coordinates[0], coordinates[1]]) }
-        return factory.createPolygon(factory.createLinearRing(coordinates))
+        // Only non-finite points leave the hull unclosed: GEOS's ring then
+        // throws, which this non-throwing function reports as the orientation
+        // test does (`NonFinite`); its result is discarded.
+        guard let ring = try? factory.createLinearRingChecked(coordinates) else {
+            NonFinite.raise()
+            return factory.createPolygon()
+        }
+        return factory.createPolygon(ring)
     }
 
     static func cleanRing(_ original: [Coordinate]) -> [Coordinate] {

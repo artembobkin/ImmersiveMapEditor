@@ -62,9 +62,15 @@ public struct WKTWriter {
     func coordinate(_ c: Coordinate) -> String { number(c.x) + " " + number(c.y) }
 
     public func number(_ d: Double) -> String {
+        guard let p = roundingPrecision, p >= 0 else {
+            if d.isNaN { return "NaN" }
+            if d.isInfinite { return d < 0 ? "-Inf" : "Inf" }
+            return WKTWriter.plain(d)
+        }
+        // GEOS's writer (its copy of ryu): `NaN` whatever its sign,
+        // `Infinity` and `-Infinity`.
         if d.isNaN { return "NaN" }
-        if d.isInfinite { return d < 0 ? "-Inf" : "Inf" }
-        guard let p = roundingPrecision, p >= 0 else { return WKTWriter.plain(d) }
+        if d.isInfinite { return d < 0 ? "-Infinity" : "Infinity" }
         return WKTWriter.trimmed(d, p)
     }
 

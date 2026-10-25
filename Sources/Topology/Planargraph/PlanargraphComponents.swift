@@ -68,7 +68,16 @@ extension Planargraph {
             self.edgeDirection = edgeDirection
             p0 = from.getCoordinate()
             p1 = directionPt
-            quadrant = Quadrant.quadrant(p1.x - p0.x, p1.y - p0.y)
+            let dx = p1.x - p0.x, dy = p1.y - p0.y
+            if dx == 0 && dy == 0 {
+                // GEOS's quadrant throws on a zero direction, which only an edge
+                // whose ends are one node (a NaN end found as the other) gives:
+                // reported as the orientation test reports it (`NonFinite`).
+                NonFinite.raise()
+                quadrant = Quadrant.ne
+            } else {
+                quadrant = Quadrant.quadrant(dx, dy)
+            }
         }
 
         func getEdge() -> Edge { parentEdge }
@@ -135,14 +144,16 @@ extension Planargraph {
     class PlanarGraph {
         @exclusivity(unchecked) private(set) var edges: [Edge] = []
         @exclusivity(unchecked) private(set) var dirEdges: [DirectedEdge] = []
-        @exclusivity(unchecked) private var nodeMap: [Coordinate: Node] = [:]
-        @exclusivity(unchecked) private var nodesInOrder: [Node]?
+        /// GEOS's `std::map` of nodes by coordinate (libc++'s tree): for
+        /// finite coordinates a map by value, while a NaN coordinate finds
+        /// whichever node the tree's search ends at.
+        @exclusivity(unchecked) private var nodeMap = CxxTree<Coordinate, Node> { $0 < $1 }
 
-        func findNode(_ pt: Coordinate) -> Node? { nodeMap[pt] }
+        func findNode(_ pt: Coordinate) -> Node? { nodeMap.find(pt).map { nodeMap.nodes[$0].value } }
 
         func add(_ node: Node) {
-            nodeMap[node.getCoordinate()] = node
-            nodesInOrder = nil
+            let (i, inserted) = nodeMap.insert(node.getCoordinate(), node)
+            if !inserted { nodeMap.modify(i) { $0 = node } }
         }
 
         func add(_ edge: Edge) {
@@ -151,14 +162,8 @@ extension Planargraph {
             dirEdges.append(edge.getDirEdge(1))
         }
 
-        /// The nodes in coordinate order (GEOS's `std::map`).
-        func getNodes() -> [Node] {
-            if let n = nodesInOrder { return n }
-            var n = Array(nodeMap.values)
-            n.sort { $0.pt.compareTo($1.pt) < 0 }
-            nodesInOrder = n
-            return n
-        }
+        /// The nodes in the map's order (by coordinate).
+        func getNodes() -> [Node] { nodeMap.inOrder().map { nodeMap.nodes[$0].value } }
 
         func findNodesOfDegree(_ degree: Int) -> [Node] { getNodes().filter { $0.getDegree() == degree } }
     }

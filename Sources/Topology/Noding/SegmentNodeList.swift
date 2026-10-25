@@ -122,7 +122,10 @@ public final class SegmentNodeList {
         let sorted = sortedNodes
         var list: [Coordinate] = []
         var prev = sorted[0]
-        for ei in sorted.dropFirst() {
+        // GEOS 3.13 starts with the first node paired with itself (two points,
+        // JTS skips it): the same for finite nodes, which are then repeated
+        // and dropped, while a NaN node, never equal to itself, stays twice.
+        for ei in sorted {
             for p in createSplitEdgePts(prev, ei) where list.last != p { list.append(p) }
             prev = ei
         }
