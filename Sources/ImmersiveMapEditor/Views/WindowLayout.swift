@@ -8,6 +8,8 @@ import SwiftUI
 /// or an empty status line leaves the console where it is.
 struct WindowLayout<Main: View, Console: View, Status: View>: View {
     static var statusHeight: Double { 26 }
+    /// About the radius of the window's lower corners.
+    static var cornerClearance: Double { 24 }
 
     let consoleShown: Bool
     @ViewBuilder var main: () -> Main
@@ -31,10 +33,14 @@ struct WindowLayout<Main: View, Console: View, Status: View>: View {
             status()
                 .font(.callout)
                 .lineLimit(1)
-                .padding(.horizontal, 10)
+                // Clear of the window's rounded corner on the left: its text
+                // starts where the window's lower edge is still straight.
+                .padding(.leading, Self.cornerClearance)
+                .padding(.trailing, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: Self.statusHeight)
-                .background(.bar)
+                // A little shaded, apart from the content above it.
+                .background(Color.black.opacity(0.18))
         }
     }
 
