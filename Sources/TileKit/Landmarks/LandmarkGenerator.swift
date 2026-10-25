@@ -15,7 +15,24 @@ import simd
 /// Faces are oriented by a hint of which way they look (outward), so a
 /// recipe cannot turn one inside out. Nothing is below the ground.
 public enum LandmarkGenerator {
-    public static let roofShapes = ["flat", "gabled", "hipped", "pyramidal", "dome", "onion", "spire", "mansard"]
+    public static let roofShapes = ["flat", "gabled", "skillion", "hipped", "pyramidal", "dome", "onion", "spire", "mansard"]
+
+    /// OSM's roof:shape in the recipe's words: the nearest of its shapes,
+    /// flat for one it has no likeness of.
+    public static func roofShape(osm: String) -> String {
+        if roofShapes.contains(osm) { return osm }
+        switch osm {
+        case "half-hipped", "side_hipped", "hip": return "hipped"
+        case "gambrel", "round": return "mansard"
+        case "saltbox", "side_half-hipped": return "gabled"
+        case "lean_to", "shed": return "skillion"
+        case "cone", "conical": return "spire"
+        case "pyramid", "pyramidal": return "pyramidal"
+        case "onion", "helm", "bulbous": return "onion"
+        case "dome", "half_dome", "spherical": return "dome"
+        default: return "flat"
+        }
+    }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
 
     /// What is wrong with a recipe, one line each: nothing when it builds.
@@ -254,7 +271,7 @@ public enum LandmarkGenerator {
             }
         }
 
-        /// A gabled, hipped or mansard roof over the outline's smallest
+        /// A gabled, skillion, hipped or mansard roof over the outline's smallest
         /// rectangle: planes rising from its sides, each clipped to the
         /// outline, with gable walls where the roof rises over the outline's
         /// edge.
@@ -274,6 +291,8 @@ public enum LandmarkGenerator {
             let big = 1.001
             var regions: [Region] = []
             switch shape {
+            case "skillion":
+                regions = [([P2(-hl, -hw), P2(hl, -hw), P2(hl, hw), P2(-hl, hw)], { (hw - $0.y) / (2 * hw) })]
             case "gabled":
                 regions = [([P2(-hl, 0), P2(hl, 0), P2(hl, hw), P2(-hl, hw)], { (hw - abs($0.y)) / hw }),
                            ([P2(-hl, -hw), P2(hl, -hw), P2(hl, 0), P2(-hl, 0)], { (hw - abs($0.y)) / hw })]

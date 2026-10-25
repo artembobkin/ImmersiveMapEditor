@@ -111,7 +111,7 @@ public struct LandmarkRecipe: Codable {
                  "plinth": {"height": 1.5, "depth": 0.15, "colour": "lm_stone"},
                  "cornice": {"height": 0.8, "depth": 0.4, "colour": "lm_white"},
                  "windows": {"storeys": 3, "spacing": 3.5, "width": 1.4, "height": 2.4, "arched": false, "colour": "lm_dark"},
-                 "roof": {"shape": "flat|gabled|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green"}}],
+                 "roof": {"shape": "flat|gabled|skillion|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green"}}],
      "features": [{"kind": "colonnade", "from": [x, y], "to": [x, y], "base": 1.5, "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
                   {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18, "height": 4, "depth": 2, "colour": "lm_cream"},
                   {"kind": "statue", "at": [x, y], "base": 23, "height": 5, "width": 3, "colour": "lm_dark"},
@@ -119,8 +119,8 @@ public struct LandmarkRecipe: Codable {
                   {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4, "height": 1.5, "count": 5, "colour": "lm_stone"}]}
 
     - A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
-    standing proud, window panes storey by storey on every wall long enough, and a roof on its top. Gabled, hipped and mansard \
-    roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
+    standing proud, window panes storey by storey on every wall long enough, and a roof on its top. Gabled, skillion (one slope, \
+    rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
     outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.
     - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
@@ -195,7 +195,7 @@ public struct LandmarkSource {
             let top = b.height ?? (b.part ? 10 : 12)
             var m = LandmarkRecipe.Mass(id: b.osm, outline: b.osm, base: b.base, top: max(top, b.base + 0.5),
                                         colour: Self.landmarkColour(b.tags["building:colour"]) ?? "lm_cream")
-            if let shape = b.tags["roof:shape"], shape != "flat" {
+            if let osm = b.tags["roof:shape"], case let shape = LandmarkGenerator.roofShape(osm: osm), shape != "flat" {
                 m.roof = .init(shape: shape, height: length(b.tags["roof:height"]),
                                colour: Self.landmarkColour(b.tags["roof:colour"]) ?? "lm_green")
             }
