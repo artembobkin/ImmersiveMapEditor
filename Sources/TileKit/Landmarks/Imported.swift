@@ -169,7 +169,6 @@ public enum Imported {
                 cover.append(Geometry.polygon(f.corners.map { P2($0.x, $0.y) }).buffer(0.05))
             }
         }
-        print("[landmarks] \(models.count) models: \(models.map(\.id).joined(separator: ", "))")
         return (models, replaced, .unaryUnion(cover))
     }
 
@@ -183,6 +182,16 @@ public enum Imported {
         var made = 0, windows = 0
         var byModel: [String: [String: Int]] = [:]
         let landmarkNames = Set(Palette.landmark.map(\.0))
+        if let region {
+            // A model belongs to the tile its origin stands in; a neighbour's
+            // is in the scene for the light alone, left out of the model.
+            let own = models.filter { region.contains($0.origin) }.map(\.id)
+            let near = models.filter { !region.contains($0.origin) }.map(\.id)
+            print("[landmarks] in the tile: " + (own.isEmpty ? "none" : own.joined(separator: ", ")))
+            if !near.isEmpty { print("[landmarks] the neighbours', for the light only: " + near.joined(separator: ", ")) }
+        } else {
+            print("[landmarks] \(models.count) models: \(models.map(\.id).joined(separator: ", "))")
+        }
         for m in models {
             let faces = m.faces, family = m.family
             if faces.allSatisfy({ $0.corners.allSatisfy { $0.x < x0 || $0.x > x1 || $0.y < y0 || $0.y > y1 } }) { continue }
