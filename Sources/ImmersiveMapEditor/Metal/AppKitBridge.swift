@@ -52,10 +52,17 @@ extension View {
 enum Platform {
     /// Run without its app bundle (from the command line or Xcode), the
     /// executable has no activation policy of its own: it takes the regular
-    /// one, a Dock icon and windows.
+    /// one, a Dock icon and windows. Nor has it an icon: it takes the
+    /// package's `Icon/AppIcon.png`, there beside its sources in such a run.
     @MainActor
     static func activateBareExecutable() {
-        if Bundle.main.bundleIdentifier == nil { NSApplication.shared.setActivationPolicy(.regular) }
+        guard Bundle.main.bundleIdentifier == nil else { return }
+        NSApplication.shared.setActivationPolicy(.regular)
+        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        if let icon = NSImage(contentsOf: package.appendingPathComponent("Icon/AppIcon.png")) {
+            NSApplication.shared.applicationIconImage = icon
+        }
     }
 
     /// Runs `body` on the main actor and serves the main queue for good: the
