@@ -1,8 +1,8 @@
 import Foundation
-import TileKit
 import Observation
 
-/// Runs the pipeline (the `tilepipeline` program beside the editor) on the
+/// Runs the pipeline (the editor itself, as `ImmersiveMapEditor pipeline`,
+/// TileKit's PipelineCommand: the same build, never older) on the
 /// workspace and keeps its output as it comes, for the log at the foot of
 /// the window.
 @Observable
@@ -33,11 +33,6 @@ final class BuildRunner {
             return
         }
         log = ""
-        if let stale = Self.staleTool() {
-            log = stale + "\n"
-            done(false)
-            return
-        }
         running = true
         stage = nil
         Task {
@@ -57,11 +52,11 @@ final class BuildRunner {
     /// into `stage`.
     private func run(root: URL, _ arguments: [String]) async -> Bool {
         log += "$ tilepipeline \(arguments.joined(separator: " "))\n"
-        // Built with the editor, in the same folder (or the app's MacOS folder).
-        let tool = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("tilepipeline")
+        // The editor itself, as the pipeline: one build of both.
+        let tool = Bundle.main.executableURL!
         let process = Process()
         process.executableURL = tool
-        process.arguments = ["--root", root.path] + arguments
+        process.arguments = ["pipeline", "--root", root.path] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -87,31 +82,5 @@ final class BuildRunner {
         guard let o = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
               let name = o["stage"] as? String else { return nil }
         return Stage(name: name, fraction: (o["fraction"] as? NSNumber)?.doubleValue, detail: o["detail"] as? String)
-    }
-
-    /// Why the `tilepipeline` beside the editor cannot run its commands: not
-    /// there, or built from another TileKit than the editor (Xcode built the
-    /// editor alone), so it would take the editor's commands wrong. nil when
-    /// its interface is the editor's.
-    private static func staleTool() -> String? {
-        let tool = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("tilepipeline")
-        guard FileManager.default.isExecutableFile(atPath: tool.path) else {
-            return "No tilepipeline beside the editor (\(tool.path)): build the tilepipeline product too."
-        }
-        let process = Process()
-        process.executableURL = tool
-        process.arguments = ["interface"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return "Cannot start \(tool.path)." }
-        process.waitUntilExit()
-        let said = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard said == "\(PipelineInterface.version)" else {
-            return "The tilepipeline beside the editor is older than the editor (its interface \(said.isEmpty ? "unknown" : said), "
-                + "the editor's \(PipelineInterface.version)): build the tilepipeline product (the editor's scheme builds both) and run again."
-        }
-        return nil
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import TileKit
 
 /// Immersive Map Editor: the desktop tool for the ImmersiveMap engine's
 /// content. It works on a TilePipeline folder (its workspace): a map to pick
@@ -6,6 +7,7 @@ import SwiftUI
 /// hand, and the built tiles shown together in 3D.
 ///
 ///   ImmersiveMapEditor [DATA FOLDER]
+///   ImmersiveMapEditor pipeline COMMAND ...                   the pipeline's commands, as tilepipeline takes them
 ///   ImmersiveMapEditor --resave IN OUT                        a document read and written, no window
 ///   ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y       a tile in 3D to a PNG, no window
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
@@ -17,6 +19,11 @@ enum Entry {
     /// Synchronous on purpose: see `Platform.runMain`.
     static func main() {
         let arguments = CommandLine.arguments
+        // The pipeline's commands, run by the editor as a process of its own
+        // build, so the pipeline is never older than the editor.
+        if arguments.count > 1, arguments[1] == "pipeline" {
+            PipelineCommand.run(Array(arguments.dropFirst(2)))
+        }
         if Headless.asked(arguments) {
             Platform.runMain { exit(await Headless.run(arguments) ?? 1) }
         }
