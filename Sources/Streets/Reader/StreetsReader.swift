@@ -10,10 +10,19 @@ extension StreetNetwork {
     /// polygon in longitude and latitude, or nil to use the file's bounds.
     public static func fromOSM(_ input: [UInt8], clip clipPts: [LonLat]?, config: MapConfig,
                                laneSpecs: LaneSpecSource = MuvLaneSpecs()) throws -> StreetNetwork {
+        try fromOSM(input, clip: clipPts, config: config, laneSpecs: laneSpecs, hashMapOrder: nil)
+    }
+
+    /// `fromOSM` with the signals and crossings applied in the order a
+    /// `HashMapOrder` gives, recording where the order matters (parity tests).
+    static func fromOSM(_ input: [UInt8], clip clipPts: [LonLat]?, config: MapConfig,
+                        laneSpecs: LaneSpecSource = MuvLaneSpecs(), hashMapOrder: HashMapOrder?) throws -> StreetNetwork {
         var streets = StreetNetwork.blank(laneSpecs: laneSpecs)
         streets.config = config
+        streets.hashMapOrder = hashMapOrder
         let extract = try streets.extractOSM(input, clipPts)
         streets.splitUpRoads(extract)
+        streets.hashMapOrder = nil
         // Cul-de-sacs aren't supported yet.
         streets.retainRoads { $0.srcI != $0.dstI }
         return streets

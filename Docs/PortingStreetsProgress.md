@@ -39,8 +39,8 @@ Decisions:
 | osm2streets's 29 XML cases (all but the PBF `frederiksted`) | 4 to 515 | 4 to 409 | 2 to 180 | 29 identical | 29 identical | 29 identical | 29 identical |
 | Moscow 2x2 region, with its clip | 4874 | 4642 | 943 | identical (9516 features) | identical (7557) | identical (58360) | identical (229) |
 | Moscow tile 15/19808/10242, unclipped | 1563 | 1577 | 437 | identical (3140) | identical (2543) | identical (21213) | identical (65) |
-| Moscow tile 15/19809/10242 | 1389 | 1377 | 284 | identical (2766) | identical (2479) | one of the Rust's 5 results in 16 runs (18026) | identical (59) |
-| Moscow tile 15/19808/10243 | 2091 | 1846 | 383 | identical (3937) | identical (2699) | one of the Rust's 2 results in 16 runs (29442) | identical (59) |
+| Moscow tile 15/19809/10242 | 1389 | 1377 | 284 | identical (2766) | identical (2479) | one of the 6 results of the Rust's orders (18026) | identical (59) |
+| Moscow tile 15/19808/10243 | 2091 | 1846 | 383 | identical (3937) | identical (2699) | one of the 2 results of the Rust's orders (29442) | identical (59) |
 | Moscow tile 15/19809/10243 | 1614 | 1529 | 370 | identical (3143) | identical (2746) | identical (22910) | identical (131) |
 | Moscow tile 15/19810/10243 | 1394 | 1349 | 248 | identical (2743) | identical (2568) | identical (18110) | identical (71) |
 
@@ -52,7 +52,16 @@ MuvLanes against the Rust on synthetic ways (`Tests/StreetsTests/MuvLanes/`): on
 - 400 tag sets drawn at random per box (a highway class and 2 to 9 of 120 lane keys, SplitMix64 from the box's name): 10 of 10 identical, 1941 to 2189 lanes each. One random way in FR makes the Rust itself panic (geom's `dist_along` of a negative distance, `polyline.rs:392`): `highway=busway width:lanes=3|3|3 shoulder=right est_width=5 lanes:backward=2 parking:right:capacity=4 motorcar:lanes=yes|no|yes turn=left turn:lanes:backward=left|through`. It is found alone and left out, as there is no output to compare. The port stops on it with the same error (`dist_along -4m is negative`, checked once by hand).
 - Muv's own unit tests of the parts it rests on, translated (`MuvUnitTests`, 10 tests): the subtag order (`iter_tags`), numbers, quantities, parentheses, conditionals, separated values, the hierarchy, opening hours.
 
-The Rust is not deterministic where two crossings (or traffic signals) on one road both fall within 30% of the same end: streets_reader iterates them in `HashMap` order, random per process, and the last one sets the stop line. The parity test runs the Rust 16 times when the first run differs, and passes only when the port's four files equal one run's four files, byte for byte. Measured before: `roosevelt_cycletrack` 2 results in 12 runs, 15/19809/10242 5 in 16, 15/19808/10243 2 in 16.
+The Rust is not deterministic where two crossings (or traffic signals) set the same end of one road: streets_reader applies them iterating a `HashMap`, random per process, and the last one sets the stop line. With 16 runs sampled, the old test missed the port's result on 15/19809/10242 once after the merge (its 6 results come out 27 to 45 times in 200 runs each). The test no longer samples. The port records every road end set by several points of one map (`HashMapOrder`, `Sources/Streets/Reader/HashMapOrder.swift`, used only by tests) and computes its four outputs for every choice of the last point at each. A case passes only if every Rust run equals one of those (16 runs where the order changes the result): each Rust order is reproduced exactly, and "differs from all runs" fails. Where the order changes the result (all crossings, no signal):
+
+| Case | Contested road ends (way) | Port results | Rust results in 200 runs |
+|---|---|---|---|
+| `roosevelt_cycletrack` | end of road 106 (621283289), 2 crossings | 2 | (2 in 16) |
+| 15/19809/10242 | end of road 140 (25069289) 2, start of road 1113 (666456349) 2, end of road 27 (8810805) 3 crossings | 6 | 6, the same 6 lane markings (counts 43, 27, 31, 34, 20, 45), the other outputs constant |
+| 15/19808/10243 | start of road 1 (22323173), end of road 632 (209618700), 2 crossings each | 2 | 2, the same 2 (99, 101) |
+| 15/19810/10243 | end of road 606 (500290236), 2 crossings | 2 | (2 in 16) |
+
+The region and the other tiles have a contested end whose choices give the same output (1 port result).
 
 ## Phase 11
 
