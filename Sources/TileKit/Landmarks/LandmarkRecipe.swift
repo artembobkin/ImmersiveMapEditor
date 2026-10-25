@@ -95,6 +95,42 @@ public struct LandmarkRecipe: Codable {
 
     public init() {}
 
+    static let colourList = Palette.landmark.map { "\($0.0) \($0.1)" }.joined(separator: ", ")
+
+    /// The format and the style, as the landmarks' agent is told them.
+    public static let guide = """
+    THE RECIPE (recipe.json): a stylized low-poly model of the landmark, in one cartoon style shared by every landmark of the map. \
+    You choose the words below; the generator builds the geometry, so keep to them. Places are metres east (x) and north (y) of the \
+    landmark's centre, heights metres above the ground. Every colour is one of the palette's landmark colours by name: \
+    \(colourList).
+
+    {"version": 1,
+     "masses": [{"id": "portico-base", "outline": "way/123"  (an OSM element of the landmark: its outer ring)
+                   or "polygon": [[x, y], ...]  (a ring of your own, for a volume OSM does not draw),
+                 "base": 0, "top": 23, "colour": "lm_cream",
+                 "plinth": {"height": 1.5, "depth": 0.15, "colour": "lm_stone"},
+                 "cornice": {"height": 0.8, "depth": 0.4, "colour": "lm_white"},
+                 "windows": {"storeys": 3, "spacing": 3.5, "width": 1.4, "height": 2.4, "arched": false, "colour": "lm_dark"},
+                 "roof": {"shape": "flat|gabled|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green"}}],
+     "features": [{"kind": "colonnade", "from": [x, y], "to": [x, y], "base": 1.5, "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
+                  {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18, "height": 4, "depth": 2, "colour": "lm_cream"},
+                  {"kind": "statue", "at": [x, y], "base": 23, "height": 5, "width": 3, "colour": "lm_dark"},
+                  {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2, "colour": "lm_stone"},
+                  {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4, "height": 1.5, "count": 5, "colour": "lm_stone"}]}
+
+    - A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
+    standing proud, window panes storey by storey on every wall long enough, and a roof on its top. Gabled, hipped and mansard \
+    roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
+    outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.
+    - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
+    over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
+    outside on the right. Steps rise from the ground at `depth` to the right of the line up to `height` at the line.
+    - The style: few large shapes over many small ones; the silhouette, proportions, the main colours and the few details \
+    that make the building recognisable from a distance (a portico, a dome, a tower, a quadriga). No textures, no fine \
+    ornament. Windows only where the building reads as storeys of windows. Every model of the map looks of one family.
+    - Use the OSM outlines where they are good. OSM heights can be wrong: trust the photos, and say so.
+    """
+
     public static func read(_ url: URL) throws -> LandmarkRecipe {
         try JSONDecoder().decode(LandmarkRecipe.self, from: Data(contentsOf: url))
     }

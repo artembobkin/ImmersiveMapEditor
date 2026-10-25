@@ -13,6 +13,7 @@ import TileKit
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
 ///   ImmersiveMapEditor --landmark-snapshot MODEL.glb OUT.png  a landmark model to a PNG, no window
 ///   ImmersiveMapEditor --landmark-views FOLDER OUT_DIR [--boxes]  a landmark's model (or OSM boxes) from around, PNGs
+///   ImmersiveMapEditor landmark-mcp FOLDER                    the landmarks' agent's tools, an MCP server on stdio
 ///
 /// With no argument it opens the data folder of Settings (DataFolder).
 @main
@@ -24,6 +25,10 @@ enum Entry {
         // build, so the pipeline is never older than the editor.
         if arguments.count > 1, arguments[1] == "pipeline" {
             PipelineCommand.run(Array(arguments.dropFirst(2)))
+        }
+        // The landmarks' agent's modelling tools, an MCP server for Claude Code.
+        if arguments.count > 2, arguments[1] == "landmark-mcp" {
+            LandmarkMCP.run(folder: URL(fileURLWithPath: arguments[2]))
         }
         if Headless.asked(arguments) {
             Platform.runMain { exit(await Headless.run(arguments) ?? 1) }
