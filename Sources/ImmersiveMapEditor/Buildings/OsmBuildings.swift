@@ -24,6 +24,13 @@ struct OsmBuilding: Identifiable {
     func contains(_ p: Vec2) -> Bool {
         polygons.contains { rings in rings.reduce(0) { $0 + winding($1, p) } != 0 }
     }
+
+    /// A point of it, the middle of its outer rings' corners: where a part
+    /// stands, to tell the building it belongs to.
+    var middle: Vec2 {
+        let pts = polygons.flatMap { $0[0] }
+        return pts.isEmpty ? .zero : pts.reduce(.zero, +) / Double(pts.count)
+    }
 }
 
 /// The buildings of the tile open, read from its OSM, what is picked of
@@ -74,6 +81,21 @@ final class OsmBuildings {
         // Outlines first, parts over them, as they are drawn.
         all = buildings.sorted { !$0.isPart && $1.isPart }
         status = "\(buildings.filter { !$0.isPart }.count) buildings, \(buildings.filter(\.isPart).count) parts"
+    }
+
+    /// The whole building under a point: its outline (the smallest building
+    /// that holds the point, or the one the part under it stands in) and
+    /// every part standing in that outline. A part with no outline round it
+    /// alone.
+    func whole(at p: Vec2) -> [OsmBuilding] {
+        let outlines = all.filter { !$0.isPart }
+        var outline = outlines.filter { $0.contains(p) }.min { $0.area < $1.area }
+        if outline == nil, let part = building(at: p) {
+            outline = outlines.filter { $0.contains(part.middle) }.min { $0.area < $1.area }
+            if outline == nil { return [part] }
+        }
+        guard let outline else { return [] }
+        return [outline] + all.filter { $0.isPart && outline.contains($0.middle) }
     }
 
     /// The building under a point: the smallest that holds it, a part before

@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The Buildings view: the tile's buildings of OpenStreetMap from straight
-/// above, their outlines and parts, to pick some (click, shift-click) and
-/// see their tags, and to mark them a landmark. Drag to move, scroll or
+/// above, their outlines and parts, to pick some (click, shift-click; a
+/// double-click a whole building with its parts) and see their tags, and to
+/// mark them a landmark. Drag to move, scroll or
 /// pinch to zoom at the cursor, F frames the tile. The camera is the one
 /// the views share (its ground point and scale).
 struct BuildingsView: View {
@@ -33,6 +34,11 @@ struct BuildingsView: View {
             }
         }
         .contentShape(Rectangle())
+        // A double-click: the whole building, its outline and every part.
+        .onTapGesture(count: 2, coordinateSpace: .local) { p in
+            let ids = Set(catalog.whole(at: world(p)).map(\.id))
+            catalog.picked = shift ? catalog.picked.union(ids) : ids
+        }
         .onTapGesture(count: 1, coordinateSpace: .local) { p in
             guard let b = catalog.building(at: world(p)) else {
                 if !shift { catalog.picked = [] }
