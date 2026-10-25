@@ -3,6 +3,7 @@ import Testing
 @testable import Topology
 import geos
 
+extension GEOSSuite {
 /// One case run on both sides, to study a difference: `DEBUG_OP` names the
 /// operation (`intersection`, `union`, `difference`, `symDifference`,
 /// `unaryUnion`), `DEBUG_A` and `DEBUG_B` hold the inputs' WKT (or name
@@ -200,4 +201,5 @@ struct DebugCaseTests {
         case .failure(let e): print("debug port fails: \(e)")
         }
     }
+}
 }

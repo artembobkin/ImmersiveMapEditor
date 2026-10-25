@@ -1,15 +1,14 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
-/// The overlays against GEOS 3.13: `GEOSIntersection`, `GEOSUnion`,
-/// `GEOSDifference`, `GEOSSymDifference`, `GEOSUnaryUnion` and the `Prec`
-/// overlays at a fixed precision, on seeded random pairs that overlap and on
-/// near-degenerate ones (shared edges, tiny shifts, the same geometry twice,
-/// collinear vertices). Results in GEOS's normal form, bit for bit; where
-/// GEOS fails, the port must throw. The results as they come (not
-/// normalized) are counted too: GEOS's order of rings and points.
+/// The overlays against GEOS 3.13's stored answers (`GEOSIntersection`,
+/// `GEOSUnion`, `GEOSDifference`, `GEOSSymDifference`, `GEOSUnaryUnion` and
+/// the `Prec` overlays at a fixed precision), on seeded random pairs that
+/// overlap and on near-degenerate ones (shared edges, tiny shifts, the same
+/// geometry twice, collinear vertices). Results in GEOS's normal form, bit
+/// for bit; where GEOS failed, the port must throw. The results as they come
+/// (not normalized) are counted too: GEOS's order of rings and points.
 @Suite struct OverlayParityTests {
     /// Every coordinate of a shape moved by `f`.
     static func mapped(_ s: Shape, _ f: (Double, Double) -> (Double, Double)) -> Shape {
@@ -70,8 +69,9 @@ import geos
         var failingBoth = 0
         /// Equal but for the sign of zeros (accepted, counted apart).
         var zeroSign = 0
-        /// Of those, the inputs on which GEOS itself gives different results
-        /// from run to run (its snap rounding shuffles at random).
+        /// Of those, the inputs on which GEOS itself gave different results
+        /// from run to run (its snap rounding shuffles at random), as found
+        /// when its answers were stored.
         var zeroSignGEOSVaries = 0
 
         init(_ name: String) { normal = ParityTally(name) }
@@ -87,63 +87,62 @@ import geos
     }
 
     /// Compares one operation's result with GEOS's. A result equal to GEOS's
-    /// but for the sign of zeros is accepted and counted apart; `again` runs
-    /// GEOS once more, to see whether GEOS itself varies on the input.
-    static func compare(_ o: GEOSOracle, _ input: @autoclosure () -> String, _ mine: () throws -> Topology.Geometry,
-                        _ theirs: GEOSGeom?, _ t: inout Tallies, again: (() -> GEOSGeom?)? = nil) {
+    /// but for the sign of zeros is accepted and counted apart.
+    static func compare(_ input: @autoclosure () -> String, _ mine: () throws -> Topology.Geometry,
+                        _ theirs: GeometryAnswer, _ t: inout Tallies) {
         let m = Result { try mine() }
         switch (m, theirs) {
-        case (.failure, nil):
-            _ = o.takeError()
+        case (.failure, .failure):
             t.failingBoth += 1
             t.normal.check(true, "")
-        case (.failure(let e), let g?):
-            t.normal.check(false, "\(input()): the port fails (\(e)), GEOS gives \(g.shape)")
-        case (.success(let p), nil):
-            t.normal.check(false, "\(input()): GEOS fails (\(o.takeError() ?? "")), the port gives \(Shape(p))")
-        case (.success(let p), let g?):
-            let (a, b) = o.normalizedShapes(p, g)
-            if a != b && a.equalsIgnoringZeroSign(b) {
+        case (.failure(let e), .result(let g)):
+            t.normal.check(false, "\(input()): the port fails (\(e)), GEOS gives \(g.description)")
+        case (.success(let p), .failure(let message)):
+            t.normal.check(false, "\(input()): GEOS fails (\(message ?? "")), the port gives \(Shape(p))")
+        case (.success(let p), .result(let g)):
+            let a = Shape(p.norm()), raw = Shape(p)
+            let match = g.compare(raw: raw, normal: a)
+            if match == .zeroSign {
                 t.zeroSign += 1
-                if let again, (0..<10).contains(where: { _ in again().map { o.normalized($0).shape } != b }) { t.zeroSignGEOSVaries += 1 }
-                ParityTally.dump("\(t.normal.name) zero sign: \(input())\n  port \(a)\n  GEOS \(b)")
+                if g.varies { t.zeroSignGEOSVaries += 1 }
+                ParityTally.dump("\(t.normal.name) zero sign: \(input())\n  port \(a)\n  GEOS \(g.normalDescription)")
                 t.normal.check(true, "")
                 return
             }
-            t.normal.check(a == b, "\(input()):\n  port \(a)\n  GEOS \(b)")
-            if Shape(p) == g.shape {
+            t.normal.check(match == .equal, "\(input()):\n  port \(a)\n  GEOS \(g.normalDescription)")
+            if g.rawEquals(raw) {
                 t.raw += 1
             } else if ProcessInfo.processInfo.environment["PARITY_DUMP_RAW"] != nil {
-                ParityTally.dump("\(t.normal.name) raw: \(input())\n  port \(Shape(p))\n  GEOS \(g.shape)")
+                ParityTally.dump("\(t.normal.name) raw: \(input())\n  port \(raw)\n  GEOS \(g.description)")
             }
         }
     }
 
-    static let binaryOps: [(String, (Topology.Geometry, Topology.Geometry) throws -> Topology.Geometry,
-                            (GEOSContextHandle_t?, OpaquePointer?, OpaquePointer?) -> OpaquePointer?)] = [
-        ("intersection", { try $0.intersection($1) }, GEOSIntersection_r),
-        ("union", { try $0.union($1) }, GEOSUnion_r),
-        ("difference", { try $0.difference($1) }, GEOSDifference_r),
-        ("symDifference", { try $0.symDifference($1) }, GEOSSymDifference_r),
+    static let binaryOps: [(String, (Topology.Geometry, Topology.Geometry) throws -> Topology.Geometry, GeometryOp)] = [
+        ("intersection", { try $0.intersection($1) }, .intersection),
+        ("union", { try $0.union($1) }, .union),
+        ("difference", { try $0.difference($1) }, .difference),
+        ("symDifference", { try $0.symDifference($1) }, .symDifference),
     ]
 
     @Test(arguments: 0..<4) func binaryOverlay(_ op: Int) {
         let (name, mine, theirs) = OverlayParityTests.binaryOps[op]
-        let o = GEOSOracle()
+        let o = Oracles.make("OverlayParityTests.binaryOverlay.\(op)")
+        defer { o.finish() }
         var t = Tallies(name)
         var r = RandomGeometries(seed: 400 + UInt64(op))
         for _ in 0..<4000 {
             let a = r.geometry()
             let b = OverlayParityTests.partner(a, &r)
-            let ga = o.geometry(a)!, gb = o.geometry(b)!
-            OverlayParityTests.compare(o, "\(a) \(name) \(b)", { try mine(a.topology(), b.topology()) }, ga.binary(gb, theirs), &t,
-                                       again: { ga.binary(gb, theirs) })
+            OverlayParityTests.compare("\(a) \(name) \(b)", { try mine(a.topology(), b.topology()) },
+                                       o.geometry(theirs, [.shape(a), .shape(b)], again: true), &t)
         }
         t.report()
     }
 
     @Test func unaryUnion() {
-        let o = GEOSOracle()
+        let o = Oracles.make("OverlayParityTests.unaryUnion")
+        defer { o.finish() }
         var t = Tallies("unaryUnion")
         var r = RandomGeometries(seed: 410)
         for _ in 0..<2000 {
@@ -153,22 +152,19 @@ import geos
             let kinds = Set(parts.map(\.kind))
             let kind: Shape.Kind = kinds == [.polygon] ? .multiPolygon : (kinds == [.lineString] ? .multiLineString : .geometryCollection)
             let s = Shape(kind: kind, parts: parts.flatMap { $0.kind.rawValue >= 4 ? $0.parts : [$0] }.filter { !$0.isEmpty })
-            let g = o.geometry(s)!
-            OverlayParityTests.compare(o, "\(s)", { try s.topology().union() }, g.unaryUnion, &t)
+            OverlayParityTests.compare("\(s)", { try s.topology().union() }, o.geometry(.unaryUnion, [.shape(s)]), &t)
         }
         t.report()
     }
 
-    static let precOps: [(Int, (GEOSContextHandle_t?, OpaquePointer?, OpaquePointer?, Double) -> OpaquePointer?)] = [
-        (OverlayNG.intersection, GEOSIntersectionPrec_r), (OverlayNG.union, GEOSUnionPrec_r),
-        (OverlayNG.difference, GEOSDifferencePrec_r), (OverlayNG.symDifference, GEOSSymDifferencePrec_r),
-    ]
+    static let precOps = [OverlayNG.intersection, OverlayNG.union, OverlayNG.difference, OverlayNG.symDifference]
 
     /// OverlayNG with snap rounding at a fixed precision, as the `Prec`
     /// functions run it (GEOS's grid size is the precision's 1 / scale).
     @Test(arguments: 0..<4) func fixedPrecisionOverlay(_ op: Int) {
-        let (code, theirs) = OverlayParityTests.precOps[op]
-        let o = GEOSOracle()
+        let code = OverlayParityTests.precOps[op]
+        let o = Oracles.make("OverlayParityTests.fixedPrecisionOverlay.\(op)")
+        defer { o.finish() }
         var t = Tallies("Prec overlay \(code)")
         var r = RandomGeometries(seed: 420 + UInt64(op))
         for _ in 0..<2000 {
@@ -176,10 +172,9 @@ import geos
             let b = OverlayParityTests.partner(a, &r)
             guard let (_, _, size) = OverlayParityTests.frame(a), size > 0 else { continue }
             let grid = [size / 7, size / 100, size / 1e4, 1.0, 0.001].randomElement(using: &r.rng)!
-            let ga = o.geometry(a)!, gb = o.geometry(b)!
-            OverlayParityTests.compare(o, "\(a) op \(code) \(b) grid \(grid)", {
+            OverlayParityTests.compare("\(a) op \(code) \(b) grid \(grid)", {
                 try OverlayNG.overlay(a.topology(), b.topology(), code, PrecisionModel(scale: 1.0 / grid))
-            }, ga.binary(gb, theirs, grid), &t, again: { ga.binary(gb, theirs, grid) })
+            }, o.geometry(.overlayPrec(code, grid: grid), [.shape(a), .shape(b)], again: true), &t)
         }
         t.report()
     }

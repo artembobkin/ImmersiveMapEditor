@@ -45,3 +45,14 @@ enum TestPaths {
         return package.appendingPathComponent(".build/recording")
     }()
 }
+
+extension TestPaths {
+    /// The stored GEOS answers in git (`StoredOracle`): `.oracle` beside these
+    /// sources, a hidden folder, which SwiftPM leaves out of the target.
+    static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent(".oracle")
+
+    /// The stored GEOS answers of the recorded calls, outside git beside the
+    /// recordings: `expected/<recording>/` under the folder of recordings.
+    static var expected: URL { recording.appendingPathComponent("expected") }
+}

@@ -1,18 +1,19 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
 /// Point location (`PointLocator`, `RayCrossingCounter`) against GEOS's
-/// predicates of a point: a point intersects a geometry when it is not in its
-/// exterior, and is contained when it is in its interior. The points are on
-/// vertices, on edges (midpoints, exactly or nearly), and anywhere around.
-/// Only valid geometries that are not collections: for an invalid one (parts
-/// overlapping) or a collection GEOS's predicates follow the relate rules
-/// (the union of the parts), compared with the predicates in phase 4.
+/// stored answers of the predicates of a point: a point intersects a
+/// geometry when it is not in its exterior, and is contained when it is in
+/// its interior. The points are on vertices, on edges (midpoints, exactly or
+/// nearly), and anywhere around. Only valid geometries (by GEOS) that are
+/// not collections: for an invalid one (parts overlapping) or a collection
+/// GEOS's predicates follow the relate rules (the union of the parts),
+/// compared with the predicates in phase 4.
 @Suite struct LocationParityTests {
     @Test func pointLocation() {
-        let o = GEOSOracle()
+        let o = Oracles.make("LocationParityTests.pointLocation")
+        defer { o.finish() }
         var intersects = ParityTally("PointLocator (GEOSIntersects of a point)")
         var contains = ParityTally("PointLocator (GEOSContains of a point)")
         var onLineApart = 0
@@ -21,8 +22,7 @@ import geos
             let s = r.geometry()
             let g = s.topology()
             if g.isEmpty() || s.kind == .geometryCollection { continue }
-            let gg = o.geometry(s)!
-            if gg.predicate(GEOSisValid_r) != true { continue }
+            if o.predicate(.isValid, [.shape(s)]) != true { continue }
             let pts = g.getCoordinates()
             let env = g.getEnvelopeInternal()
             var probes: [Coordinate] = []
@@ -45,10 +45,9 @@ import geos
             for p in probes {
                 var locator = PointLocator()
                 let loc = locator.locate(p, g)
-                let gp = o.read(wkt: "POINT (0 0)")!
-                let moved = o.transformed(gp) { _, _ in (p.x, p.y) }!
-                let gi = moved.predicate(gg, GEOSIntersects_r)
-                let gc = gg.predicate(moved, GEOSContains_r)
+                let point = Shape(kind: .point, coordinates: [p.x, p.y])
+                let gi = o.predicate(.intersects, [.shape(point), .shape(s)])
+                let gc = o.predicate(.contains, [.shape(s), .shape(point)])
                 // GEOS 3.13's PointLocator tests a polygon's rings with
                 // `isOnLine` before counting crossings, as the port does, and
                 // its predicates count crossings only. The two disagree for a

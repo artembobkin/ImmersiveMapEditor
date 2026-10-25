@@ -1,15 +1,21 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
 /// The JTS XML suites on the port, for the operations it has
-/// (`TopologyEngine.supported`): it passes exactly the tests GEOS passes
-/// (`GEOSBaseline`), its results are GEOS's bit for bit, and it reads every
-/// input geometry of the suites as GEOS reads it.
+/// (`TopologyEngine.supported`): it passes exactly the tests GEOS 3.13
+/// passed (`GEOSBaseline`), its results are GEOS's bit for bit (GEOS's
+/// stored answers), and it reads every input geometry of the suites as GEOS
+/// read it. The suites stay outside git (`.build/ports/jts`); GEOS's answers
+/// on them are in git (`.oracle`).
 @Suite struct JTSXMLTopologyTests {
     static func files() throws -> [JTSTestFile] {
         try TestPaths.suites.flatMap { TestPaths.xmlFiles($0) }.map { try JTSTestFile(url: $0) }
+    }
+
+    @Test func theSuitesAreThere() {
+        #expect(TestPaths.jts != nil, "JTS 1.20.0 is not at .build/ports/jts (or JTS_ROOT)")
+        for suite in TestPaths.suites { #expect(!TestPaths.xmlFiles(suite).isEmpty, "no XML files in \(suite)") }
     }
 
     @Test func portPassesWhatGEOSPasses() throws {
@@ -35,33 +41,35 @@ import geos
     }
 
     @Test func portResultsAreGEOSs() throws {
-        let o = GEOSOracle()
-        let port = TopologyEngine(), geos = GEOSEngine(oracle: o)
+        let o = Oracles.make("JTSXMLTopologyTests.portResultsAreGEOSs")
+        defer { o.finish() }
+        let port = TopologyEngine()
         var tally = ParityTally("JTS XML results")
         for file in try JTSXMLTopologyTests.files() {
             for c in file.cases {
-                guard let pa = try? c.a.map({ try port.read($0, scale: file.fixedScale) }),
-                      let ga = try? c.a.map({ try geos.read($0, scale: file.fixedScale) }) else { continue }
+                // Whether GEOS read the inputs (true when there is none).
+                let geos = o.jtsCase(file, c)
+                guard let pa = try? c.a.map({ try port.read($0, scale: file.fixedScale) }), geos.a else { continue }
                 let pb = try? c.b.map { try port.read($0, scale: file.fixedScale) }
-                let gb = try? c.b.map { try geos.read($0, scale: file.fixedScale) }
+                let hasB = geos.b && c.b != nil
                 for t in c.tests where TopologyEngine.supported.contains(t.operation.lowercased()) {
-                    let pt = t.target.uppercased() == "B" ? pb ?? nil : pa, gt = t.target.uppercased() == "B" ? gb ?? nil : ga
-                    guard let pt, let gt else { continue }
+                    let isB = t.target.uppercased() == "B"
+                    let pt = isB ? pb ?? nil : pa, gt = isB ? hasB : c.a != nil
+                    guard let pt, gt else { continue }
                     let mine = try? port.evaluate(t, target: pt, a: pa, b: pb ?? nil, file: file)
-                    let theirs = try? geos.evaluate(t, target: gt, a: ga, b: gb ?? nil, file: file)
+                    let theirs = o.jtsEvaluate(file, t)
                     let id = "\(file.name)#\(c.index).\(t.index) \(t.operation)"
                     switch (mine, theirs) {
-                    case (.geometry(let m)?, .geometry(let g)?):
-                        let (x, y) = o.normalizedShapes(m, g)
-                        tally.check(x == y, "\(id): port \(x) GEOS \(y)")
-                    case (.boolean(let m)?, .boolean(let g)?):
+                    case (.geometry(let m)?, .geometry(.result(let g))):
+                        tally.check(g.compare(raw: Shape(m), normal: Shape(m.norm())) == .equal, "\(id): port \(Shape(m.norm())) GEOS \(g.normalDescription)")
+                    case (.boolean(let m)?, .boolean(let g)):
                         tally.check(m == g, "\(id): port \(m) GEOS \(g)")
-                    case (.number(let m)?, .number(let g)?):
+                    case (.number(let m)?, .number(let g)):
                         tally.check(m.bitPattern == g.bitPattern, "\(id): port \(m) GEOS \(g)")
-                    case (nil, nil):
+                    case (nil, .none):
                         tally.check(true, "")
                     default:
-                        tally.check(false, "\(id): port \(String(describing: mine)) GEOS \(String(describing: theirs))")
+                        tally.check(false, "\(id): port \(String(describing: mine)) GEOS \(theirs)")
                     }
                 }
             }
@@ -70,20 +78,21 @@ import geos
     }
 
     @Test func portReadsTheInputsAsGEOS() throws {
-        let o = GEOSOracle()
+        let o = Oracles.make("JTSXMLTopologyTests.portReadsTheInputsAsGEOS")
+        defer { o.finish() }
         var tally = ParityTally("WKT and WKB reading (JTS XML inputs)")
         for file in try JTSXMLTopologyTests.files() {
-            let port = TopologyEngine(), geos = GEOSEngine(oracle: o)
+            let port = TopologyEngine()
             for c in file.cases {
                 for text in [c.a, c.b].compactMap({ $0 }) {
-                    let g = try? geos.read(text, scale: file.fixedScale)
+                    let g = o.jtsRead(text, scale: file.fixedScale)
                     let p = try? port.read(text, scale: file.fixedScale)
                     // GEOS refuses text after the geometry, JTS reads it (TestCentroid 10).
-                    if g == nil && p != nil && text.filter({ $0 == ")" }).count > text.filter({ $0 == "(" }).count { continue }
+                    if case .failure = g, p != nil, text.filter({ $0 == ")" }).count > text.filter({ $0 == "(" }).count { continue }
                     switch (p, g) {
-                    case (let p?, let g?): tally.check(Shape(p) == g.shape, "\(file.name)#\(c.index): \(Shape(p)) vs \(g.shape)")
-                    case (nil, nil): tally.check(true, "")
-                    default: tally.check(false, "\(file.name)#\(c.index): port \(p.map { "\($0)" } ?? "fails") GEOS \(g.map { $0.wkt } ?? "fails")")
+                    case (let p?, .result(let g)): tally.check(g.rawEquals(Shape(p)), "\(file.name)#\(c.index): \(Shape(p)) vs \(g.description)")
+                    case (nil, .failure): tally.check(true, "")
+                    default: tally.check(false, "\(file.name)#\(c.index): port \(p.map { "\($0)" } ?? "fails") GEOS \(g.result?.description ?? "fails")")
                     }
                 }
             }

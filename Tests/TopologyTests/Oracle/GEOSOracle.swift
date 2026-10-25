@@ -1,5 +1,6 @@
 import Foundation
 import geos
+import Topology
 
 /// GEOS 3.13 as the test oracle of the port (Docs/PortingGoal.md, "Parity"):
 /// a context of its own, geometries read from WKT or WKB, and the operations
@@ -183,4 +184,16 @@ final class GEOSGeom {
     var wkt: String { oracle.wkt(self) }
     var shape: Shape { oracle.shape(self) }
     var normalized: GEOSGeom { oracle.normalized(self) }
+}
+
+
+extension GEOSOracle {
+    /// A geometry of the port as a GEOS geometry, exactly.
+    func geos(_ g: Topology.Geometry) -> GEOSGeom { geometry(Shape(g))! }
+
+    /// GEOS's normal form of a port's result and of GEOS's, as shapes:
+    /// equal when the results are the same geometry, bit for bit.
+    func normalizedShapes(_ topology: Topology.Geometry, _ geos: GEOSGeom) -> (Shape, Shape) {
+        (normalized(self.geos(topology)).shape, normalized(geos).shape)
+    }
 }

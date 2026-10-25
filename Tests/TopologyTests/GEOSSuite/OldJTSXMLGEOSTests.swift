@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 
+extension GEOSSuite {
 /// The JTS XML suites run on GEOS, to check the runner before it checks the
 /// port: every file parses, and the tests GEOS does not pass are exactly the
 /// ones `GEOSBaseline` lists (GEOS 3.13 differs from JTS 1.20 in places: its
@@ -69,4 +70,5 @@ enum GEOSBaselineWriter {
         let url = TestPaths.package.appendingPathComponent("Tests/TopologyTests/JTSXML/GEOSBaseline.swift")
         try s.write(to: url, atomically: true, encoding: .utf8)
     }
+}
 }
