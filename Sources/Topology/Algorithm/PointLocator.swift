@@ -31,11 +31,11 @@ public struct PointLocator {
             for l in ml.geometries { updateLocationInfo(locateOnLineString(p, l as! LineString)) }
         } else if let mp = geom as? MultiPolygon {
             for poly in mp.geometries { updateLocationInfo(locateInPolygon(p, poly as! Polygon)) }
-        } else if geom is GeometryCollection {
-            // GeometryCollectionIterator: every geometry of the tree, in pre-order.
-            var all: [Geometry] = []
-            geom.applyGeometries { all.append($0) }
-            for g2 in all where g2 !== geom { computeLocation(p, g2) }
+        } else if let gc = geom as? GeometryCollection {
+            // GEOS 3.13 recurses into the members (JTS iterates the whole
+            // tree in pre-order and recurses as well, which counts the
+            // members of a nested collection twice).
+            for g2 in gc.geometries { computeLocation(p, g2) }
         }
     }
 
@@ -59,9 +59,14 @@ public struct PointLocator {
         return Location.exterior
     }
 
+    /// As GEOS 3.13: on the ring's line first (`isOnLine`), then inside it
+    /// (JTS 1.20: one pass of the ray crossing counter). The location is the
+    /// same; a vertex is found before an orientation test meets it.
     private func locateInPolygonRing(_ p: Coordinate, _ ring: LinearRing) -> Int {
         if !ring.getEnvelopeInternal().intersects(p) { return Location.exterior }
-        return PointLocation.locateInRing(p, ring.points)
+        if PointLocation.isOnLine(p, ring.points) { return Location.boundary }
+        if PointLocation.isInRing(p, ring.points) { return Location.interior }
+        return Location.exterior
     }
 
     private func locateInPolygon(_ p: Coordinate, _ poly: Polygon) -> Int {

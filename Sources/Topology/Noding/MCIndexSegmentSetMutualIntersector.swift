@@ -20,7 +20,12 @@ public final class MCIndexSegmentSetMutualIntersector {
     }
 
     /// Every pair of a segment of `segStrings` with a segment of the base
-    /// set whose envelopes meet, to `segInt`, until it is done.
+    /// set whose envelopes meet, to `segInt`. Once it is done, as GEOS 3.13
+    /// runs it: the query of the current chain stops, and every later chain
+    /// still meets the first test chain its query finds (JTS stops at once).
+    /// This changes no answer, only what is computed after it: an
+    /// intersection point taken later, an orientation test that meets a
+    /// non-finite point.
     public func process(_ segStrings: [SegmentString], _ segInt: SegmentIntersector) {
         var monoChains: [MonotoneChain] = []
         for ss in segStrings where ss.size() > 0 {
@@ -33,7 +38,7 @@ public final class MCIndexSegmentSetMutualIntersector {
             let queryEnv = queryChain.getEnvelope(overlapTolerance)
             for testChain in index.query(queryEnv) {
                 queryChain.computeOverlaps(testChain, overlapTolerance, segInt)
-                if segInt.isDone() { return }
+                if segInt.isDone() { break }
             }
         }
     }

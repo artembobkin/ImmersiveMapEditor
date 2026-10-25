@@ -75,8 +75,16 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
         }
     }
 
+    /// As GEOS 3.13 expands: an envelope that is null copies the other
+    /// whatever it is, else each side moves only where the other's is beyond
+    /// it (a NaN side never is). JTS's null (`maxX < minX`, never with NaN)
+    /// changes nothing, as GEOS's null (all NaN) does.
     public mutating func expandToInclude(_ o: Envelope) {
-        if o.isNull { return }
+        if o.maxX < o.minX {
+            // GEOS copies its null (all NaN) into a null envelope.
+            if maxX.isNaN { minX = .nan; maxX = .nan; minY = .nan; maxY = .nan }
+            return
+        }
         if isNull {
             minX = o.minX; maxX = o.maxX; minY = o.minY; maxY = o.maxY
         } else {

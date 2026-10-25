@@ -67,6 +67,9 @@ struct CxxTree<Key, Value> {
         return (x, true)
     }
 
+    /// The value of a node, changed in place (`map[key]++` after an insert).
+    mutating func modify(_ i: Int, _ change: (inout Value) -> Void) { change(&nodes[i].value) }
+
     /// The node of a key equivalent to `key`, if any.
     func find(_ key: Key) -> Int? {
         // __lower_bound

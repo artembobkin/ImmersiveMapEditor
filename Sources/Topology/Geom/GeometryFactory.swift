@@ -38,14 +38,20 @@ public final class GeometryFactory: Sendable {
     /// The geometry of an envelope, as GEOS 3.13 makes it: an empty point, a
     /// point, else a rectangle counter-clockwise from its lower left corner,
     /// flat when the envelope is (JTS 1.20 gives a line for a flat envelope,
-    /// and its rectangle is clockwise).
+    /// and its rectangle is clockwise). An envelope with a NaN side makes a
+    /// ring that is not closed, which GEOS refuses: reported as the
+    /// orientation test reports GEOS's exceptions (`NonFinite`).
     public func toGeometry(_ e: Envelope) -> Geometry {
         if e.isNull { return createPoint() }
         if e.minX == e.maxX && e.minY == e.maxY { return createPoint(Coordinate(e.minX, e.minY)) }
-        return createPolygon(createLinearRing([
+        guard let ring = try? createLinearRingChecked([
             Coordinate(e.minX, e.minY), Coordinate(e.maxX, e.minY), Coordinate(e.maxX, e.maxY),
             Coordinate(e.minX, e.maxY), Coordinate(e.minX, e.minY),
-        ]))
+        ]) else {
+            NonFinite.raise()
+            return createPolygon()
+        }
+        return createPolygon(ring)
     }
 
     /// The smallest geometry type that holds them all, as JTS's

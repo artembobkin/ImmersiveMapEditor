@@ -203,7 +203,8 @@ extension Geometry {
     public func interpolate(_ d: Double, normalized: Bool = false) throws -> Point {
         let index = normalized ? d * getLength() : d
         let c = try LengthIndexedLine(self).extractPoint(index)
-        return GeometryFactory.default.createPoint(c)
+        // GEOS's C API makes an empty point of a null coordinate (NaN, NaN).
+        return GeometryFactory.default.createPoint(c.flatMap { $0.isNull ? nil : $0 })
     }
 
     /// How far along the line the point nearest to a point is (`GEOSProject`).

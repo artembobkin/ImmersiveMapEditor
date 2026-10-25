@@ -84,7 +84,9 @@ import geos
             let shapes = LinesParityTests.linework(&r, o)
             let gs = shapes.map { o.geometry($0)! }
             var ptrs: [OpaquePointer?] = gs.map { $0.ptr }
-            let theirs = o.wrap(GEOSPolygonize_r(o.handle, &ptrs, UInt32(ptrs.count)))
+            // The geometries must outlive the call (an optimized build frees them
+            // after their last use, the pointers taken).
+            let theirs = withExtendedLifetime(gs) { o.wrap(GEOSPolygonize_r(o.handle, &ptrs, UInt32(ptrs.count))) }
             if let theirs, theirs.numGeometries > 0 { nonEmpty += 1 }
             OverlayParityTests.compare(o, "\(shapes)", { try Topology.Geometry.polygonize(shapes.map { $0.topology() }) }, theirs, &t)
         }

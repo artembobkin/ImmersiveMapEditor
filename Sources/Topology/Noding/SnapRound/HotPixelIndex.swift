@@ -11,7 +11,7 @@ final class HotPixelIndex {
         scaleFactor = pm.scale
     }
 
-    func add(_ pts: [Coordinate]) {
+    func add(_ pts: [Coordinate]) throws {
         var rnd = JavaRandom(seed: 13)
         var indices = Array(0..<pts.count)
         var i = pts.count - 1
@@ -20,22 +20,22 @@ final class HotPixelIndex {
             let p = pts[indices[j]]
             indices[j] = indices[i]
             i -= 1
-            add(p)
+            try add(p)
         }
     }
 
-    func addNodes(_ pts: [Coordinate]) {
-        for p in pts { add(p).setToNode() }
+    func addNodes(_ pts: [Coordinate]) throws {
+        for p in pts { try add(p).setToNode() }
     }
 
     @discardableResult
-    func add(_ p: Coordinate) -> HotPixel {
+    func add(_ p: Coordinate) throws -> HotPixel {
         let pRound = precModel.makePrecise(p)
         if let hp = find(pRound) {
             hp.setToNode()
             return hp
         }
-        let hp = HotPixel(pRound, scaleFactor)
+        let hp = try HotPixel(pRound, scaleFactor)
         index.insert(hp.coordinate, hp)
         return hp
     }

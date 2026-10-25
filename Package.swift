@@ -13,8 +13,8 @@ let package = Package(
         .package(url: "https://github.com/GEOSwift/geos.git", exact: "9.0.0"),
     ],
     targets: [
-        // GEOS in Swift: what the build does with polygons and lines.
-        .target(name: "Geometry", dependencies: [.product(name: "geos", package: "geos")], path: "Sources/Geometry"),
+        // What the build does with polygons and lines, shapely's names on Topology.
+        .target(name: "Geometry", dependencies: ["Topology"], path: "Sources/Geometry"),
 
         // The ports (Docs/PortingGoal.md). Topology: the JTS Topology Suite
         // 1.20.0 in Swift (EDL-1.0), to replace GEOS under Geometry.

@@ -10,8 +10,10 @@ public final class HotPixel {
     let hpy: Double
     @exclusivity(unchecked) public private(set) var isNode = false
 
-    public init(_ pt: Coordinate, _ scaleFactor: Double) {
-        precondition(scaleFactor > 0, "Scale factor must be non-zero")
+    public init(_ pt: Coordinate, _ scaleFactor: Double) throws {
+        // GEOS throws here, where JTS does too: a scale of 0 reaches it from
+        // the safe scale of non-finite input.
+        if scaleFactor <= 0 { throw IllegalArgumentException("Scale factor must be non-zero") }
         coordinate = pt
         self.scaleFactor = scaleFactor
         if scaleFactor != 1.0 {

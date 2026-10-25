@@ -1,43 +1,36 @@
-import geos
+import Topology
+import simd
 
 /// A point in plan.
 public typealias P2 = SIMD2<Double>
 
-/// The one GEOS context. The build runs on one thread at a time.
-@usableFromInline
-nonisolated(unsafe) let ctx: GEOSContextHandle_t = {
-    let c = GEOS_init_r()!
-    return c
-}()
-
-/// A planar geometry of GEOS, owned: points, lines, polygons and their
-/// collections, with the operations the build uses, named as shapely names
-/// them (the Python build this ports was written against shapely).
+/// A planar geometry: points, lines, polygons and their collections, with
+/// the operations the build uses, named as shapely names them (the Python
+/// build this ports was written against shapely).
 ///
-/// An operation GEOS cannot do (a topology error) gives an empty geometry.
+/// It stands on `Topology`, the Swift port of JTS, and behaves exactly as
+/// the wrapper of GEOS 3.13's C API it replaces did (Docs/PortingGoal.md,
+/// phase 8): every operation is the one the C API ran, with its defaults,
+/// and a failure gives what the C API gave then (`Failure`): an operation
+/// GEOS cannot do (a topology error) gives an empty geometry.
 public final class Geometry: CustomStringConvertible {
-    public let ptr: OpaquePointer
+    /// The port's geometry. Never changed once wrapped: the operations make
+    /// new ones, and the parts of a collection are copies.
+    let geometry: Topology.Geometry
     /// Its id in the recording (`Recorder`), 0 until it is written.
     var recordID: UInt32 = 0
 
-    /// Takes ownership of a GEOS geometry.
-    public init(owning ptr: OpaquePointer) {
-        self.ptr = ptr
+    init(_ geometry: Topology.Geometry) {
+        self.geometry = geometry
     }
 
-    deinit {
-        GEOSGeom_destroy_r(ctx, ptr)
-    }
+    /// The factory of the geometries made here: floating precision, as the
+    /// GEOS context's was.
+    static let factory = GeometryFactory.default
 
-    static func make(_ p: OpaquePointer?) -> Geometry {
-        if let p { return Geometry(owning: p) }
-        return .empty
-    }
-
-    /// A copy of a geometry GEOS owns elsewhere (a part of a collection).
-    static func copy(_ p: OpaquePointer?) -> Geometry {
-        guard let p, let c = GEOSGeom_clone_r(ctx, p) else { return .empty }
-        return Geometry(owning: c)
+    /// The result of an operation, or `.empty` where it fails.
+    static func make(_ body: () throws -> Topology.Geometry) -> Geometry {
+        Failure.attempt(nil) { Geometry(try body()) } ?? .empty
     }
 
     public enum Kind: Int32 {
@@ -51,43 +44,47 @@ public final class Geometry: CustomStringConvertible {
 
     public static var empty: Geometry {
         Recorder.shared?.count("empty")
-        return Geometry(owning: GEOSGeom_createEmptyCollection_r(ctx, 7)!)
+        return Geometry(factory.createGeometryCollection())
     }
 
-    static func sequence(_ pts: [P2]) -> OpaquePointer {
-        var flat = [Double]()
-        flat.reserveCapacity(pts.count * 2)
-        for p in pts { flat.append(p.x); flat.append(p.y) }
-        return GEOSCoordSeq_copyFromBuffer_r(ctx, flat, UInt32(pts.count), 0, 0)!
-    }
+    static func coordinates(_ pts: [P2]) -> [Coordinate] { pts.map { Coordinate($0.x, $0.y) } }
 
     public static func point(_ x: Double, _ y: Double) -> Geometry {
         Recorder.shared?.count("point")
-        return Geometry(owning: GEOSGeom_createPointFromXY_r(ctx, x, y)!)
+        return Geometry(factory.createPoint(Coordinate(x, y)))
     }
 
     public static func point(_ p: P2) -> Geometry { point(p.x, p.y) }
 
     public static func lineString(_ pts: [P2]) -> Geometry {
         Recorder.shared?.count("lineString")
-        guard pts.count >= 2 else { return Geometry(owning: GEOSGeom_createEmptyLineString_r(ctx)!) }
-        return make(GEOSGeom_createLineString_r(ctx, sequence(pts)))
+        guard pts.count >= 2 else { return Geometry(factory.createLineString()) }
+        return Geometry(factory.createLineString(coordinates(pts)))
     }
 
-    static func ring(_ pts: [P2]) -> OpaquePointer? {
+    /// A closed ring of the points, or nil where GEOS refused one: too few
+    /// points, or not closed after closing it (a NaN first point).
+    static func ring(_ pts: [P2]) -> LinearRing? {
         guard pts.count >= 3 else { return nil }
         var closed = pts
         if closed.first! != closed.last! { closed.append(closed[0]) }
         guard closed.count >= 4 else { return nil }
-        return GEOSGeom_createLinearRing_r(ctx, sequence(closed))
+        return try? factory.createLinearRingChecked(coordinates(closed))
     }
 
-    /// A polygon of an outer ring and holes, open or closed.
+    /// A polygon of an outer ring and holes, open or closed. Without a shell
+    /// it is an empty polygon. A hole that cannot be a ring (too few points,
+    /// a NaN first point) makes no polygon at all, an empty geometry: the
+    /// wrapper of GEOS gave GEOS a null hole there, which it refused.
     public static func polygon(_ shell: [P2], holes: [[P2]] = []) -> Geometry {
         Recorder.shared?.count("polygon")
-        guard let s = ring(shell) else { return Geometry(owning: GEOSGeom_createEmptyPolygon_r(ctx)!) }
-        var hs: [OpaquePointer?] = holes.compactMap { ring($0) }
-        return make(GEOSGeom_createPolygon_r(ctx, s, &hs, UInt32(hs.count)))
+        guard let s = ring(shell) else { return Geometry(factory.createPolygon()) }
+        var rings: [LinearRing] = []
+        for h in holes {
+            guard let r = ring(h) else { return .empty }
+            rings.append(r)
+        }
+        return Geometry(factory.createPolygon(s, rings))
     }
 
     public static func box(_ x0: Double, _ y0: Double, _ x1: Double, _ y1: Double) -> Geometry {
@@ -95,103 +92,104 @@ public final class Geometry: CustomStringConvertible {
     }
 
     /// A collection of copies of the geometries: a multi-geometry when they
-    /// are all of one kind, else a geometry collection.
+    /// are all of one kind, else a geometry collection. A multi-geometry
+    /// given gives its parts (empty ones too), an empty geometry nothing.
     public static func collection(_ parts: [Geometry]) -> Geometry {
         Recorder.shared?.count("collection")
-        let flat = parts.flatMap { $0.isEmpty ? [] : ($0.isMulti ? $0.parts : [$0]) }
+        var flat: [Topology.Geometry] = []
+        var kinds = Set<Kind>()
+        for p in parts where !p.isEmpty {
+            if p.isMulti {
+                for i in 0..<p.geometry.getNumGeometries() {
+                    let m = p.geometry.getGeometryN(i)
+                    flat.append(m.copy())
+                    kinds.insert(Geometry.kind(of: m))
+                }
+            } else {
+                flat.append(p.geometry.copy())
+                kinds.insert(p.kind)
+            }
+        }
         guard !flat.isEmpty else { return .empty }
-        let kinds = Set(flat.map(\.kind))
-        let type: Int32
-        if kinds == [.polygon] { type = 6 } else if kinds == [.lineString] { type = 5 } else if kinds == [.point] { type = 4 } else { type = 7 }
-        var ptrs: [OpaquePointer?] = flat.map { GEOSGeom_clone_r(ctx, $0.ptr) }
-        return make(GEOSGeom_createCollection_r(ctx, type, &ptrs, UInt32(ptrs.count)))
+        if kinds == [.polygon] { return Geometry(factory.createMultiPolygon(flat.map { $0 as! Polygon })) }
+        if kinds == [.lineString] { return Geometry(factory.createMultiLineString(flat.map { $0 as! LineString })) }
+        if kinds == [.point] { return Geometry(factory.createMultiPoint(flat.map { $0 as! Point })) }
+        return Geometry(factory.createGeometryCollection(flat))
     }
 
     // MARK: Reading
 
-    public var kind: Kind { Kind(rawValue: GEOSGeomTypeId_r(ctx, ptr)) ?? .collection }
-    public var isEmpty: Bool { GEOSisEmpty_r(ctx, ptr) == 1 }
+    static func kind(of g: Topology.Geometry) -> Kind {
+        switch g {
+        case is Point: return .point
+        case is LinearRing: return .linearRing
+        case is LineString: return .lineString
+        case is Polygon: return .polygon
+        case is MultiPoint: return .multiPoint
+        case is MultiLineString: return .multiLineString
+        case is MultiPolygon: return .multiPolygon
+        default: return .collection
+        }
+    }
+
+    public var kind: Kind { Geometry.kind(of: geometry) }
+    public var isEmpty: Bool { geometry.isEmpty() }
     public var isValid: Bool {
         Recorder.shared?.call("isValid", [self])
-        return GEOSisValid_r(ctx, ptr) == 1
+        return Failure.attempt(false) { try geometry.isValid() }
     }
-    public var isMulti: Bool { [.multiPoint, .multiLineString, .multiPolygon, .collection].contains(kind) }
+    public var isMulti: Bool { geometry is GeometryCollection }
 
     public var area: Double {
         Recorder.shared?.call("area", [self])
-        var d = 0.0
-        GEOSArea_r(ctx, ptr, &d)
-        return d
+        return Failure.attempt(0) { geometry.getArea() }
     }
 
     public var length: Double {
         Recorder.shared?.call("length", [self])
-        var d = 0.0
-        GEOSLength_r(ctx, ptr, &d)
-        return d
+        return Failure.attempt(0) { geometry.getLength() }
     }
 
     /// (x0, y0, x1, y1).
     public var bounds: (Double, Double, Double, Double) {
         Recorder.shared?.call("bounds", [self])
         guard !isEmpty else { return (0, 0, 0, 0) }
-        var a = 0.0, b = 0.0, c = 0.0, d = 0.0
-        GEOSGeom_getXMin_r(ctx, ptr, &a)
-        GEOSGeom_getYMin_r(ctx, ptr, &b)
-        GEOSGeom_getXMax_r(ctx, ptr, &c)
-        GEOSGeom_getYMax_r(ctx, ptr, &d)
-        return (a, b, c, d)
+        let e = geometry.getEnvelopeInternal()
+        return (e.minX, e.minY, e.maxX, e.maxY)
     }
 
-    /// A point's coordinates.
-    public var x: Double {
-        var d = 0.0
-        GEOSGeomGetX_r(ctx, ptr, &d)
-        return d
-    }
-
-    public var y: Double {
-        var d = 0.0
-        GEOSGeomGetY_r(ctx, ptr, &d)
-        return d
-    }
+    /// A point's coordinates (0 for an empty point or another geometry).
+    public var x: Double { (geometry as? Point)?.getCoordinate()?.x ?? 0 }
+    public var y: Double { (geometry as? Point)?.getCoordinate()?.y ?? 0 }
 
     public var xy: P2 { P2(x, y) }
 
     /// The coordinates of a point, line or ring.
     public var coords: [P2] {
-        guard let seq = GEOSGeom_getCoordSeq_r(ctx, ptr) else { return [] }
-        return Geometry.read(seq)
+        switch geometry {
+        case let p as Point: return Geometry.points(p.coordinates)
+        case let l as LineString: return Geometry.points(l.points)
+        default: return []
+        }
     }
 
-    static func read(_ seq: OpaquePointer) -> [P2] {
-        var n: UInt32 = 0
-        GEOSCoordSeq_getSize_r(ctx, seq, &n)
-        guard n > 0 else { return [] }
-        var flat = [Double](repeating: 0, count: Int(n) * 2)
-        GEOSCoordSeq_copyToBuffer_r(ctx, seq, &flat, 0, 0)
-        return (0..<Int(n)).map { P2(flat[2 * $0], flat[2 * $0 + 1]) }
-    }
+    static func points(_ cs: [Coordinate]) -> [P2] { cs.map { P2($0.x, $0.y) } }
 
     /// A polygon's outer ring (closed) and holes.
     public var exterior: [P2] {
-        guard kind == .polygon, let r = GEOSGetExteriorRing_r(ctx, ptr), let seq = GEOSGeom_getCoordSeq_r(ctx, r)
-        else { return [] }
-        return Geometry.read(seq)
+        guard let p = geometry as? Polygon else { return [] }
+        return Geometry.points(p.shell.points)
     }
 
     public var interiors: [[P2]] {
-        guard kind == .polygon else { return [] }
-        return (0..<GEOSGetNumInteriorRings_r(ctx, ptr)).compactMap { i in
-            guard let r = GEOSGetInteriorRingN_r(ctx, ptr, i), let seq = GEOSGeom_getCoordSeq_r(ctx, r) else { return nil }
-            return Geometry.read(seq)
-        }
+        guard let p = geometry as? Polygon else { return [] }
+        return p.holes.map { Geometry.points($0.points) }
     }
 
     /// The parts of a collection (copies); a single geometry is its own.
     public var parts: [Geometry] {
         guard isMulti else { return [self] }
-        return (0..<GEOSGetNumGeometries_r(ctx, ptr)).map { Geometry.copy(GEOSGetGeometryN_r(ctx, ptr, $0)) }
+        return (0..<geometry.getNumGeometries()).map { Geometry(geometry.getGeometryN($0).copy()) }
     }
 
     /// Every polygon in it, as shapely's `polygons` helper of the build.
@@ -210,305 +208,28 @@ public final class Geometry: CustomStringConvertible {
 
     public var centroid: Geometry {
         Recorder.shared?.call("centroid", [self])
-        return Geometry.make(GEOSGetCentroid_r(ctx, ptr))
+        return Geometry.make { geometry.getCentroid() }
     }
 
     public var representativePoint: Geometry {
         Recorder.shared?.call("representativePoint", [self])
-        return Geometry.make(GEOSPointOnSurface_r(ctx, ptr))
+        return Geometry.make { geometry.getInteriorPoint() }
     }
 
+    /// Well-known text, three decimals (GEOS's writer at rounding precision 3).
     public var description: String {
         Recorder.shared?.call("description", [self])
-        let w = GEOSWKTWriter_create_r(ctx)
-        defer { GEOSWKTWriter_destroy_r(ctx, w) }
-        GEOSWKTWriter_setRoundingPrecision_r(ctx, w, 3)
-        guard let s = GEOSWKTWriter_write_r(ctx, w, ptr) else { return "?" }
-        defer { GEOSFree_r(ctx, s) }
-        return String(cString: s)
-    }
-
-    // MARK: Operations
-
-    public func buffer(_ d: Double, quadSegs: Int = 16, cap: Cap = .round, join: Join = .round,
-                       mitreLimit: Double = 5) -> Geometry {
-        Recorder.shared?.call("buffer", [self], [d, Double(quadSegs), Double(cap.rawValue), Double(join.rawValue), mitreLimit])
-        return Geometry.make(GEOSBufferWithStyle_r(ctx, ptr, d, Int32(quadSegs), cap.rawValue, join.rawValue, mitreLimit))
-    }
-
-    public func union(_ o: Geometry) -> Geometry {
-        Recorder.shared?.call("union", [self, o])
-        return Geometry.make(GEOSUnion_r(ctx, ptr, o.ptr))
-    }
-
-    public func intersection(_ o: Geometry) -> Geometry {
-        Recorder.shared?.call("intersection", [self, o])
-        return Geometry.make(GEOSIntersection_r(ctx, ptr, o.ptr))
-    }
-
-    public func difference(_ o: Geometry) -> Geometry {
-        Recorder.shared?.call("difference", [self, o])
-        return Geometry.make(GEOSDifference_r(ctx, ptr, o.ptr))
-    }
-
-    public static func unaryUnion(_ parts: [Geometry]) -> Geometry {
-        Recorder.shared?.call("unaryUnion", parts)
-        let c = collection(parts)
-        if c.isEmpty { return c }
-        return make(GEOSUnaryUnion_r(ctx, c.ptr))
-    }
-
-    /// Douglas-Peucker keeping the topology, as shapely's `simplify`.
-    public func simplify(_ tolerance: Double) -> Geometry {
-        Recorder.shared?.call("simplify", [self], [tolerance])
-        return Geometry.make(GEOSTopologyPreserveSimplify_r(ctx, ptr, tolerance))
-    }
-
-    public func makeValid() -> Geometry {
-        Recorder.shared?.call("makeValid", [self])
-        return Geometry.make(GEOSMakeValid_r(ctx, ptr))
-    }
-
-    public func setPrecision(_ grid: Double) -> Geometry {
-        Recorder.shared?.call("setPrecision", [self], [grid])
-        return Geometry.make(GEOSGeom_setPrecision_r(ctx, ptr, grid, 0))
-    }
-
-    public var convexHull: Geometry {
-        Recorder.shared?.call("convexHull", [self])
-        return Geometry.make(GEOSConvexHull_r(ctx, ptr))
-    }
-
-    public var envelope: Geometry {
-        Recorder.shared?.call("envelope", [self])
-        return Geometry.make(GEOSEnvelope_r(ctx, ptr))
-    }
-
-    public var boundary: Geometry {
-        Recorder.shared?.call("boundary", [self])
-        return Geometry.make(GEOSBoundary_r(ctx, ptr))
-    }
-
-    public var minimumRotatedRectangle: Geometry {
-        Recorder.shared?.call("minimumRotatedRectangle", [self])
-        return Geometry.make(GEOSMinimumRotatedRectangle_r(ctx, ptr))
-    }
-
-
-    public func offsetCurve(_ d: Double, quadSegs: Int = 16, join: Join = .round, mitreLimit: Double = 5) -> Geometry {
-        Recorder.shared?.call("offsetCurve", [self], [d, Double(quadSegs), Double(join.rawValue), mitreLimit])
-        return Geometry.make(GEOSOffsetCurve_r(ctx, ptr, d, Int32(quadSegs), join.rawValue, mitreLimit))
-    }
-
-    /// The point `d` along a line (or a share of its length).
-    public func interpolate(_ d: Double, normalized: Bool = false) -> Geometry {
-        Recorder.shared?.call("interpolate", [self], [d, normalized ? 1 : 0])
-        return Geometry.make(normalized ? GEOSInterpolateNormalized_r(ctx, ptr, d) : GEOSInterpolate_r(ctx, ptr, d))
-    }
-
-    /// How far along a line the point nearest to `p` is.
-    public func project(_ p: Geometry) -> Double {
-        Recorder.shared?.call("project", [self, p])
-        return GEOSProject_r(ctx, ptr, p.ptr)
-    }
-
-    public func distance(_ o: Geometry) -> Double {
-        Recorder.shared?.call("distance", [self, o])
-        var d = 0.0
-        GEOSDistance_r(ctx, ptr, o.ptr, &d)
-        return d
-    }
-
-    public func intersects(_ o: Geometry) -> Bool {
-        Recorder.shared?.call("intersects", [self, o])
-        return GEOSIntersects_r(ctx, ptr, o.ptr) == 1
-    }
-
-    public func contains(_ o: Geometry) -> Bool {
-        Recorder.shared?.call("contains", [self, o])
-        return GEOSContains_r(ctx, ptr, o.ptr) == 1
-    }
-
-    public func contains(_ p: P2) -> Bool { contains(.point(p)) }
-
-    public func within(_ o: Geometry) -> Bool {
-        Recorder.shared?.call("within", [self, o])
-        return GEOSWithin_r(ctx, ptr, o.ptr) == 1
-    }
-
-    /// The nearest points of this and `o`: this one's first.
-    public func nearestPoints(_ o: Geometry) -> (P2, P2) {
-        Recorder.shared?.call("nearestPoints", [self, o])
-        guard let seq = GEOSNearestPoints_r(ctx, ptr, o.ptr) else { return (.zero, .zero) }
-        defer { GEOSCoordSeq_destroy_r(ctx, seq) }
-        let pts = Geometry.read(seq)
-        return (pts[0], pts[1])
-    }
-
-    /// Triangles of a polygon, its edges kept.
-    public func constrainedDelaunay() -> [[P2]] {
-        Recorder.shared?.call("constrainedDelaunay", [self])
-        let t = Geometry.make(GEOSConstrainedDelaunayTriangulation_r(ctx, ptr))
-        return t.polygons.map { Array($0.exterior.prefix(3)) }
-    }
-
-    public static func polygonize(_ lines: [Geometry]) -> Geometry {
-        Recorder.shared?.call("polygonize", lines)
-        var ptrs: [OpaquePointer?] = lines.map { $0.ptr }
-        return make(GEOSPolygonize_r(ctx, &ptrs, UInt32(ptrs.count)))
-    }
-
-    public func lineMerge() -> Geometry {
-        Recorder.shared?.call("lineMerge", [self])
-        return Geometry.make(GEOSLineMerge_r(ctx, ptr))
-    }
-
-    // MARK: Done in Swift
-
-    /// Every coordinate moved by `f`, the structure kept.
-    public func map(_ f: (P2) -> P2) -> Geometry {
-        switch kind {
-        case .point: return .point(f(xy))
-        case .lineString: return .lineString(coords.map(f))
-        case .linearRing: return .lineString(coords.map(f))
-        case .polygon: return .polygon(exterior.map(f), holes: interiors.map { $0.map(f) })
-        default: return .collection(parts.map { $0.map(f) })
-        }
-    }
-
-    public func translate(_ dx: Double, _ dy: Double) -> Geometry { map { $0 + P2(dx, dy) } }
-
-    /// Turned by `degrees` (or radians) about `origin`.
-    public func rotate(_ angle: Double, origin: P2, radians: Bool = false) -> Geometry {
-        let r = radians ? angle : angle * .pi / 180
-        let c = cos(r), s = sin(r)
-        return map { p in
-            let d = p - origin
-            return origin + P2(d.x * c - d.y * s, d.x * s + d.y * c)
-        }
-    }
-
-    public func scale(_ sx: Double, _ sy: Double, origin: P2) -> Geometry {
-        map { origin + ($0 - origin) * P2(sx, sy) }
-    }
-
-    /// A polygon with its outer ring counter-clockwise (sign 1) or clockwise
-    /// (-1), its holes the other way, as shapely's `orient`.
-    public func oriented(_ sign: Double = 1) -> Geometry {
-        guard kind == .polygon else { return .collection(parts.map { $0.oriented(sign) }) }
-        func wound(_ r: [P2], ccw: Bool) -> [P2] { (signedArea(r) > 0) == ccw ? r : r.reversed() }
-        return .polygon(wound(exterior, ccw: sign > 0), holes: interiors.map { wound($0, ccw: sign < 0) })
-    }
-
-    /// The part of a line from `start` to `end` along it, as shapely's
-    /// `substring`.
-    public func substring(_ start: Double, _ end: Double) -> Geometry {
-        let pts = coords
-        guard pts.count >= 2 else { return self }
-        var out: [P2] = []
-        var at = 0.0
-        for i in 0..<(pts.count - 1) {
-            let a = pts[i], b = pts[i + 1]
-            let l = simd_length(b - a)
-            let s0 = at, s1 = at + l
-            if s1 >= start && s0 <= end && l > 0 {
-                let t0 = max(0, (start - s0) / l), t1 = min(1, (end - s0) / l)
-                let p0 = a + (b - a) * t0, p1 = a + (b - a) * t1
-                if out.isEmpty || out.last! != p0 { out.append(p0) }
-                if out.last! != p1 { out.append(p1) }
-            }
-            at = s1
-        }
-        return out.count >= 2 ? .lineString(out) : .point(out.first ?? pts[0])
+        return WKTWriter(roundingPrecision: 3).write(geometry)
     }
 }
 
-/// Twice the signed area of a ring: positive when counter-clockwise.
-public func signedArea(_ r: [P2]) -> Double {
-    guard r.count >= 3 else { return 0 }
-    var s = 0.0
-    for i in 0..<r.count {
-        let a = r[i], b = r[(i + 1) % r.count]
-        s += a.x * b.y - a.y * b.x
-    }
-    return s
-}
-
-/// A geometry prepared for many tests against it.
-public final class Prepared {
-    let geometry: Geometry
-    let ptr: OpaquePointer
-    /// Its id in the recording (`Recorder`).
-    var recordID: UInt32 = 0
-
-    public init(_ g: Geometry) {
-        geometry = g
-        ptr = GEOSPrepare_r(ctx, g.ptr)
-        if let r = Recorder.shared {
-            recordID = r.object()
-            r.call("Prepared.init", [g], [Double(recordID)])
-        }
-    }
-
-    deinit { GEOSPreparedGeom_destroy_r(ctx, ptr) }
-
-    public func contains(_ o: Geometry) -> Bool {
-        Recorder.shared?.call("Prepared.contains", [o], [Double(recordID)])
-        return GEOSPreparedContains_r(ctx, ptr, o.ptr) == 1
-    }
-
-    public func contains(_ p: P2) -> Bool { contains(.point(p)) }
-
-    public func intersects(_ o: Geometry) -> Bool {
-        Recorder.shared?.call("Prepared.intersects", [o], [Double(recordID)])
-        return GEOSPreparedIntersects_r(ctx, ptr, o.ptr) == 1
+/// What GEOS's C API did with an exception: it caught it and returned the
+/// function's failure value (NULL, 0, 2 for a predicate). Here an operation
+/// fails when it throws, or when a NaN or infinite coordinate reached the
+/// orientation test inside it (`NonFinite`, where GEOS throws), so the C
+/// API's catch is the scope of every operation.
+enum Failure {
+    static func attempt<T>(_ failure: T, _ body: () throws -> T) -> T {
+        (try? NonFinite.scope(body)) ?? failure
     }
 }
-
-/// An STR tree over geometries, as shapely's STRtree: `query` gives the
-/// indices whose envelopes meet a geometry's, `nearest` the index of the
-/// nearest geometry.
-public final class STRtree {
-    let tree: OpaquePointer
-    let items: [Geometry]
-    var index: [OpaquePointer: Int] = [:]
-    /// Its id in the recording (`Recorder`).
-    var recordID: UInt32 = 0
-
-    public init(_ items: [Geometry]) {
-        self.items = items
-        if let r = Recorder.shared {
-            recordID = r.object()
-            r.call("STRtree.init", items, [Double(recordID)])
-        }
-        tree = GEOSSTRtree_create_r(ctx, 10)
-        for (i, g) in items.enumerated() {
-            index[g.ptr] = i
-            GEOSSTRtree_insert_r(ctx, tree, g.ptr, UnsafeMutableRawPointer(g.ptr))
-        }
-    }
-
-    deinit { GEOSSTRtree_destroy_r(ctx, tree) }
-
-    public func query(_ g: Geometry) -> [Int] {
-        Recorder.shared?.call("STRtree.query", [g], [Double(recordID)])
-        final class Box { var found: [Int] = []; var index: [OpaquePointer: Int] = [:] }
-        let box = Box()
-        box.index = index
-        let u = Unmanaged.passRetained(box)
-        GEOSSTRtree_query_r(ctx, tree, g.ptr, { item, data in
-            let b = Unmanaged<AnyObject>.fromOpaque(data!).takeUnretainedValue() as! Box
-            if let item, let i = b.index[OpaquePointer(item)] { b.found.append(i) }
-        }, u.toOpaque())
-        u.release()
-        return box.found.sorted()
-    }
-
-    public func nearest(_ g: Geometry) -> Int? {
-        Recorder.shared?.call("STRtree.nearest", [g], [Double(recordID)])
-        guard !items.isEmpty, let p = GEOSSTRtree_nearest_r(ctx, tree, g.ptr) else { return nil }
-        return index[p]
-    }
-}
-
-import simd

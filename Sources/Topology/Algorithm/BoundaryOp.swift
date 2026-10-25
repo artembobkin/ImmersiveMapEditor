@@ -38,15 +38,19 @@ public struct BoundaryOp {
     }
 
     func computeBoundaryCoordinates(_ mLine: MultiLineString) -> [Coordinate] {
-        // A TreeMap in JTS: the endpoints in coordinate order.
-        var counts: [Coordinate: Int] = [:]
+        // GEOS's `std::map` (JTS: a TreeMap): the endpoints in coordinate
+        // order, a NaN endpoint equivalent to any other as libc++'s tree
+        // finds it (`CxxTree`).
+        var counts = CxxTree<Coordinate, Int> { $0 < $1 }
         for g in mLine.geometries {
             let line = g as! LineString
             if line.getNumPoints() == 0 { continue }
-            counts[line.points[0], default: 0] += 1
-            counts[line.points[line.points.count - 1], default: 0] += 1
+            for c in [line.points[0], line.points[line.points.count - 1]] {
+                let node = counts.insert(c, 0).0
+                counts.modify(node) { $0 += 1 }
+            }
         }
-        return counts.keys.sorted { $0.compareTo($1) < 0 }.filter { rule.isInBoundary(counts[$0]!) }
+        return counts.inOrder().filter { rule.isInBoundary(counts.nodes[$0].value) }.map { counts.nodes[$0].key }
     }
 
     func boundaryLineString(_ line: LineString) -> Geometry {

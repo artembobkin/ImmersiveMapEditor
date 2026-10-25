@@ -11,7 +11,10 @@ public struct RayCrossingCounter {
         var counter = RayCrossingCounter(p)
         if ring.count > 1 {
             for i in 1..<ring.count {
-                counter.countSegment(ring[i], ring[i - 1])
+                // GEOS 3.13 counts each segment forward (JTS: from its end). The
+                // location is the same; a NaN or infinite point meets the
+                // orientation test, or a vertex, in GEOS's order.
+                counter.countSegment(ring[i - 1], ring[i])
                 if counter.isOnSegment { return counter.location }
             }
         }

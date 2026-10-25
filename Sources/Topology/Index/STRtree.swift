@@ -324,26 +324,26 @@ public final class STRtree<Item> {
             return 0
         }
 
-        func expandToQueue(_ priQ: inout PairQueue, _ minDistance: Double,
+        func expandToQueue(_ priQ: inout PairQueue, _ minDistance: Double, _ geos: Bool,
                            _ itemDistance: (Item, Item) -> Double) {
             switch (b1, b2) {
             case (.node(let n1), .node(let n2)):
                 if n1.bounds.area > n2.bounds.area {
-                    expand(n1, b2, false, &priQ, minDistance, itemDistance)
+                    expand(n1, b2, false, &priQ, minDistance, geos, itemDistance)
                 } else {
-                    expand(n2, b1, true, &priQ, minDistance, itemDistance)
+                    expand(n2, b1, true, &priQ, minDistance, geos, itemDistance)
                 }
-            case (.node(let n1), _): expand(n1, b2, false, &priQ, minDistance, itemDistance)
-            case (_, .node(let n2)): expand(n2, b1, true, &priQ, minDistance, itemDistance)
+            case (.node(let n1), _): expand(n1, b2, false, &priQ, minDistance, geos, itemDistance)
+            case (_, .node(let n2)): expand(n2, b1, true, &priQ, minDistance, geos, itemDistance)
             default: preconditionFailure("neither boundable is composite")
             }
         }
 
         func expand(_ composite: Node, _ other: Boundable, _ isFlipped: Bool, _ priQ: inout PairQueue,
-                    _ minDistance: Double, _ itemDistance: (Item, Item) -> Double) {
+                    _ minDistance: Double, _ geos: Bool, _ itemDistance: (Item, Item) -> Double) {
             for child in composite.children {
                 let bp = isFlipped ? BoundablePair(other, child, itemDistance) : BoundablePair(child, other, itemDistance)
-                if bp.distance < minDistance { priQ.add(bp) }
+                if (geos && minDistance == .infinity) || bp.distance < minDistance { priQ.add(bp) }
             }
         }
     }
@@ -393,12 +393,15 @@ public final class STRtree<Item> {
         while !priQ.isEmpty && distanceLowerBound > 0.0 {
             let bndPair = priQ.poll()!
             let pairDistance = bndPair.distance
-            if pairDistance >= distanceLowerBound { break }
+            // GEOS stops only once it has a pair, and keeps pairs of any
+            // distance while the bound is infinite (`expand`): the same for
+            // finite distances, apart for infinite and NaN ones.
+            if (tieOrder == .jts || minPair != nil) && pairDistance >= distanceLowerBound { break }
             if bndPair.isLeaves {
                 distanceLowerBound = pairDistance
                 minPair = bndPair
             } else {
-                bndPair.expandToQueue(&priQ, distanceLowerBound, itemDistance)
+                bndPair.expandToQueue(&priQ, distanceLowerBound, tieOrder == .geos, itemDistance)
             }
         }
         return minPair

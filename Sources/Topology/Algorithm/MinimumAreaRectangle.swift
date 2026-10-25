@@ -14,7 +14,11 @@ public struct MinimumAreaRectangle {
     public func getMinimumRectangle() -> Geometry {
         if inputGeom.isEmpty() { return inputGeom.factory.createPolygon() }
         if isConvex { return computeConvex(inputGeom) }
-        return computeConvex(ConvexHull(inputGeom).getConvexHull())
+        let (hull, raised) = NonFinite.watch { ConvexHull(inputGeom).getConvexHull() }
+        // GEOS's hull has thrown on a non-finite point (`NonFinite`): the
+        // calipers would index past the ring, and the result is discarded.
+        if raised { return inputGeom.factory.createPolygon() }
+        return computeConvex(hull)
     }
 
     func computeConvex(_ convexGeom: Geometry) -> Geometry {
@@ -48,6 +52,13 @@ public struct MinimumAreaRectangle {
                 minLeft = leftSideIndex
                 minRight = rightSideIndex
             }
+        }
+        // No rectangle has an area below the largest double only where the
+        // hull has an infinite or NaN point: GEOS then reads before its ring
+        // (undefined behaviour, not compared); the port fails instead.
+        if minBase < 0 {
+            NonFinite.raise()
+            return inputGeom.factory.createPolygon()
         }
         return Rectangle.createFromSidePts(ring[minBase], ring[minBase + 1], ring[minDiam], ring[minLeft], ring[minRight],
                                            inputGeom.factory)
