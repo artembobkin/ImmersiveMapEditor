@@ -10,7 +10,8 @@ import Foundation
 ///    the hand edits of the editor;
 /// 3. build: the whole tile (Build): the roads of the document, buildings,
 ///    landmarks, construction sites, bus shelters, the light map, cut to the
-///    tile's edges, written as GLB, placement.json and metadata.json;
+///    tile's edges, written as GLB, placement.json and metadata.json, and the
+///    scene of its light in bake/, so `tilepipeline bake` can bake it again;
 /// 4. validate: Validate, against the rules of TilePipeline's CLAUDE.md.
 ///
 /// Writes out/tiles/<z>/<x>/<y>/ per tile and out/tiles/index.json, the list
@@ -77,13 +78,16 @@ public enum Pipeline {
             let started = Date()
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                // A stale GLB would pass validation after a failed build.
-                for stale in ["placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb"] {
+                // A stale GLB would pass validation after a failed build, and a
+                // stale bake/ would bake the old geometry.
+                for stale in ["placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb", Bake.folder] {
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(stale))
                 }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
                 let t0 = Date()
-                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, samples: options.samples)
+                var light = Lighting.Settings()
+                light.samples = options.samples
+                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
                 let result = try Validate.tile(folder)

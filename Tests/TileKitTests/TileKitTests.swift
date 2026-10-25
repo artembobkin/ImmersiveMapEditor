@@ -60,4 +60,31 @@ import Testing
         #expect(paths.roads.path == "/w/roads")
         #expect(paths.tilesOut.path == "/w/out/tiles")
     }
+
+    @Test func aBakeSceneReadsBackWhatItWrote() throws {
+        var mesh = Triangles()
+        mesh.append([V3(0.1, -0.0, 1e-300), V3(.pi, 2, 3), V3(-689.5, 345.25, 12)], [P2(0.03125, 0.96875), P2(0.5, 0.5), P2(1, 0)],
+                    .whole, (0, 21.5))
+        mesh.append([V3(1, 1, 0.03), V3(2, 1, 0.03), V3(1, 2, 0.03)], [P2(0.1, 0.2), P2(0.3, 0.4), P2(0.5, 0.6)], .foreign, (3, 3))
+        let scene = BakeScene(tile: [15, 19808, 10243], models: ["gum", "tsum"], stats: ["overhang_m": 16.4, "triangles_by_kind": ["walls": 7]],
+                              region: (-345.1, -345.1, 345.1, 345.1), lit: (-401.5, -401.5, 401.5, 401.5), reach: 401.5, mesh: mesh)
+        let back = try BakeScene(scene.encoded())
+        #expect(back.tile == scene.tile && back.models == scene.models)
+        #expect(back.mesh.pos.map(\.bitPattern) == mesh.pos.map(\.bitPattern))
+        #expect(back.mesh.uv == mesh.uv && back.mesh.wall == mesh.wall && back.mesh.owner == mesh.owner)
+        #expect(back.region == scene.region && back.lit == scene.lit && back.reach == scene.reach)
+        #expect(back.stats["overhang_m"] as? Double == 16.4 && (back.stats["triangles_by_kind"] as? [String: Int]) == ["walls": 7])
+        #expect(throws: PipelineError.self) { try BakeScene(Data("not a scene".utf8)) }
+    }
+
+    @Test func lightSettingsReadBackWhatTheyWrote() {
+        var settings = Lighting.Settings()
+        settings.size = 2048
+        settings.bounces = 1
+        settings.shade = [0.3, 0.3, 0.5]
+        settings.gamma = 1.2
+        let json = settings.json(lightMapPixels: 2544)
+        #expect(Lighting.Settings(json: json) == settings)
+        #expect(Lighting.Settings(json: [:]) == Lighting.Settings())
+    }
 }

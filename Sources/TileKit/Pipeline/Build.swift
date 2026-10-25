@@ -8,16 +8,18 @@ import Geometry
 ///
 /// The region is in local metres around the tile's centre. The light map's
 /// size follows the region's share of the tile, so its density per metre is
-/// the one a whole tile has (1024 over the tile).
+/// the one a whole tile has (`light.size` over the tile, 1024).
 ///
 /// Writes into the output folder: palette.png, lightmap.png and stats.json,
-/// and with `export` the GLB, placement.json and metadata.json.
+/// and with `export` the GLB, placement.json, metadata.json and bake/ (the
+/// scene and settings of the light, so Bake can bake it again).
 public enum Build {
     /// Metres built around the region for the light map.
     static let margin = 40.0
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
-                           export: Bool = false, samples: Int = 256, tileLightmap: Int = 1024, roads: URL? = nil) throws {
+                           export: Bool = false, light: Lighting.Settings = Lighting.Settings(), roads: URL? = nil) throws {
+        guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         let (cx, cy, half) = whole ? (0.0, 0.0, tile.size / 2) : (square ?? (-30, -130, 160))
@@ -57,7 +59,7 @@ public enum Build {
                                                                             asphalt: asphalt, kerb: kerb),
                    footprint: footprint, asphalt: asphalt)
         let furniture = buildFurniture(b, shelters: shelters)
-        var m = clean(b.tris)
+        let m = clean(b.tris)
 
         // The light map covers the work area and every building this tile owns
         // whole, however far it reaches over the edge, as a square around the
@@ -71,36 +73,22 @@ public enum Build {
         }
         let lit = (cx - reach, cy - reach, cx + reach, cy + reach)
         let overhang = (max(0, reach - half) * 100).rounded() / 100
-        let size = max(64, Int((Double(tileLightmap) * (2 * reach) / tile.size / 16).rounded(.toNearestOrEven)) * 16)
-        // The light map sees a white ground plane under the tile that the
-        // model does not have (the vector tile is its ground), so walls and
-        // roads keep the light they had on it.
-        let (x0, y0, x1, y1) = Geometry.box(lit.0, lit.1, lit.2, lit.3).buffer(20, join: .mitre).bounds
-        let plane = [x0, y0, -0.01, x1, y0, -0.01, x1, y1, -0.01, x0, y0, -0.01, x1, y1, -0.01, x0, y1, -0.01]
-        print("[lab] baking a \(size) px light map")
-        let light = Lighting.shape(try Lighting.bake(m.pos + plane, bounds: lit, size: size, samples: samples))
-        try PNG.write(out.appendingPathComponent("lightmap.png"), light, width: size, height: size, channels: 3)
-
-        m = cut(m, region.bounds)
-        let uv1 = Lighting.lightUVs(m, bounds: lit, size: size)
         let ordinaryCount = buildings.filter { $0.landmark == nil }.count
-        print("[lab] \(ordinaryCount) ordinary buildings and parts, landmarks \(pending), \(m.count) triangles")
+        // The statistics that do not depend on the light: Bake adds the rest.
         var stats: [String: Any] = [
             "region": ["centre": [cx, cy], "half": half],
-            "triangles_by_kind": b.counts, "triangles": m.count,
+            "triangles_by_kind": b.counts,
             "ordinary_buildings_and_parts": ordinaryCount, "landmarks_pending": pending,
             "landmark_model_faces": landmarks.made, "landmark_windows": landmarks.windows,
-            "landmark_windows_by_model": landmarks.byModel,
-            "light_map_px": size, "overhang_m": overhang, "metres_per_texel": tile.size / Double(tileLightmap),
+            "landmark_windows_by_model": landmarks.byModel, "overhang_m": overhang,
         ]
         for (k, v) in furniture { stats[k] = v }
-        stats["seconds"] = (Date().timeIntervalSince(started) * 10).rounded() / 10
-        try Export.write(stats, out.appendingPathComponent("stats.json"))
-        if export {
-            guard whole else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
-            let glb = try Export.tile(m, uv1: uv1, palette: palette, light: light, lightSize: size, tile: tile, out: out,
-                                      stats: stats, models: models.map { $0.id })
-            print("[lab] exported \(glb.path)")
+        let scene = BakeScene(tile: [tile.z, tile.x, tile.y], models: models.map { $0.id }, stats: stats,
+                              region: region.bounds, lit: lit, reach: reach, mesh: m)
+        // An exported tile keeps its scene, so its light can be baked again.
+        if export { try Bake.store(scene, out: out) }
+        try Bake.light(scene, light, tile: tile, out: out, export: export, started: started, log: "lab") { count in
+            print("[lab] \(ordinaryCount) ordinary buildings and parts, landmarks \(pending), \(count) triangles")
         }
     }
 }

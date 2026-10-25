@@ -16,11 +16,46 @@ public enum Lighting {
     static let wallLimit = 0.15 // a face whose normal is this close to level is a wall
     static let bounces = 3
 
+    /// What a bake can be told: the light map's density, the bake's samples
+    /// and bounces, and how its irradiance turns into the multiplier (`lit`,
+    /// `shade`, `gamma`). The defaults are the constants above. Stored as
+    /// bake/settings.json beside a built tile, so its light can be baked
+    /// again (Bake).
+    public struct Settings: Equatable {
+        /// Light map texels over the tile's width. The light map itself is
+        /// as much larger as it reaches over the tile.
+        public var size = 1024
+        public var samples = 256
+        public var bounces = Lighting.bounces
+        public var lit = [Lighting.lit.0, Lighting.lit.1, Lighting.lit.2]
+        public var shade = [Lighting.shade.0, Lighting.shade.1, Lighting.shade.2]
+        public var gamma = Lighting.gamma
+
+        public init() {}
+
+        /// The settings as bake/settings.json has them, with the light map's
+        /// size in pixels it gave (`light_map_px`, for the reader only).
+        public func json(lightMapPixels: Int) -> [String: Any] {
+            ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma,
+             "light_map_px": lightMapPixels]
+        }
+
+        /// Read from bake/settings.json: what it lacks keeps its default.
+        public init(json: [String: Any]) {
+            if let v = json["size"] as? Int { size = v }
+            if let v = json["samples"] as? Int { samples = v }
+            if let v = json["bounces"] as? Int { bounces = v }
+            if let v = json["lit"] as? [Double], v.count == 3 { lit = v }
+            if let v = json["shade"] as? [Double], v.count == 3 { shade = v }
+            if let v = json["gamma"] as? Double { gamma = v }
+        }
+    }
+
     /// The light reaching the topmost surface over each texel, row 0 on the
     /// north. `tris` hold the geometry of the margin around the region too,
     /// so the light at the edges is what a neighbour tile sees.
     public static func bake(_ tris: [Double], bounds: (Double, Double, Double, Double), size: Int,
-                            samples: Int) throws -> [Float] {
+                            samples: Int, bounces: Int) throws -> [Float] {
         let started = Date()
         let light = try LightBaker.bake(triangles: tris.map(Float.init), bounds: bounds, size: size, samples: samples,
                                         bounces: bounces)
@@ -31,14 +66,15 @@ public enum Lighting {
 
     /// Irradiance to the light map's multiplier, RGB bytes: open ground lit,
     /// the darkest corners shade, never black.
-    public static func shape(_ irradiance: [Float]) -> [UInt8] {
+    public static func shape(_ irradiance: [Float], _ settings: Settings = Settings()) -> [UInt8] {
+        let gamma = settings.gamma
         let sorted = irradiance.sorted()
         // numpy's percentile: linear between the two nearest ranks.
         let rank = 0.75 * Double(sorted.count - 1)
         let lo = Int(rank.rounded(.down)), hi = min(sorted.count - 1, lo + 1)
         let reference = Double(sorted[lo]) + (Double(sorted[hi]) - Double(sorted[lo])) * (rank - Double(lo))
         var out = [UInt8](repeating: 0, count: irradiance.count * 3)
-        let s = [shade.0, shade.1, shade.2], l = [lit.0, lit.1, lit.2]
+        let s = settings.shade, l = settings.lit
         for (i, v) in irradiance.enumerated() {
             let t = pow(min(max(Double(v) / max(reference, 1e-6), 0), 1), gamma)
             for k in 0..<3 {
