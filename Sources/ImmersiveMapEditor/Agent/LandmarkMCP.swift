@@ -1,4 +1,6 @@
 import Foundation
+import Geometry
+import simd
 import TileKit
 
 /// The landmarks' agent's modelling tools: an MCP server on standard input
@@ -72,8 +74,11 @@ enum LandmarkMCP {
 
         static let tools: [[String: Any]] = [
             ["name": "get_landmark",
-             "description": "The landmark: its name, centre, and every OSM building and building:part it is made of (osm id, part or not, all tags, base and height in metres, outline rings in metres east and north of the centre). Then the recipe format and the palette's colours. Read it first.",
+             "description": "The landmark: its name, centre, and every OSM building and building:part it is made of, a line each (id, part or outline, base and height, plan size and middle in metres east and north of the centre, area, the tags that shape it). Then the recipe format and the palette's colours. Read it first.",
              "inputSchema": ["type": "object", "properties": [:]]],
+            ["name": "get_outlines",
+             "description": "The outline rings of some of the landmark's OSM buildings (up to 40 ids a call), in metres east and north of the centre, simplified to 0.3 m: to place features (colonnades, pediments) on the right lines, or to draw a polygon of your own.",
+             "inputSchema": ["type": "object", "properties": ["ids": ["type": "array", "items": ["type": "string"]]], "required": ["ids"]]],
             ["name": "get_recipe",
              "description": "The landmark's current recipe (recipe.json), or a starter recipe made from OSM's tags when it has none yet.",
              "inputSchema": ["type": "object", "properties": [:]]],
@@ -103,6 +108,7 @@ enum LandmarkMCP {
         func call(_ name: String, _ args: [String: Any]) throws -> [[String: Any]] {
             switch name {
             case "get_landmark": return [text(try landmark())]
+            case "get_outlines": return [text(try outlines(args["ids"] as? [String] ?? []))]
             case "get_recipe": return [text(try recipeText())]
             case "set_recipe": return [text(try setRecipe(args["recipe"]))]
             case "render_views": return try render(args)
@@ -116,29 +122,67 @@ enum LandmarkMCP {
             }
         }
 
+        /// The landmark in short, a line a building: its outlines whole would
+        /// pass what a tool may return, so they come by get_outlines.
         func landmark() throws -> String {
             let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
-            func r(_ v: Double) -> Double { (v * 10).rounded() / 10 }
-            let buildings: [[String: Any]] = source.buildings.map { b in
-                var e: [String: Any] = ["osm": b.osm, "part": b.part, "tags": b.tags, "base": r(b.base),
-                                        "outline": b.polygons.map { $0.map { $0.map { [r($0.x), r($0.y)] } } }]
-                if let h = b.height { e["height"] = r(h) }
-                return e
+            func f(_ v: Double) -> String { String(format: "%.1f", v) }
+            var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1).",
+                         "Its OSM buildings (\(source.buildings.count)): id, part or outline, base..height m, plan size and middle (x east, y north, m), area, the tags that shape it.",
+                         "Outlines come by get_outlines (ids), simplified to 0.3 m."]
+            for b in source.buildings {
+                let pts = b.polygons.flatMap { $0.first ?? [] }
+                guard let first = pts.first else { continue }
+                let lo = pts.reduce(first) { simd_min($0, $1) }, hi = pts.reduce(first) { simd_max($0, $1) }
+                let area = b.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) }
+                let tags = b.tags.filter { Self.shapeTag($0.key) }.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+                lines.append("\(b.osm) \(b.part ? "part" : "outline") \(f(b.base))..\(b.height.map(f) ?? "?") m, "
+                             + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
+                             + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
             }
-            let json: [String: Any] = ["name": source.name, "centre_lon_lat": [source.centre.0, source.centre.1], "buildings": buildings]
-            let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
-            return String(data: data, encoding: .utf8)! + "\n\n" + LandmarkRecipe.guide
+            return lines.joined(separator: "\n") + "\n\n" + LandmarkRecipe.guide
+        }
+
+        /// Tags that say how a building looks, not where it is or who mapped it.
+        static func shapeTag(_ key: String) -> Bool {
+            key.hasPrefix("roof:") || key.hasPrefix("building") || ["name", "height", "min_height", "min_level",
+                "architecture", "start_date", "colour", "material", "historic", "amenity", "layer"].contains(key)
+        }
+
+        /// Outer rings (and holes) of some of the landmark's buildings, in
+        /// metres, simplified.
+        func outlines(_ ids: [String]) throws -> String {
+            let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
+            var out: [String] = []
+            for id in ids.prefix(40) {
+                guard let b = source.buildings.first(where: { $0.osm == id }) else { out.append("\(id): not one of the landmark's"); continue }
+                let rings = b.polygons.map { poly -> String in
+                    poly.map { ring -> String in
+                        let g = Geometry.lineString(ring + [ring[0]]).simplify(0.3).coords
+                        return "[" + g.dropLast().map { String(format: "[%.1f, %.1f]", $0.x, $0.y) }.joined(separator: ", ") + "]"
+                    }.joined(separator: " hole ")
+                }
+                out.append("\(id): " + rings.joined(separator: " | "))
+            }
+            return out.joined(separator: "\n")
         }
 
         var recipeURL: URL { folder.appendingPathComponent("recipe.json") }
         var credits: URL { references.appendingPathComponent("credits.json") }
 
         func recipeText() throws -> String {
-            if let data = try? Data(contentsOf: recipeURL) { return String(data: data, encoding: .utf8) ?? "" }
-            let starter = try LandmarkSource(folder.appendingPathComponent("landmark.json")).starterRecipe()
+            // Compact, a mass a line, so a recipe of many parts fits.
             let e = JSONEncoder()
-            e.outputFormatting = [.prettyPrinted, .sortedKeys]
-            return "(no recipe yet: a starter from OSM's tags)\n" + String(data: try e.encode(starter), encoding: .utf8)!
+            e.outputFormatting = [.sortedKeys]
+            func lines(_ r: LandmarkRecipe) throws -> String {
+                let masses = try r.masses.map { String(data: try e.encode($0), encoding: .utf8)! }
+                let features = try r.features.map { String(data: try e.encode($0), encoding: .utf8)! }
+                return "{\"version\": 1,\n \"masses\": [\n" + masses.joined(separator: ",\n") + "],\n \"features\": [\n"
+                    + features.joined(separator: ",\n") + "]}"
+            }
+            if let recipe = try? LandmarkRecipe.read(recipeURL) { return try lines(recipe) }
+            let starter = try LandmarkSource(folder.appendingPathComponent("landmark.json")).starterRecipe()
+            return "(no recipe yet: a starter from OSM's tags)\n" + (try lines(starter))
         }
 
         func setRecipe(_ value: Any?) throws -> String {
