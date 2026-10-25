@@ -7,7 +7,7 @@ public class TopologyPredicate {
     static let falseValue = 0
     static let trueValue = 1
 
-    private var valueCode = TopologyPredicate.unknown
+    @exclusivity(unchecked) private var valueCode = TopologyPredicate.unknown
 
     /// Whether the edges of each input must be noded against themselves.
     func requireSelfNoding() -> Bool { true }
@@ -56,9 +56,9 @@ public class IMPredicate: TopologyPredicate {
 
     static let dimUnknown = Dimension.dontCare
 
-    var dimA = 0
-    var dimB = 0
-    var intMatrix = IntersectionMatrix()
+    @exclusivity(unchecked) var dimA = 0
+    @exclusivity(unchecked) var dimB = 0
+    @exclusivity(unchecked) var intMatrix = IntersectionMatrix()
 
     override init() {
         super.init()

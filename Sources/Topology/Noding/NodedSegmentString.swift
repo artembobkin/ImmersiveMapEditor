@@ -1,14 +1,17 @@
 /// A segment string that records where it is intersected and splits there:
 /// JTS's `NodedSegmentString`.
-public final class NodedSegmentString: NodableSegmentString {
-    public private(set) var nodeList: SegmentNodeList!
-    let pts: [Coordinate]
-    var data: Any?
+public final class NodedSegmentString: SegmentString, NodableSegmentString {
+    /// The nodes, made when first needed (most noded substrings get none).
+    @exclusivity(unchecked) private var nodeListStorage: SegmentNodeList?
+    public var nodeList: SegmentNodeList {
+        if let n = nodeListStorage { return n }
+        let n = SegmentNodeList(self)
+        nodeListStorage = n
+        return n
+    }
 
-    public init(_ pts: [Coordinate], _ data: Any?) {
-        self.pts = pts
-        self.data = data
-        nodeList = SegmentNodeList(self)
+    override public init(_ pts: [Coordinate], _ data: Any?) {
+        super.init(pts, data)
     }
 
     public convenience init(_ ss: SegmentString) { self.init(ss.getCoordinates(), ss.getData()) }
@@ -24,14 +27,8 @@ public final class NodedSegmentString: NodableSegmentString {
         for s in segStrings { (s as! NodedSegmentString).nodeList.addSplitEdges(&result) }
     }
 
-    public func getData() -> Any? { data }
-    public func setData(_ data: Any?) { self.data = data }
-    public func size() -> Int { pts.count }
-    public func getCoordinate(_ i: Int) -> Coordinate { pts[i] }
-    public func getCoordinates() -> [Coordinate] { pts }
     public func getNodedCoordinates() -> [Coordinate] { nodeList.getSplitCoordinates() }
-    public func isClosed() -> Bool { pts[0] == pts[pts.count - 1] }
-    public func hasNodes() -> Bool { nodeList.size() > 0 }
+    public func hasNodes() -> Bool { nodeListStorage.map { $0.size() > 0 } ?? false }
 
     /// The octant of a segment, 0 for a zero-length one, -1 past the end.
     public func getSegmentOctant(_ index: Int) -> Int {

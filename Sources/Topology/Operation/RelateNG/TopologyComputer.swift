@@ -7,7 +7,7 @@ final class TopologyComputer {
     private let predicate: TopologyPredicate
     private let geomA: RelateGeometry
     private let geomB: RelateGeometry
-    private var nodeMap: [Coordinate: NodeSections] = [:]
+    @exclusivity(unchecked) private var nodeMap: [Coordinate: NodeSections] = [:]
 
     init(_ predicate: TopologyPredicate, _ geomA: RelateGeometry, _ geomB: RelateGeometry) {
         self.predicate = predicate

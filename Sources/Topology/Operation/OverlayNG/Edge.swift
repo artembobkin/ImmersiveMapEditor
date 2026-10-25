@@ -11,12 +11,12 @@ final class Edge {
     }
 
     let pts: [Coordinate]
-    private var aDim = OverlayLabel.dimUnknown
-    private var aDepthDelta = 0
-    private var aIsHole = false
-    private var bDim = OverlayLabel.dimUnknown
-    private var bDepthDelta = 0
-    private var bIsHole = false
+    @exclusivity(unchecked) private var aDim = OverlayLabel.dimUnknown
+    @exclusivity(unchecked) private var aDepthDelta = 0
+    @exclusivity(unchecked) private var aIsHole = false
+    @exclusivity(unchecked) private var bDim = OverlayLabel.dimUnknown
+    @exclusivity(unchecked) private var bDepthDelta = 0
+    @exclusivity(unchecked) private var bIsHole = false
 
     init(_ pts: [Coordinate], _ info: EdgeSourceInfo) {
         self.pts = pts

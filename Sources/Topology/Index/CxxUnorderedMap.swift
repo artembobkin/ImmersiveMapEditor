@@ -11,17 +11,19 @@
 /// 1: to `2n + 1` buckets rounded up to a prime (`n` the count, 2 at first),
 /// relinking the list bucket by bucket. A hash is constrained to a bucket
 /// by a mask for a power of two, else by the remainder.
-struct CxxUnorderedMap<Key, Value> {
-    private(set) var keys: [Key] = []
-    private(set) var values: [Value] = []
-    private var hashes: [UInt64] = []
+/// A class: its one user keeps it in a graph, and reading a struct of
+/// arrays out of a class property copies it.
+final class CxxUnorderedMap<Key, Value> {
+    @exclusivity(unchecked) private(set) var keys: [Key] = []
+    @exclusivity(unchecked) private(set) var values: [Value] = []
+    @exclusivity(unchecked) private var hashes: [UInt64] = []
     /// The next element of the list, -1 at its end.
-    private var next: [Int] = []
+    @exclusivity(unchecked) private var next: [Int] = []
     /// The first element of the list, -1 when empty.
-    private var head = -1
+    @exclusivity(unchecked) private var head = -1
     /// For each bucket, the element before its first: -2 for the list's
     /// head, -1 for an empty bucket.
-    private var buckets: [Int] = []
+    @exclusivity(unchecked) private var buckets: [Int] = []
     private let hash: (Key) -> UInt64
     private let equal: (Key, Key) -> Bool
 
@@ -32,9 +34,18 @@ struct CxxUnorderedMap<Key, Value> {
 
     var count: Int { keys.count }
 
+    /// Room for `n` elements in the element arrays (not the buckets, which
+    /// grow as libc++'s do, so the order is unchanged).
+    func reserveCapacity(_ n: Int) {
+        keys.reserveCapacity(n)
+        values.reserveCapacity(n)
+        hashes.reserveCapacity(n)
+        next.reserveCapacity(n)
+    }
+
     private func nextOf(_ p: Int) -> Int { p == -2 ? head : next[p] }
 
-    private mutating func setNext(_ p: Int, _ n: Int) {
+    private func setNext(_ p: Int, _ n: Int) {
         if p == -2 { head = n } else { next[p] = n }
     }
 
@@ -80,12 +91,15 @@ struct CxxUnorderedMap<Key, Value> {
         return nil
     }
 
-    func value(_ k: Key) -> Value? { find(k).map { values[$0] } }
+    func value(_ k: Key) -> Value? {
+        guard let i = find(k) else { return nil }
+        return values[i]
+    }
 
     /// Inserts the key with its value unless the key is there:
     /// `emplace` of libc++ (`__emplace_unique_key_args`).
     @discardableResult
-    mutating func insert(_ k: Key, _ v: Value) -> Bool {
+    func insert(_ k: Key, _ v: Value) -> Bool {
         if find(k) != nil { return false }
         let h = hash(k)
         var bc = buckets.count
@@ -112,13 +126,13 @@ struct CxxUnorderedMap<Key, Value> {
         return true
     }
 
-    private mutating func rehash(_ nIn: Int) {
+    private func rehash(_ nIn: Int) {
         var n = nIn
         if n == 1 { n = 2 } else if n & (n - 1) != 0 { n = CxxUnorderedMap.nextPrime(n) }
         if n > buckets.count { doRehash(n) }
     }
 
-    private mutating func doRehash(_ nbc: Int) {
+    private func doRehash(_ nbc: Int) {
         buckets = [Int](repeating: -1, count: nbc)
         var pp = -2
         var cp = head

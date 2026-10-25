@@ -9,7 +9,7 @@ extension GeomGraph {
     final class Node {
         let coord: Coordinate
         let edges = DirectedEdgeStar()
-        var isVisited = false
+        @exclusivity(unchecked) var isVisited = false
 
         init(_ coord: Coordinate) { self.coord = coord }
 
@@ -26,9 +26,9 @@ extension GeomGraph {
     }
 
     final class PlanarGraph {
-        private(set) var edges: [Edge] = []
-        private(set) var edgeEndList: [DirectedEdge] = []
-        private var nodeMap: [Coordinate: Node] = [:]
+        @exclusivity(unchecked) private(set) var edges: [Edge] = []
+        @exclusivity(unchecked) private(set) var edgeEndList: [DirectedEdge] = []
+        @exclusivity(unchecked) private var nodeMap: [Coordinate: Node] = [:]
 
         func addNode(_ coord: Coordinate) -> Node {
             if let node = nodeMap[coord] { return node }

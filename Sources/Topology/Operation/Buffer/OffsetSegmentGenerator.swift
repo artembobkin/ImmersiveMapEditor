@@ -5,9 +5,9 @@ import Darwin
 /// `OffsetSegmentString`. As in GEOS 3.13, the coordinates are taken with
 /// the ring closed.
 final class OffsetSegmentString {
-    private(set) var ptList: [Coordinate] = []
-    var precisionModel: PrecisionModel = .floating
-    var minimumVertexDistance = 0.0
+    @exclusivity(unchecked) private(set) var ptList: [Coordinate] = []
+    @exclusivity(unchecked) var precisionModel: PrecisionModel = .floating
+    @exclusivity(unchecked) var minimumVertexDistance = 0.0
 
     func addPt(_ pt: Coordinate) {
         let bufPt = precisionModel.makePrecise(pt)
@@ -60,17 +60,17 @@ final class OffsetSegmentGenerator {
     private static let curveVertexSnapDistanceFactor = 1.0e-6
     private static let maxClosingSegLenFactor = 80
 
-    private var filletAngleQuantum: Double
-    private var closingSegLengthFactor = 1
+    @exclusivity(unchecked) private var filletAngleQuantum: Double
+    @exclusivity(unchecked) private var closingSegLengthFactor = 1
     let segList = OffsetSegmentString()
-    private var distance = 0.0
+    @exclusivity(unchecked) private var distance = 0.0
     private let precisionModel: PrecisionModel
     private let bufParams: BufferParameters
     @exclusivity(unchecked) private var li = RobustLineIntersector()
-    private var s0 = Coordinate(0, 0), s1 = Coordinate(0, 0), s2 = Coordinate(0, 0)
-    private var seg0 = LineSegment(), seg1 = LineSegment()
-    private var offset0 = LineSegment(), offset1 = LineSegment()
-    private var side = 0
+    @exclusivity(unchecked) private var s0 = Coordinate(0, 0), s1 = Coordinate(0, 0), s2 = Coordinate(0, 0)
+    @exclusivity(unchecked) private var seg0 = LineSegment(), seg1 = LineSegment()
+    @exclusivity(unchecked) private var offset0 = LineSegment(), offset1 = LineSegment()
+    @exclusivity(unchecked) private var side = 0
 
     init(_ precisionModel: PrecisionModel, _ bufParams: BufferParameters, _ distance: Double) {
         self.precisionModel = precisionModel

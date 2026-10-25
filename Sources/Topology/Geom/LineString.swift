@@ -3,7 +3,7 @@
 public class LineString: Geometry {
     public static let minimumValidSize = 2
 
-    public internal(set) var points: [Coordinate]
+    @exclusivity(unchecked) public internal(set) var points: [Coordinate]
 
     init(_ points: [Coordinate], factory: GeometryFactory) {
         precondition(points.isEmpty || points.count >= LineString.minimumValidSize,

@@ -1,7 +1,7 @@
 /// Prepared lines: intersects by their segments in an index, then by
 /// points: JTS's `PreparedLineString` and `PreparedLineStringIntersects`.
 final class PreparedLineString: BasicPreparedGeometry {
-    private var segIntFinder: FastSegmentSetIntersectionFinder?
+    @exclusivity(unchecked) private var segIntFinder: FastSegmentSetIntersectionFinder?
 
     var intersectionFinder: FastSegmentSetIntersectionFinder {
         if let segIntFinder { return segIntFinder }

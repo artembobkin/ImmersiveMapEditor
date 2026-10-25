@@ -7,9 +7,9 @@ final class LineBuilder {
     private let opCode: Int
     private let inputAreaIndex: Int
     private let hasResultArea: Bool
-    private var isAllowMixedResult = !OverlayNG.strictModeDefault
-    private var isAllowCollapseLines = !OverlayNG.strictModeDefault
-    private var lines: [LineString] = []
+    @exclusivity(unchecked) private var isAllowMixedResult = !OverlayNG.strictModeDefault
+    @exclusivity(unchecked) private var isAllowCollapseLines = !OverlayNG.strictModeDefault
+    @exclusivity(unchecked) private var lines: [LineString] = []
 
     init(_ inputGeom: InputGeometry, _ graph: OverlayGraph, _ hasResultArea: Bool, _ opCode: Int, _ factory: GeometryFactory) {
         self.graph = graph

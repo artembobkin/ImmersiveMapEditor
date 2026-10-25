@@ -1,7 +1,7 @@
 /// A collection of geometries: JTS's `GeometryCollection`, the base of the
 /// multi-geometries.
 public class GeometryCollection: Geometry {
-    public internal(set) var geometries: [Geometry]
+    @exclusivity(unchecked) public internal(set) var geometries: [Geometry]
 
     init(_ geometries: [Geometry], factory: GeometryFactory) {
         self.geometries = geometries

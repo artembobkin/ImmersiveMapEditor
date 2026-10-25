@@ -5,7 +5,7 @@ public class BasicPreparedGeometry: PreparedGeometry {
     public let geometry: Geometry
     /// A coordinate of each line and point component.
     let representativePts: [Coordinate]
-    private var relateNG: RelateNG?
+    @exclusivity(unchecked) private var relateNG: RelateNG?
 
     init(_ geom: Geometry) {
         geometry = geom

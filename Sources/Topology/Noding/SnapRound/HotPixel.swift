@@ -8,7 +8,7 @@ public final class HotPixel {
     public let scaleFactor: Double
     let hpx: Double
     let hpy: Double
-    public private(set) var isNode = false
+    @exclusivity(unchecked) public private(set) var isNode = false
 
     public init(_ pt: Coordinate, _ scaleFactor: Double) {
         precondition(scaleFactor > 0, "Scale factor must be non-zero")

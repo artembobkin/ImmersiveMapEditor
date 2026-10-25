@@ -2,7 +2,7 @@
 /// angle, and their side locations filled in around it: JTS's `RelateNode`.
 final class RelateNode {
     let nodePt: Coordinate
-    private(set) var edges: [RelateEdge] = []
+    @exclusivity(unchecked) private(set) var edges: [RelateEdge] = []
 
     init(_ pt: Coordinate) { nodePt = pt }
 

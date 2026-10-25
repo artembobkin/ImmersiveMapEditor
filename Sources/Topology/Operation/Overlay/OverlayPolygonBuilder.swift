@@ -42,7 +42,7 @@ extension Overlay {
 
     final class PolygonBuilder {
         private let geometryFactory: GeometryFactory
-        private var shellList: [GeomGraph.EdgeRing] = []
+        @exclusivity(unchecked) private var shellList: [GeomGraph.EdgeRing] = []
 
         init(_ geometryFactory: GeometryFactory) { self.geometryFactory = geometryFactory }
 

@@ -48,6 +48,22 @@ struct DebugCaseTests {
             let d = Double(env["DEBUG_DIST"] ?? "0")!
             theirs = ga.unary(GEOSBuffer_r, d, 8)
             run = { try a.buffer(d) }
+        case "setPrecision":
+            let grid = Double(env["DEBUG_GRID"]!)!
+            theirs = o.wrap(GEOSGeom_setPrecision_r(o.handle, ga.ptr, grid, 0))
+            run = {
+                print("debug reduced: \(try PrecisionReducer.reducePrecision(a, PrecisionModel(scale: 1 / grid)))")
+                return try a.setPrecision(grid)
+            }
+        case "cdt":
+            FileHandle.standardError.write(Data("debug calling GEOS\n".utf8))
+            theirs = ga.unary(GEOSConstrainedDelaunayTriangulation_r)
+            FileHandle.standardError.write(Data("debug GEOS returned\n".utf8))
+            run = { try ConstrainedDelaunayTriangulator.triangulate(a) }
+        case "makeValid":
+            theirs = ga.unary(GEOSMakeValid_r)
+            run = { try a.makeValid() }
+            NonFinite.trace = { print("debug raise:\n" + Thread.callStackSymbols.prefix(14).joined(separator: "\n")) }
         default: theirs = ga.unaryUnion; run = { try a.union() }
         }
         print("debug GEOS: \(theirs.map { "\($0.shape)" } ?? "fails: \(o.takeError() ?? "")")")

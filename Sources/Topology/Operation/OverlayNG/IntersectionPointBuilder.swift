@@ -3,8 +3,8 @@
 final class IntersectionPointBuilder {
     private let factory: GeometryFactory
     private let graph: OverlayGraph
-    private var points: [Point] = []
-    private var isAllowCollapseLines = !OverlayNG.strictModeDefault
+    @exclusivity(unchecked) private var points: [Point] = []
+    @exclusivity(unchecked) private var isAllowCollapseLines = !OverlayNG.strictModeDefault
 
     init(_ graph: OverlayGraph, _ factory: GeometryFactory) {
         self.graph = graph

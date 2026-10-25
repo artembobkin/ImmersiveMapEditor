@@ -279,6 +279,109 @@ Optimized, on every recorded call (the port's objects of `swift build -c release
 
 What changed: the stable merge sort behind JTS's sorts (`javaSorted`) merges in one scratch buffer instead of allocating arrays at every level (the same order, the same comparisons); the STR tree is queried from one flat array of its nodes; the line intersector keeps its points inline instead of in arrays; the segment envelope test uses GEOS's `std::min` and `std::max`; the intersectors held by noders skip the dynamic exclusivity checks. The rest is reference counting and allocation, for a later pass. Run to run the times vary by about 10%.
 
+## Speed after the second optimization pass: one whole tile
+
+Every recorded call of the tile `15/19808/10243` (545,244 calls), each timed alone on each side, its result made and freed inside the measure, in an optimized build (`TOPOLOGY_SPEED=1 swift test -c release -Xswiftc -enable-testing --filter SpeedTests`, `Recording/SpeedTests`; GEOS at the release flags of the same build). The goal's bar (Docs/PortingGoal.md, "Performance") is a tile in at most 1.5 times GEOS's time.
+
+| Function | Calls | Port | GEOS | Port / GEOS | Before the pass |
+|---|---:|---:|---:|---:|---:|
+| unaryUnion | 19,562 | 9,775 ms | 6,263 ms | 1.56 | 3.10 |
+| intersection | 1,654 | 720 ms | 557 ms | 1.29 | 2.22 |
+| buffer | 56,897 | 564 ms | 376 ms | 1.50 | 2.26 |
+| constrainedDelaunay | 1,437 | 456 ms | 407 ms | 1.12 | 1.98 |
+| intersects | 311,181 | 399 ms | 382 ms | 1.04 | 1.19 |
+| difference | 614 | 122 ms | 93 ms | 1.31 | 2.71 |
+| setPrecision | 27 | 105 ms | 89 ms | 1.18 | 1.71 |
+| polygonize | 3,745 | 59 ms | 35 ms | 1.70 | 3.28 |
+| Prepared.contains | 47,777 | 53 ms | 32 ms | 1.69 | 2.34 |
+| makeValid | 54 | 46 ms | 43 ms | 1.08 | 2.06 |
+| isValid | 6,690 | 33 ms | 21 ms | 1.52 | 3.34 |
+| lineMerge | 3,746 | 32 ms | 23 ms | 1.39 | 1.68 |
+| contains | 8,278 | 23 ms | 10 ms | 2.36 | 2.89 |
+| distance | 8,368 | 18 ms | 7 ms | 2.72 | 2.69 |
+| simplify | 2,057 | 16 ms | 26 ms | 0.64 | 0.83 |
+| area | 56,362 | 11 ms | 28 ms | 0.39 | 0.40 |
+| union | 1 | 8 ms | 8 ms | 1.04 | 2.14 |
+| the 11 others (bounds, length, interpolate, the STR tree, ...) | 16,794 | 3 ms | 3 ms | | |
+| **total** | **545,244** | **12,443 ms** | **8,400 ms** | **1.48** | **2.81** |
+
+Run to run the total ratio was 1.48 to 1.50 over four runs. Not a result changed: before the pass and after it, every parity suite, the JTS XML suites and every recorded call of every function (2.2 million, the long replays in an optimized build) were GEOS's bit for bit.
+
+What changed (the profile was taken with Instruments' Time Profiler, `xctrace`, on the port's side alone; `sample` showed the port at 1.2 times GEOS where the clock said 1.9, and misled the first steps):
+
+- **Exclusivity checks off** on the stored properties of the port's classes (`@exclusivity(unchecked)`, 327 of them): the dynamic checks were a tenth of the time. The debug suite, which keeps the checks on, has never met an overlapping access.
+- **Segment strings and segment intersectors are base classes**, not class-bound protocols: calls through a protocol existential retained and released each argument and looked up its type, at every pair of segments the noders test. `SegmentString` holds the points and the data, with final methods.
+- **The noders call the intersector without a closure** (`MonotoneChain.computeOverlaps(_:_:_:)` with a `SegmentIntersector`), the chains' points read through buffers taken once per pair of chains, and `MCIndexNoder` keeps its chains in its tree as `Unmanaged` references (alive in its own array), so the pair search reads them without reference counting.
+- **The STR tree is built into flat value arrays** (no node objects, no boundable enums), the sort keys computed once per level: the same sorts on the same sequences, so the same packing and the same order. Its queries skip the null test of entries that cannot be null. The nearest neighbour search makes its node tree from the flat one when first used.
+- **The overlay graph's half-edge links are `unowned(unsafe)`** (the graph's edge array owns every edge while the graph is used), its node map a class (reading a struct of arrays out of a class property copied it each time) with its arrays reserved.
+- **The interval tree of the indexed point locator** sorts indices of its intervals' middles (Swift's sort; any order of equal middles gives the same query sets, and the crossing count depends only on the set), with its arrays reserved.
+- **Fewer allocations**: a noded segment string makes its node list only when a node is added (the list refers back to its string `unowned(unsafe)`), the chains are appended straight into the noder's array, the KD-tree reuses its query stack, the edge merger and the graph reserve their arrays.
+
+Tried and dropped: `unowned(unsafe)` local variables for the graph traversals (slower: 9.8 s to 10.2 s for the unary union).
+
+## Phases 6 and 7: validity, make valid, precision, simplify, triangulation, polygonize, line merge, linear referencing against GEOS
+
+Every comparison is exact: geometries in GEOS's normal form bit for bit and as they come (not normalized), numbers by their bits, the validity with its reason and its location bit for bit (`GEOSisValidDetail`); where GEOS fails, the port must throw. The random inputs are phase 2's (`RandomGeometries`) and new often invalid ones (`InvalidGeometries`: rings of shuffled grid points, bow-ties and figure eights, spikes and gores, holes inside, crossing, touching or outside their shell, nested and repeated holes, holes touching each other and the shell in a cycle, a hole touching its shell twice, inverted rings, overlapping, touching and nested parts of multipolygons, rings and lines of too few distinct points, NaN and infinite ordinates, collections of these). The linework of the polygonizer and the line merger is pieces of random walks on grids (shared ends, reversed pieces, loops, repeats), the noded boundaries of random geometries (GEOS's unary union of them), polygons and raw crossing lines.
+
+| Function (GEOS) | Inputs | Compared | Equal | Failing alike | Equal as they come |
+|---|---|---:|---:|---:|---:|
+| `isValid` (`GEOSisValidDetail`: answer, reason, location) | random | 6,000 (811 invalid) | 6,000 | 0 | |
+| the same | often invalid | 12,000 (9,477 invalid) | 12,000 | 0 | |
+| `makeValid` (`GEOSMakeValid`) | random | 4,000 | 4,000 | 0 | 4,000 |
+| the same | often invalid | 8,000 | 8,000 | 601 | 7,399 of 7,399 |
+| `setPrecision` (`GEOSGeom_setPrecision`, flags 0) | random, grids of a seventh, a hundredth and a ten-thousandth of the size, 1, 0.01, 0.001 | 6,000 | 6,000, 5 of them equal but for the sign of zeros | | |
+| the same | often invalid | 4,000 | 4,000 | | |
+| `simplify` (`GEOSTopologyPreserveSimplify`), tolerances 0 and 0.001 to 2 times the size | random | 6,000 | 6,000 | 0 | 6,000 |
+| the same | linework | 3,000 | 3,000 | 0 | 3,000 |
+| the same | often invalid | 3,000 | 3,000 | 131 | 2,869 of 2,869 |
+| `polygonize` (`GEOSPolygonize`, a list of geometries) | linework (1,955 with polygons) | 4,000 | 4,000 | 0 | 4,000 |
+| `lineMerge` (`GEOSLineMerge`) | linework (1,780 with lines merged) | 4,000 | 4,000 | 0 | 4,000 |
+| `constrainedDelaunay` (`GEOSConstrainedDelaunayTriangulation`) | random polygons, multipolygons, grid polygons with holes (cocircular, collinear vertices), valid ones | 3,105 | 3,105 | 0 | 3,105 |
+| the same | often invalid, the valid ones | 646 | 646 | 0 | 646 |
+| `interpolate` (`GEOSInterpolate`, `GEOSInterpolateNormalized`), inside, past the ends, negative | random lines and multi-lines | 6,000 | 6,000 | | 6,000 |
+| `project` (`GEOSProject`), a vertex or a point near | the same | 6,000 | 6,000 | | |
+
+The five set-precision results equal but for the sign of zeros are the snap rounding of phase 4 (GEOS shuffles its hot pixels at random): GEOS itself gave another result within ten more runs on each of the five, and they are counted apart as the main session decided in phase 4.
+
+The triangulation is compared only on valid polygonal input (`GEOSisValid`): GEOS's triangulator requires it, and crashes on some invalid polygons (a segmentation fault on `POLYGON ((0 0, 6 0, 6 6, 0 6, 0 0), (-1 5, 1 5, 1 4, -1 4, -1 5))`, a hole crossing its shell), as `GEOSNode` did in phase 3. 895 random and 2,354 often invalid inputs were not given to it.
+
+Every recorded call (`Recording/ValidityReplayTests`, `LinesReplayTests`, `ShapeReplayTests`, `RepairReplayTests` long):
+
+| Function | Recorded calls | Equal (normalized and as they come) |
+|---|---:|---:|
+| isValid (answer, reason, location) | 47,724 (25 invalid) | 47,724 |
+| makeValid | 32,248 | 32,248 |
+| setPrecision | 16,124 | 16,124 |
+| simplify | 6,276 | 6,276 |
+| polygonize | 14,663 | 14,663 |
+| lineMerge | 14,668 | 14,668 |
+| constrainedDelaunay | 9,495 | 9,495 |
+| interpolate | 3,062 | 3,062 |
+| project | 311 | 311 |
+
+The JTS XML suites: `isValid` 922 tests, `polygonize` 6 and `simplifyTP` 18, all passed as on GEOS, and every result of the operations the port has (10,297 now) is GEOS's.
+
+### Where GEOS 3.13 differs from JTS 1.20 in phases 6 and 7, and the port follows GEOS
+
+Some were found by a parity test (the pairs of the STR tree, the validity message, the simplifier's non-finite segments, the non-finite coordinates, the triangulator's collapsed rings), then understood from GEOS's sources (read, never translated); the others were read in GEOS's sources while porting (orders of containers and sorts JTS takes from hash maps or stable sorts). All are confirmed by the parity tests, which pass with them.
+
+- **The STR tree's pairs** (`queryPairs`, used by `MCIndexNoder`): when the visitor stops, GEOS stops the search of the current item's pairs only and goes on with the next item, so a noder whose intersector is done still sees the first pair of each later item (the port stopped everything). With the old semantics 472 of 6,000 random validity checks and 2,480 of 12,000 often invalid ones reported another invalid location; with GEOS's all are equal, and every earlier parity suite is unchanged.
+- **Validity**: GEOS's message for too few points ("Too few points in geometry component"); the touches of a ring visited in the order of the rings' indices (GEOS's ordered map; JTS a `HashMap`).
+- **The planar graph**: edges and directed edges in insertion order (GEOS's vectors; JTS's `HashSet`s, whose order is random from run to run), the edges around a node sorted with libc++'s `std::sort`.
+- **The polygonizer**: rings always checked for validity, shells not sorted by envelope (JTS 1.20 sorts them), invalid rings sorted with `std::sort` by the area of their envelope's geometry, dangles listed once, a hole's shell found as GEOS finds it (a shell of the same envelope skipped, the envelope contained, the hole's first point not on the shell not outside it), the disjoint shells by GEOS's recursive update.
+- **The line merger**: GEOS's directed mode exists (unused here); the result is built with `buildGeometry`.
+- **Set precision**: a collection reduced to one geometry is made a multi-geometry again (GEOS's `createMulti`), changing the precision model copies the result without empty members and empty holes (GEOS's `GeometryEditor`), the snap-rounded union's topology failure is not turned into an illegal argument, a collapsed line is extended by repeating its last point.
+- **The transformer** (`GeometryTransformer`): GEOS's rules (empty members pruned, collection type kept, a polygon whose shell is no longer a ring becomes the geometry of its parts).
+- **The simplifier**: lines simplified in the order of the components (JTS: a `HashMap`'s); a kept segment enters the result as a copy, so taking out a ring's end point removes only the very segments from the indexes (JTS removes equal ones); a section with no inner points keeps its segments; a non-finite segment fails at insertion into the index, as GEOS's quadtree does.
+- **The triangulator**: the in-circle test is GEOS's (`isInCircleNormalized`: the two sums of the determinant's terms compared, in `long double`, which is `double` on arm64, with clang's fused products), not JTS's; the rings are always replaced by their noded coordinates (repeated points removed); holes sorted with `std::sort`; the search for a joinable vertex stops at the first vertex; an empty polygon gives no triangles.
+- **Linear referencing**: a component that is not a line fails only when read, the end location of a geometry with no components is its start.
+- **Non-finite coordinates**: GEOS's orientation test throws on a NaN or infinite point (`CGAlgorithmsDD::orientationIndex`, `signOfDet2x2`), JTS computes on; GEOS's envelopes are null when `maxX` is NaN and do not intersect anything with a NaN ordinate; GEOS's ordered sets and maps (red-black trees) take a NaN coordinate as equivalent to any. The port follows all three (`NonFinite`, `Envelope`, `CxxTree`). Before this, 245 of the 8,000 often invalid make-valid inputs differed (GEOS failing, the port giving a result), then 57 (the port failing where GEOS's envelopes skip the NaN segment), then 19 and 2 (collapsed NaN points kept); now none.
+- **Undefined behaviour of GEOS, reproduced by its outcome**: the triangulator on a ring collapsed to one point (all its points repeated) reads past the ring; GEOS gives no triangles for such a shell and fails ("Unable to find shell join index") for such a hole, and so does the port.
+
+### Make valid: written from the algorithm, not translated
+
+GEOS 3.13's default `GEOSMakeValid` (the "linework" method) is GEOS's `MakeValid` and `BuildArea`, ported to GEOS from rttopo and PostGIS (LGPL): JTS 1.20 has no equivalent (only the structural `GeometryFixer`). The port's `MakeValid` and `BuildArea` are written for this port from the algorithm as GEOS documents and runs it (node the boundary by a union with its first point, keep the points that collapse, build areas from the cut edges by polygonizing, keeping faces with an even number of parents and dissolving them by a cascaded union, add each area by symmetric difference and remove its boundary from the cut edges until no area can be built), in GEOS's order of operations and with GEOS's containers, on the port's own JTS operations. They are not a translation of GEOS's code. This is a decision taken on the user's behalf (the conservative alternative, BLOCKED, would leave `GEOSMakeValid` without a port); it is listed in `Docs/PortingTopologyProgress.md`, Decisions, for the user to confirm.
+
 ## Streets
 
 The Swift osm2streets (`Streets` on `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OSMReader`, `CountryBoundaries`, `MuvLanes`) against the Rust binary of the pipeline (`osm2streets-cli`, rev `fc119c4`), the port reading every lane itself. The bar: byte-identical GeoJSON text. Details and the tag-set tests of `MuvLanes` in `Docs/PortingStreetsProgress.md`. Measured 2026-10-25, `swift test -c release -Xswiftc -enable-testing`.

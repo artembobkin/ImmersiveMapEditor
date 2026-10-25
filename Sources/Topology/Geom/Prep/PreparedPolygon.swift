@@ -6,9 +6,9 @@
 /// as GEOS 3.13 decides it (`containsDecision` below).
 final class PreparedPolygon: BasicPreparedGeometry {
     private let isRectangle: Bool
-    private var segIntFinder: FastSegmentSetIntersectionFinder?
-    private var pointLocator: IndexedPointInAreaLocator?
-    private var simpleLocatorGiven = false
+    @exclusivity(unchecked) private var segIntFinder: FastSegmentSetIntersectionFinder?
+    @exclusivity(unchecked) private var pointLocator: IndexedPointInAreaLocator?
+    @exclusivity(unchecked) private var simpleLocatorGiven = false
 
     override init(_ geom: Geometry) {
         isRectangle = geom.isRectangle()

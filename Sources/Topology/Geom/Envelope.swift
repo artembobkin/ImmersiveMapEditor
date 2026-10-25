@@ -42,7 +42,9 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
         minX = 0; maxX = -1; minY = 0; maxY = -1
     }
 
-    public var isNull: Bool { maxX < minX }
+    /// Null as JTS has it (`maxX < minX`), or as GEOS 3.13 has it (a NaN
+    /// `maxX`, which a non-finite coordinate can give).
+    public var isNull: Bool { maxX < minX || maxX.isNaN }
     public var width: Double { isNull ? 0 : maxX - minX }
     public var height: Double { isNull ? 0 : maxY - minY }
     public var diameter: Double { isNull ? 0 : hypot(width, height) }
@@ -114,7 +116,8 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
 
     public func intersects(_ o: Envelope) -> Bool {
         if isNull || o.isNull { return false }
-        return !(o.minX > maxX || o.maxX < minX || o.minY > maxY || o.maxY < minY)
+        // GEOS's comparisons, false with a NaN.
+        return o.minX <= maxX && o.maxX >= minX && o.minY <= maxY && o.maxY >= minY
     }
 
     /// Whether the envelope of the segment `a`-`b` meets this one.
@@ -136,7 +139,7 @@ public struct Envelope: Equatable, CustomStringConvertible, Sendable {
 
     public func intersects(_ x: Double, _ y: Double) -> Bool {
         if isNull { return false }
-        return !(x > maxX || x < minX || y > maxY || y < minY)
+        return x <= maxX && x >= minX && y <= maxY && y >= minY
     }
 
     public func contains(_ o: Envelope) -> Bool { covers(o) }
@@ -194,5 +197,14 @@ extension Envelope {
     public func containsProperly(_ o: Envelope) -> Bool {
         if self == o { return false }
         return covers(o)
+    }
+}
+
+extension Envelope {
+    /// `intersects` for two envelopes known not to be null (the entries of
+    /// a built tree): GEOS's comparisons alone, false with a NaN.
+    @inline(__always)
+    func intersectsNonNull(_ o: Envelope) -> Bool {
+        o.minX <= maxX && o.maxX >= minX && o.minY <= maxY && o.maxY >= minY
     }
 }

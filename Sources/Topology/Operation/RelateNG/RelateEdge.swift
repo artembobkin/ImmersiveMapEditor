@@ -6,14 +6,14 @@ final class RelateEdge {
 
     unowned let node: RelateNode
     let dirPt: Coordinate
-    private var aDim = RelateEdge.dimUnknown
-    private var aLocLeft = RelateEdge.locUnknown
-    private var aLocRight = RelateEdge.locUnknown
-    private var aLocLine = RelateEdge.locUnknown
-    private var bDim = RelateEdge.dimUnknown
-    private var bLocLeft = RelateEdge.locUnknown
-    private var bLocRight = RelateEdge.locUnknown
-    private var bLocLine = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var aDim = RelateEdge.dimUnknown
+    @exclusivity(unchecked) private var aLocLeft = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var aLocRight = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var aLocLine = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var bDim = RelateEdge.dimUnknown
+    @exclusivity(unchecked) private var bLocLeft = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var bLocRight = RelateEdge.locUnknown
+    @exclusivity(unchecked) private var bLocLine = RelateEdge.locUnknown
 
     static func create(_ node: RelateNode, _ dirPt: Coordinate, _ isA: Bool, _ dim: Int, _ isForward: Bool) -> RelateEdge {
         let e = RelateEdge(node, dirPt)

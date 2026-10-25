@@ -1,7 +1,7 @@
 /// A point, or the empty point: JTS's `Point`.
 public final class Point: Geometry {
     /// No coordinate when empty, else one.
-    public internal(set) var coordinates: [Coordinate]
+    @exclusivity(unchecked) public internal(set) var coordinates: [Coordinate]
 
     init(_ coordinates: [Coordinate], factory: GeometryFactory) {
         precondition(coordinates.count <= 1)

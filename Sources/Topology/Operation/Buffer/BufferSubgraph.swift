@@ -9,10 +9,10 @@
 /// segments are found).
 final class BufferSubgraph {
     private let finder = RightmostEdgeFinder()
-    private(set) var dirEdgeList: [GeomGraph.DirectedEdge] = []
-    private(set) var nodes: [GeomGraph.Node] = []
-    private(set) var rightMostCoord: Coordinate?
-    private var env: Envelope?
+    @exclusivity(unchecked) private(set) var dirEdgeList: [GeomGraph.DirectedEdge] = []
+    @exclusivity(unchecked) private(set) var nodes: [GeomGraph.Node] = []
+    @exclusivity(unchecked) private(set) var rightMostCoord: Coordinate?
+    @exclusivity(unchecked) private var env: Envelope?
 
     /// The envelope of the part's edges (each edge's last point left out:
     /// it is the first of another).
@@ -119,10 +119,10 @@ final class BufferSubgraph {
 /// The edge of a part of the graph at its rightmost coordinate, directed so
 /// the outside is on its right.
 final class RightmostEdgeFinder {
-    private var minIndex = -1
-    private(set) var minCoord: Coordinate?
-    private var minDe: GeomGraph.DirectedEdge?
-    private(set) var orientedDe: GeomGraph.DirectedEdge?
+    @exclusivity(unchecked) private var minIndex = -1
+    @exclusivity(unchecked) private(set) var minCoord: Coordinate?
+    @exclusivity(unchecked) private var minDe: GeomGraph.DirectedEdge?
+    @exclusivity(unchecked) private(set) var orientedDe: GeomGraph.DirectedEdge?
 
     func findEdge(_ dirEdgeList: [GeomGraph.DirectedEdge]) throws {
         // The rightmost point of the forward edges.

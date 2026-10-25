@@ -3,9 +3,9 @@
 /// JTS's `InputGeometry`.
 final class InputGeometry {
     private let geom: [Geometry?]
-    private var ptLocatorA: PointOnGeometryLocator?
-    private var ptLocatorB: PointOnGeometryLocator?
-    private var isCollapsed = [false, false]
+    @exclusivity(unchecked) private var ptLocatorA: PointOnGeometryLocator?
+    @exclusivity(unchecked) private var ptLocatorB: PointOnGeometryLocator?
+    @exclusivity(unchecked) private var isCollapsed = [false, false]
 
     init(_ geomA: Geometry, _ geomB: Geometry?) { geom = [geomA, geomB] }
 

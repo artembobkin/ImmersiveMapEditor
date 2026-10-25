@@ -4,6 +4,8 @@ enum EdgeMerger {
     static func merge(_ edges: [Edge]) throws -> [Edge] {
         var mergedEdges: [Edge] = []
         var edgeMap: [EdgeKey: Edge] = [:]
+        edgeMap.reserveCapacity(edges.count)
+        mergedEdges.reserveCapacity(edges.count)
         for edge in edges {
             let edgeKey = try EdgeKey(edge)
             if let baseEdge = edgeMap[edgeKey] {

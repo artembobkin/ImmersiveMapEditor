@@ -27,7 +27,9 @@ public final class KdTree<Data> {
         }
     }
 
-    public private(set) var nodes: [Node] = []
+    @exclusivity(unchecked) public private(set) var nodes: [Node] = []
+    /// The stack of the range queries, kept to spare an allocation each.
+    @exclusivity(unchecked) private var queryStack: [(Int, Bool)] = []
     let tolerance: Double
 
     public init(tolerance: Double = 0.0) { self.tolerance = tolerance }
@@ -94,7 +96,10 @@ public final class KdTree<Data> {
     /// an explicit stack).
     public func query(_ queryEnv: Envelope, _ visit: (Int) -> Void) {
         if nodes.isEmpty { return }
-        var stack: [(Int, Bool)] = []
+        // The stack is the tree's own, kept between queries.
+        var stack = queryStack
+        stack.removeAll(keepingCapacity: true)
+        defer { queryStack = stack }
         var current = 0
         var isXLevel = true
         while true {

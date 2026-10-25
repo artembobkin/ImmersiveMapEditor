@@ -7,11 +7,11 @@
 /// empty collection (JTS with an empty point), and returns an empty
 /// collection when nothing is left.
 public final class UnaryUnionOp {
-    private var factory: GeometryFactory?
-    private var polygons: [Polygon] = []
-    private var lines: [LineString] = []
-    private var points: [Point] = []
-    public var unionFunction = UnionStrategy.classic
+    @exclusivity(unchecked) private var factory: GeometryFactory?
+    @exclusivity(unchecked) private var polygons: [Polygon] = []
+    @exclusivity(unchecked) private var lines: [LineString] = []
+    @exclusivity(unchecked) private var points: [Point] = []
+    @exclusivity(unchecked) public var unionFunction = UnionStrategy.classic
 
     public static func union(_ geom: Geometry) throws -> Geometry { try UnaryUnionOp(geom).union() }
 

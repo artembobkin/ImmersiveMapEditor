@@ -2,12 +2,12 @@
 /// (counter-clockwise), with the holes it holds: JTS's `OverlayEdgeRing`.
 final class OverlayEdgeRing {
     unowned(unsafe) let startEdge: OverlayEdge
-    private(set) var ring: LinearRing!
-    private(set) var isHole = false
-    private var ringPts: [Coordinate] = []
-    private var locator: IndexedPointInAreaLocator?
-    private(set) weak var shell: OverlayEdgeRing?
-    private(set) var holes: [OverlayEdgeRing] = []
+    @exclusivity(unchecked) private(set) var ring: LinearRing!
+    @exclusivity(unchecked) private(set) var isHole = false
+    @exclusivity(unchecked) private var ringPts: [Coordinate] = []
+    @exclusivity(unchecked) private var locator: IndexedPointInAreaLocator?
+    @exclusivity(unchecked) private(set) weak var shell: OverlayEdgeRing?
+    @exclusivity(unchecked) private(set) var holes: [OverlayEdgeRing] = []
 
     init(_ start: OverlayEdge, _ factory: GeometryFactory) throws {
         startEdge = start
@@ -24,7 +24,7 @@ final class OverlayEdgeRing {
         } while edge !== start
         pts.closeRing()
         ringPts = pts.points
-        ring = factory.createLinearRing(ringPts)
+        ring = try factory.createLinearRingChecked(ringPts)
         isHole = Orientation.isCCW(ring.points)
     }
 

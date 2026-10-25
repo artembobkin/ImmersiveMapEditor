@@ -15,11 +15,11 @@ public final class BufferOp {
     private static let minPrecisionDigits = 6
 
     private let argGeom: Geometry
-    private var distance = 0.0
+    @exclusivity(unchecked) private var distance = 0.0
     private let bufParams: BufferParameters
-    private var resultGeometry: Geometry?
-    private var saveException: Error?
-    var isInvertOrientation = false
+    @exclusivity(unchecked) private var resultGeometry: Geometry?
+    @exclusivity(unchecked) private var saveException: Error?
+    @exclusivity(unchecked) var isInvertOrientation = false
 
     public init(_ g: Geometry, _ bufParams: BufferParameters = BufferParameters()) {
         argGeom = g

@@ -7,14 +7,14 @@ extension GeomGraph {
     class EdgeRing {
         let startDe: DirectedEdge
         let geometryFactory: GeometryFactory
-        private var maxNodeDegree = -1
-        private(set) var edges: [DirectedEdge] = []
-        private var pts: [Coordinate] = []
+        @exclusivity(unchecked) private var maxNodeDegree = -1
+        @exclusivity(unchecked) private(set) var edges: [DirectedEdge] = []
+        @exclusivity(unchecked) private var pts: [Coordinate] = []
         let label = Label(Location.none)
-        private(set) var ring: LinearRing!
-        private(set) var isHole = false
-        private(set) var shell: EdgeRing?
-        private(set) var holes: [EdgeRing] = []
+        @exclusivity(unchecked) private(set) var ring: LinearRing!
+        @exclusivity(unchecked) private(set) var isHole = false
+        @exclusivity(unchecked) private(set) var shell: EdgeRing?
+        @exclusivity(unchecked) private(set) var holes: [EdgeRing] = []
 
         /// The ring from its start, its points and orientation computed.
         init(_ start: DirectedEdge, _ geometryFactory: GeometryFactory) throws {

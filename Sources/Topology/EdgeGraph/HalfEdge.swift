@@ -3,12 +3,14 @@
 /// angle, counter-clockwise from the positive x axis (`oNext`); `next` is
 /// the edge after this one around the face to its left.
 ///
-/// The links are strong references, so a graph clears them when it is done
-/// (`unlink`), else the pairs would keep each other alive.
+/// The links are unowned (unsafe): the graph that makes the edges keeps them
+/// all alive as long as it is used, and following them costs no reference
+/// counting. The graph still clears its edges' strong references when done
+/// (`unlink`).
 public class HalfEdge {
     public let orig: Coordinate
-    public internal(set) var sym: HalfEdge!
-    public internal(set) var next: HalfEdge!
+    @exclusivity(unchecked) public internal(set) unowned(unsafe) var sym: HalfEdge!
+    @exclusivity(unchecked) public internal(set) unowned(unsafe) var next: HalfEdge!
 
     public init(_ orig: Coordinate) { self.orig = orig }
 

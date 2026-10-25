@@ -10,7 +10,7 @@
 public final class RelateNG {
     private let boundaryNodeRule: BoundaryNodeRule
     private let geomA: RelateGeometry
-    private var edgeMutualInt: MCIndexSegmentSetMutualIntersector?
+    @exclusivity(unchecked) private var edgeMutualInt: MCIndexSegmentSetMutualIntersector?
 
     public static func relate(_ a: Geometry, _ b: Geometry, _ pred: TopologyPredicate) throws -> Bool {
         try RelateNG(a, false).evaluate(b, pred)

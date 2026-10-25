@@ -4,9 +4,9 @@ public final class IteratedNoder: Noder {
     public static let maxIter = 5
 
     let pm: PrecisionModel
-    var li = RobustLineIntersector()
-    var nodedSegStrings: [SegmentString] = []
-    public var maximumIterations = IteratedNoder.maxIter
+    @exclusivity(unchecked) var li = RobustLineIntersector()
+    @exclusivity(unchecked) var nodedSegStrings: [SegmentString] = []
+    @exclusivity(unchecked) public var maximumIterations = IteratedNoder.maxIter
 
     public init(_ pm: PrecisionModel) {
         self.pm = pm

@@ -18,7 +18,7 @@ public final class OffsetCurve {
 
     private let inputGeom: Geometry
     private let distance: Double
-    private var bufferParams = BufferParameters()
+    @exclusivity(unchecked) private var bufferParams = BufferParameters()
     private let matchDistance: Double
     private let geomFactory: GeometryFactory
 

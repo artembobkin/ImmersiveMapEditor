@@ -1,6 +1,6 @@
 # The Topology port: progress
 
-The port of JTS 1.20.0 to Swift (`Sources/Topology`), phases 1 to 5 of `Docs/PortingGoal.md` (phases 4 and 5 in progress), on the branch `port/topology`. The parity numbers are in `Docs/PortingParity.md`, section Topology.
+The port of JTS 1.20.0 to Swift (`Sources/Topology`), phases 1 to 7 of `Docs/PortingGoal.md`, on the branch `port/topology`. The parity numbers are in `Docs/PortingParity.md`, section Topology.
 
 ## Done
 
@@ -63,10 +63,64 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 - Not ported: single-sided buffers (GEOS builds them with the polygonizer and line merger, phases to come; the package never asks for one), the joined offset curve, the variable buffer. `MCIndexSnapRounder` (see Decisions).
 - Checked against GEOS (`Docs/PortingParity.md`, phase 5): 8,000 random buffers and 4,000 random offset curves, the JTS XML buffer tests, and every recorded `buffer` (112,586) and `offsetCurve` (273) call, all equal bit for bit, normalized and as they come. No tolerance was needed: GEOS's arcs are computed with the same `sin` and `cos` of the system's libm. Tests: `Parity/BufferParityTests`, `Recording/BufferReplayTests` (long), `buffer` and `bufferMitredJoin` in `JTSXML/TopologyEngine`.
 
+### Phase 6: validity, make valid, precision, simplify
+
+- **Validity** (`Operation/Valid/`): `IsValidOp`, `TopologyValidationError` (GEOS's messages), `PolygonTopologyAnalyzer`, `PolygonIntersectionAnalyzer`, `PolygonRing` (with `PolygonRingTouch`, `PolygonRingSelfNode`; touches in the order of the ring indices, GEOS's ordered map), `IndexedNestedHoleTester`, `IndexedNestedPolygonTester`; `Geometry.isValid()`.
+- **Make valid** (`Operation/Valid/MakeValid.swift`, `Operation/Polygonize/BuildArea.swift`): GEOS 3.13's default "linework" method. JTS has no such class (it has only the structural `GeometryFixer`): written for this port from the algorithm (rttopo's and PostGIS's `ST_MakeValid`, `ST_BuildArea`, as GEOS documents and runs it), on the port's JTS operations, in GEOS's order of operations (see Decisions). `Geometry.makeValid()`.
+- **Precision** (`Precision/GeometryPrecisionReducer.swift`, `Geom/Util/GeometryTransformer.swift`): `GeometryPrecisionReducer`, `PrecisionReducerTransformer`, `PointwisePrecisionReducerTransformer`, `PrecisionReducer` (OverlayNG's), `GeometryTransformer` (GEOS's rules), the copy of `GeometryEditor` with its no-op operation; `Geometry.setPrecision(_:)` as `GEOSGeom_setPrecision` with flags 0 runs it.
+- **Simplify** (`Simplify/TopologyPreservingSimplifier.swift`): `TopologyPreservingSimplifier`, `TaggedLinesSimplifier`, `TaggedLineStringSimplifier`, `TaggedLineString`, `TaggedLineSegment`, `LineSegmentIndex` (a uniform grid instead of the quadtree: the same candidates, and every use asks only whether one intersects badly), `ComponentJumpChecker`; `Geometry.topologyPreserveSimplify(_:)`.
+- Shared: `Math/NonFinite.swift` (GEOS's exception on a non-finite point in its orientation test, see Decisions), `Index/CxxTree.swift` (libc++'s red-black tree, GEOS's `std::set` and `std::map`), `GeometryFactory.createLinearRingChecked`, GEOS's NaN semantics of `Envelope` (`isNull`, `intersects`).
+- Tests: `Parity/ValidityParityTests`, `Parity/MakeValidParityTests`, `Parity/PrecisionParityTests`, `Parity/SimplifyParityTests`, `Parity/InvalidGeometries` (the often invalid inputs), `Recording/ValidityReplayTests`, `Recording/RepairReplayTests` (long), `Recording/ShapeReplayTests` (simplify), `isValid` and `simplifyTP` in `JTSXML/TopologyEngine`.
+
+### Phase 7: triangulation, polygonize, line merge, linear referencing
+
+- **Planar graph** (`Planargraph/PlanargraphComponents.swift`, namespace `Planargraph`): `GraphComponent`, `Node`, `Edge`, `DirectedEdge`, `DirectedEdgeStar`, `PlanarGraph`, in GEOS's orders.
+- **Polygonize** (`Operation/Polygonize/`, namespace `Polygonize`): `Polygonizer`, `PolygonizeGraph`, `PolygonizeEdge`, `PolygonizeDirectedEdge`, `EdgeRing`, `HoleAssigner`; `Geometry.polygonize(_:)` as `GEOSPolygonize`.
+- **Line merge** (`Operation/Linemerge/LineMerger.swift`): `LineMerger`, `LineMergeGraph`, `LineMergeEdge`, `LineMergeDirectedEdge`, `EdgeString`; `Geometry.lineMerge()` as `GEOSLineMerge`.
+- **Constrained Delaunay** (`Triangulate/`): `ConstrainedDelaunayTriangulator`, `PolygonHoleJoiner` (with `PolygonNoder`'s node adder), `PolygonEarClipper`, `TriDelaunayImprover`, `TrianglePredicate` (GEOS's in-circle test, not JTS's), `Tri`, `TriEdge`, `TriangulationBuilder`; `Index/VertexSequencePackedRtree`; `Triangle.intersects`.
+- **Linear referencing** (`Linearref/LengthIndexedLine.swift`): `LengthIndexedLine` (`extractPoint`, `project`), `LengthLocationMap`, `LengthIndexOfPoint`, `LinearLocation`, `LinearIterator`; `Geometry.interpolate(_:normalized:)`, `Geometry.project(_:)` as `GEOSInterpolate`, `GEOSInterpolateNormalized` and `GEOSProject`.
+- Not ported, not reachable from `Geometry.swift`: the single-sided buffer (`Geometry.swift` never sets it), `LineSequencer`, `IsSimpleOp`, the structural `GeometryFixer`.
+- Tests: `Parity/LinesParityTests` (polygonize, line merge), `Parity/TriangulationParityTests` (triangulation, linear referencing), `Recording/LinesReplayTests`, `Recording/ShapeReplayTests`, `polygonize` in `JTSXML/TopologyEngine`.
+
+### Every GEOS call of `Geometry.swift` and the port's answer
+
+| GEOS (C API) | Port (`Topology`) |
+|---|---|
+| `GEOS_init_r`, `GEOSGeom_destroy_r`, `GEOSGeom_clone_r`, `GEOSFree_r`, `GEOSCoordSeq_destroy_r`, `GEOSPreparedGeom_destroy_r`, `GEOSSTRtree_destroy_r` | none needed: values and reference counting; a clone is `Geometry.copy()` |
+| `GEOSGeom_createPointFromXY_r` | `GeometryFactory.createPoint(_:)` |
+| `GEOSCoordSeq_copyFromBuffer_r`, `GEOSGeom_createLineString_r`, `GEOSGeom_createEmptyLineString_r` | `[Coordinate]`, `createLineString(_:)` |
+| `GEOSGeom_createLinearRing_r`, `GEOSGeom_createPolygon_r`, `GEOSGeom_createEmptyPolygon_r` | `createLinearRing(_:)`, `createPolygon(_:_:)` |
+| `GEOSGeom_createCollection_r`, `GEOSGeom_createEmptyCollection_r` | `createMultiPoint`, `createMultiLineString`, `createMultiPolygon`, `createGeometryCollection` |
+| `GEOSGeomTypeId_r`, `GEOSisEmpty_r`, `GEOSGetNumGeometries_r`, `GEOSGetGeometryN_r` | the geometry classes, `isEmpty()`, `getNumGeometries()`, `getGeometryN(_:)` |
+| `GEOSGeom_getCoordSeq_r`, `GEOSCoordSeq_getSize_r`, `GEOSCoordSeq_copyToBuffer_r`, `GEOSGeomGetX_r`, `GEOSGeomGetY_r` | `LineString.points`, `Point.getCoordinate()` |
+| `GEOSGetExteriorRing_r`, `GEOSGetNumInteriorRings_r`, `GEOSGetInteriorRingN_r` | `Polygon.getExteriorRing()`, `getNumInteriorRing()`, `getInteriorRingN(_:)` |
+| `GEOSGeom_getXMin_r` and the other three | `getEnvelopeInternal()` |
+| `GEOSisValid_r` | `isValid()` (`IsValidOp`), phase 6 |
+| `GEOSArea_r`, `GEOSLength_r` | `getArea()`, `getLength()` |
+| `GEOSGetCentroid_r`, `GEOSPointOnSurface_r` | `getCentroid()`, `getInteriorPoint()` |
+| `GEOSWKTWriter_create_r`, `_setRoundingPrecision_r`, `_write_r`, `_destroy_r` | `WKTWriter(roundingPrecision: 3).write(_:)` |
+| `GEOSBufferWithStyle_r` | `buffer(_:quadSegs:endCapStyle:joinStyle:mitreLimit:)` |
+| `GEOSUnion_r`, `GEOSIntersection_r`, `GEOSDifference_r`, `GEOSUnaryUnion_r` | `union(_:)`, `intersection(_:)`, `difference(_:)`, `union()` |
+| `GEOSTopologyPreserveSimplify_r` | `topologyPreserveSimplify(_:)`, phase 6 |
+| `GEOSMakeValid_r` | `makeValid()`, phase 6 |
+| `GEOSGeom_setPrecision_r` (flags 0) | `setPrecision(_:)`, phase 6 |
+| `GEOSConvexHull_r`, `GEOSEnvelope_r`, `GEOSBoundary_r` | `convexHull()`, `getEnvelope()`, `getBoundary()` |
+| `GEOSMinimumRotatedRectangle_r` | `MinimumAreaRectangle.getMinimumRectangle(_:)` |
+| `GEOSOffsetCurve_r` | `offsetCurve(_:quadSegs:joinStyle:mitreLimit:)` |
+| `GEOSInterpolate_r`, `GEOSInterpolateNormalized_r` | `interpolate(_:normalized:)`, phase 7 |
+| `GEOSProject_r` | `project(_:)`, phase 7 |
+| `GEOSDistance_r`, `GEOSNearestPoints_r` | `distance(_:)`, `DistanceOp.nearestPoints(_:_:)` |
+| `GEOSIntersects_r`, `GEOSContains_r`, `GEOSWithin_r` | `intersects(_:)`, `contains(_:)`, `within(_:)` |
+| `GEOSConstrainedDelaunayTriangulation_r` | `ConstrainedDelaunayTriangulator.triangulate(_:)`, phase 7 |
+| `GEOSPolygonize_r` | `Geometry.polygonize(_:)`, phase 7 |
+| `GEOSLineMerge_r` | `lineMerge()`, phase 7 |
+| `GEOSPrepare_r`, `GEOSPreparedContains_r`, `GEOSPreparedIntersects_r` | `PreparedGeometryFactory.prepare(_:)`, `contains(_:)`, `intersects(_:)` |
+| `GEOSSTRtree_create_r`, `_insert_r`, `_query_r`, `_nearest_r` | `STRtree(nodeCapacity: 10)`, `insert`, `query`, `nearestNeighbour` |
+
 ## Left
 
-- The port's speed: after a first pass, 1.6 to 3 times GEOS's time on the recorded calls (`Docs/PortingParity.md`, "Speed after the first optimization pass"); reference counting and allocation are what is left.
-- Phases 6 and after (validity, precision, simplify, triangulation, polygonize, line merge, linear referencing, then the swap of `Geometry`).
+- The port's speed: after the second pass, a whole tile's recorded calls take 1.48 times GEOS's time (`Docs/PortingParity.md`, "Speed after the second optimization pass"), within the goal's 1.5 but with little margin; the unary union (1.56) is most of it. Reference counting and allocation in the overlay are what is left.
+- Phase 8 and after: the swap of `Geometry` onto the port. Every GEOS call of `Geometry.swift` now has a port function (the table above).
 
 ## Decisions
 
@@ -84,3 +138,8 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 - **Timing.** `swift test -c release` does not work in this package: the release test bundle links the app's executable target and runs its SwiftUI `main`, which waits for events (and a test build with `-O` in its own scratch path hung the same way). The optimized times are taken by a throwaway executable (in the session's scratchpad, not in the package) compiled with `swiftc -O` against the objects of `swift build -c release` (the port, and GEOS at the release flags), which replays the recorded calls and times each side's call alone. The debug replays print their own (slower) times.
 - **`MCIndexSnapRounder` is not ported.** Phase 3 deferred it to the buffer, but GEOS 3.13's buffer snaps at a fixed precision with `SnapRoundingNoder`, as JTS 1.20 does (`MCIndexSnapRounder` appears in GEOS only in code disabled by `#if` and in `GeometryNoder` at a fixed precision, which nothing the package calls reaches). Nothing would test it against GEOS.
 - `GEOSEngine` maps JTS's old overlay names (`intersection`, `union`) to GEOS's overlay (OverlayNG), the `SR` overlays to the `Prec` functions with grid `1 / scale`, and a fixed precision model to coordinates rounded on reading (as JTS's `WKTReader`) and the `Prec` overlays. GEOS has no oriented Hausdorff distance, so the buffer matcher uses the symmetric one, the stricter check.
+- **Make valid is written from its algorithm** (phase 6). GEOS 3.13's default `GEOSMakeValid` ("linework") is GEOS's own `MakeValid` and `BuildArea` (from rttopo and PostGIS, LGPL); JTS 1.20 has nothing to port for it. The port's `MakeValid` and `BuildArea` implement the algorithm as GEOS documents and runs it, on the port's JTS operations, in GEOS's order of operations; GEOS's code was read to understand it and not translated. Taken on the user's behalf as the choice that leaves no function unported; the alternative is to keep `GEOSMakeValid` out of the port (the structural method, JTS's `GeometryFixer`, gives other results). For the user to confirm.
+- **GEOS's exception on non-finite points is emulated** (`NonFinite`): the orientation test raises a per-thread flag instead of throwing, and the places where GEOS catches (the robust overlay's stages) or reports (the entry points of the overlays and of the phase 6 and 7 operations) turn it into GEOS's error. The predicates, the buffer and the distance do not check it yet: with non-finite input they may answer where GEOS fails (no recorded call has a non-finite coordinate). To extend in phase 8 if the swap needs it.
+- **GEOS's ordered containers on NaN keys** follow libc++'s red-black tree (`CxxTree`, translated from the SDK's `__tree`, Apache-2.0 with LLVM exceptions as `CxxAlgorithms`) where a NaN key was seen to matter (the point overlay's maps, make valid's unique points). The other ordered structures stay sorted arrays, equal for finite keys.
+- **Where GEOS crashes, its input is not compared**: the triangulator on invalid polygons (a segmentation fault on a hole crossing its shell) is compared on valid input only, as `GEOSNode` on collections with empty members in phase 3. Where GEOS's behaviour is undefined but ends in a definite outcome (a ring collapsed to one point in the triangulator), the port reproduces the outcome.
+- **The simplifier's segment index** is a uniform grid, not JTS's quadtree: every query's use is an existence test over the same candidates, so the answers are the same (checked on every recorded call), and the quadtree's order does not matter.

@@ -2,14 +2,19 @@
 public enum MonotoneChainBuilder {
     public static func getChains(_ pts: [Coordinate], _ context: SegmentString? = nil) -> [MonotoneChain] {
         var list: [MonotoneChain] = []
-        if pts.isEmpty { return list }
+        appendChains(pts, context, &list)
+        return list
+    }
+
+    /// The chains of the points appended to a list.
+    public static func appendChains(_ pts: [Coordinate], _ context: SegmentString?, _ list: inout [MonotoneChain]) {
+        if pts.isEmpty { return }
         var chainStart = 0
         repeat {
             let chainEnd = findChainEnd(pts, chainStart)
             list.append(MonotoneChain(pts, chainStart, chainEnd, context))
             chainStart = chainEnd
         } while chainStart < pts.count - 1
-        return list
     }
 
     /// The last index of the chain from `start`: repeated points are part of

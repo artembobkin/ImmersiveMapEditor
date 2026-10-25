@@ -32,9 +32,7 @@ public final class MCIndexSegmentSetMutualIntersector {
         for queryChain in monoChains {
             let queryEnv = queryChain.getEnvelope(overlapTolerance)
             for testChain in index.query(queryEnv) {
-                queryChain.computeOverlaps(testChain, overlapTolerance) { mc1, start1, mc2, start2 in
-                    segInt.processIntersections(mc1.context!, start1, mc2.context!, start2)
-                }
+                queryChain.computeOverlaps(testChain, overlapTolerance, segInt)
                 if segInt.isDone() { return }
             }
         }

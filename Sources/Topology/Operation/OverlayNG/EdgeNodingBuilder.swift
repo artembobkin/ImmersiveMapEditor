@@ -8,12 +8,12 @@ final class EdgeNodingBuilder {
     private static let isNodingValidated = true
 
     private let pm: PrecisionModel?
-    private var inputEdges: [NodedSegmentString] = []
+    @exclusivity(unchecked) private var inputEdges: [NodedSegmentString] = []
     private let customNoder: Noder?
-    private var clipEnv: Envelope?
-    private var clipper: RingClipper?
-    private var limiter: LineLimiter?
-    private var hasEdges = [false, false]
+    @exclusivity(unchecked) private var clipEnv: Envelope?
+    @exclusivity(unchecked) private var clipper: RingClipper?
+    @exclusivity(unchecked) private var limiter: LineLimiter?
+    @exclusivity(unchecked) private var hasEdges = [false, false]
 
     init(_ pm: PrecisionModel?, _ noder: Noder?) {
         self.pm = pm

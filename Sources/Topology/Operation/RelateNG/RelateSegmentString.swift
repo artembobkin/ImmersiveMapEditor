@@ -2,7 +2,6 @@
 /// with which geometry and element it is of, and how to make the section
 /// of it at a node: JTS's `RelateSegmentString`.
 final class RelateSegmentString: SegmentString {
-    let pts: [Coordinate]
     let isA: Bool
     let dimension: Int
     let id: Int
@@ -21,21 +20,15 @@ final class RelateSegmentString: SegmentString {
 
     private init(_ pts: [Coordinate], _ isA: Bool, _ dimension: Int, _ id: Int, _ ringId: Int, _ poly: Geometry?,
                  _ inputGeom: RelateGeometry) {
-        self.pts = pts
         self.isA = isA
         self.dimension = dimension
         self.id = id
         self.ringId = ringId
         parentPolygonal = poly
         self.inputGeom = inputGeom
+        super.init(pts, nil)
     }
 
-    func getData() -> Any? { nil }
-    func setData(_ data: Any?) {}
-    func size() -> Int { pts.count }
-    func getCoordinate(_ i: Int) -> Coordinate { pts[i] }
-    func getCoordinates() -> [Coordinate] { pts }
-    func isClosed() -> Bool { pts[0] == pts[pts.count - 1] }
 
     func createNodeSection(_ segIndex: Int, _ intPt: Coordinate) -> NodeSection {
         let isNodeAtVertex = intPt.equals2D(pts[segIndex]) || intPt.equals2D(pts[segIndex + 1])

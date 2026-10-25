@@ -13,8 +13,8 @@ public class Geometry: CustomStringConvertible {
 
     public let factory: GeometryFactory
     /// The envelope, computed once.
-    var envelopeCache: Envelope?
-    public var userData: Any?
+    @exclusivity(unchecked) var envelopeCache: Envelope?
+    @exclusivity(unchecked) public var userData: Any?
 
     init(factory: GeometryFactory) {
         self.factory = factory

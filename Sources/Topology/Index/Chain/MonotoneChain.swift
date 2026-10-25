@@ -7,8 +7,8 @@ public final class MonotoneChain {
     public let start: Int
     public let end: Int
     public let context: SegmentString?
-    public var id = 0
-    private var env: Envelope?
+    @exclusivity(unchecked) public var id = 0
+    @exclusivity(unchecked) private var env: Envelope?
 
     public init(_ pts: [Coordinate], _ start: Int, _ end: Int, _ context: SegmentString?) {
         self.pts = pts
@@ -49,31 +49,69 @@ public final class MonotoneChain {
     /// Every pair of segments of the two chains whose envelopes may meet.
     public func computeOverlaps(_ mc: MonotoneChain, _ overlapTolerance: Double = 0.0,
                                 _ overlap: (MonotoneChain, Int, MonotoneChain, Int) -> Void) {
-        computeOverlaps(start, end, mc, mc.start, mc.end, overlapTolerance, overlap)
+        // The points of both chains read through buffers taken once, so the
+        // recursion neither retains the arrays nor the chains.
+        pts.withUnsafeBufferPointer { p in
+            mc.pts.withUnsafeBufferPointer { q in
+                MonotoneChain.computeOverlaps(self, p, start, end, mc, q, mc.start, mc.end, overlapTolerance, overlap)
+            }
+        }
     }
 
-    func computeOverlaps(_ start0: Int, _ end0: Int, _ mc: MonotoneChain, _ start1: Int, _ end1: Int,
-                         _ tolerance: Double, _ overlap: (MonotoneChain, Int, MonotoneChain, Int) -> Void) {
+    /// `computeOverlaps` handing each pair of segments to a segment
+    /// intersector with the chains' contexts, as the noders do: no closure
+    /// between, so the contexts pass without reference counting.
+    public func computeOverlaps(_ mc: MonotoneChain, _ overlapTolerance: Double, _ segInt: SegmentIntersector) {
+        let ctx0 = context!, ctx1 = mc.context!
+        pts.withUnsafeBufferPointer { p in
+            mc.pts.withUnsafeBufferPointer { q in
+                MonotoneChain.computeOverlaps(ctx0, p, start, end, ctx1, q, mc.start, mc.end, overlapTolerance, segInt)
+            }
+        }
+    }
+
+    private static func computeOverlaps(_ ctx0: SegmentString, _ p: UnsafeBufferPointer<Coordinate>, _ start0: Int, _ end0: Int,
+                                        _ ctx1: SegmentString, _ q: UnsafeBufferPointer<Coordinate>, _ start1: Int, _ end1: Int,
+                                        _ tolerance: Double, _ segInt: SegmentIntersector) {
         if end0 - start0 == 1 && end1 - start1 == 1 {
-            overlap(self, start0, mc, start1)
+            segInt.processIntersections(ctx0, start0, ctx1, start1)
             return
         }
-        if !overlaps(start0, end0, mc, start1, end1, tolerance) { return }
+        let overlapping = tolerance > 0.0 ? overlaps(p[start0], p[end0], q[start1], q[end1], tolerance)
+            : Envelope.intersects(p[start0], p[end0], q[start1], q[end1])
+        if !overlapping { return }
         let mid0 = (start0 + end0) / 2, mid1 = (start1 + end1) / 2
         if start0 < mid0 {
-            if start1 < mid1 { computeOverlaps(start0, mid0, mc, start1, mid1, tolerance, overlap) }
-            if mid1 < end1 { computeOverlaps(start0, mid0, mc, mid1, end1, tolerance, overlap) }
+            if start1 < mid1 { computeOverlaps(ctx0, p, start0, mid0, ctx1, q, start1, mid1, tolerance, segInt) }
+            if mid1 < end1 { computeOverlaps(ctx0, p, start0, mid0, ctx1, q, mid1, end1, tolerance, segInt) }
         }
         if mid0 < end0 {
-            if start1 < mid1 { computeOverlaps(mid0, end0, mc, start1, mid1, tolerance, overlap) }
-            if mid1 < end1 { computeOverlaps(mid0, end0, mc, mid1, end1, tolerance, overlap) }
+            if start1 < mid1 { computeOverlaps(ctx0, p, mid0, end0, ctx1, q, start1, mid1, tolerance, segInt) }
+            if mid1 < end1 { computeOverlaps(ctx0, p, mid0, end0, ctx1, q, mid1, end1, tolerance, segInt) }
         }
     }
 
-    func overlaps(_ start0: Int, _ end0: Int, _ mc: MonotoneChain, _ start1: Int, _ end1: Int, _ tolerance: Double) -> Bool {
-        if tolerance > 0.0 { return MonotoneChain.overlaps(pts[start0], pts[end0], mc.pts[start1], mc.pts[end1], tolerance) }
-        return Envelope.intersects(pts[start0], pts[end0], mc.pts[start1], mc.pts[end1])
+    private static func computeOverlaps(_ mc0: MonotoneChain, _ p: UnsafeBufferPointer<Coordinate>, _ start0: Int, _ end0: Int,
+                                        _ mc1: MonotoneChain, _ q: UnsafeBufferPointer<Coordinate>, _ start1: Int, _ end1: Int,
+                                        _ tolerance: Double, _ overlap: (MonotoneChain, Int, MonotoneChain, Int) -> Void) {
+        if end0 - start0 == 1 && end1 - start1 == 1 {
+            overlap(mc0, start0, mc1, start1)
+            return
+        }
+        let overlapping = tolerance > 0.0 ? overlaps(p[start0], p[end0], q[start1], q[end1], tolerance)
+            : Envelope.intersects(p[start0], p[end0], q[start1], q[end1])
+        if !overlapping { return }
+        let mid0 = (start0 + end0) / 2, mid1 = (start1 + end1) / 2
+        if start0 < mid0 {
+            if start1 < mid1 { computeOverlaps(mc0, p, start0, mid0, mc1, q, start1, mid1, tolerance, overlap) }
+            if mid1 < end1 { computeOverlaps(mc0, p, start0, mid0, mc1, q, mid1, end1, tolerance, overlap) }
+        }
+        if mid0 < end0 {
+            if start1 < mid1 { computeOverlaps(mc0, p, mid0, end0, mc1, q, start1, mid1, tolerance, overlap) }
+            if mid1 < end1 { computeOverlaps(mc0, p, mid0, end0, mc1, q, mid1, end1, tolerance, overlap) }
+        }
     }
+
 
     static func overlaps(_ p1: Coordinate, _ p2: Coordinate, _ q1: Coordinate, _ q2: Coordinate, _ tolerance: Double) -> Bool {
         var minq = cxxMin(q1.x, q2.x), maxq = cxxMax(q1.x, q2.x)

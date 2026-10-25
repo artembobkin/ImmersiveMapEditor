@@ -2,12 +2,12 @@
 /// segment, for snap rounding: JTS's `SnapRoundingIntersectionAdder`.
 public final class SnapRoundingIntersectionAdder: SegmentIntersector {
     @exclusivity(unchecked) var li = RobustLineIntersector()
-    public private(set) var intersections: [Coordinate] = []
+    @exclusivity(unchecked) public private(set) var intersections: [Coordinate] = []
     let nearnessTol: Double
 
     public init(_ nearnessTol: Double) { self.nearnessTol = nearnessTol }
 
-    public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
         if e0 === e1 && segIndex0 == segIndex1 { return }
         let p00 = e0.getCoordinate(segIndex0), p01 = e0.getCoordinate(segIndex0 + 1)
         let p10 = e1.getCoordinate(segIndex1), p11 = e1.getCoordinate(segIndex1 + 1)
@@ -33,5 +33,5 @@ public final class SnapRoundingIntersectionAdder: SegmentIntersector {
         }
     }
 
-    public func isDone() -> Bool { false }
+    override public func isDone() -> Bool { false }
 }

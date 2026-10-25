@@ -3,7 +3,7 @@
 /// libc++'s sort, as GEOS sorts them (JTS: a stable sort).
 final class NodeSections {
     let nodePt: Coordinate
-    private var sections: [NodeSection] = []
+    @exclusivity(unchecked) private var sections: [NodeSection] = []
 
     init(_ pt: Coordinate) { nodePt = pt }
 

@@ -9,6 +9,8 @@ public enum CGAlgorithmsDD {
     /// 1 when `q` is left of `p1`-`p2` (counter-clockwise), -1 right, 0 on it.
     public static func orientationIndex(_ p1x: Double, _ p1y: Double, _ p2x: Double, _ p2y: Double,
                                         _ qx: Double, _ qy: Double) -> Int {
+        // GEOS throws here on a non-finite point (see `NonFinite`).
+        if !qx.isFinite || !qy.isFinite { NonFinite.raise() }
         let index = orientationIndexFilter(p1x, p1y, p2x, p2y, qx, qy)
         if index <= 1 { return index }
         var dx1 = DD.valueOf(p2x)
@@ -31,7 +33,8 @@ public enum CGAlgorithmsDD {
     }
 
     public static func signOfDet2x2(_ dx1: Double, _ dy1: Double, _ dx2: Double, _ dy2: Double) -> Int {
-        signOfDet2x2(DD(dx1), DD(dy1), DD(dx2), DD(dy2))
+        if !dx1.isFinite || !dy1.isFinite || !dx2.isFinite || !dy2.isFinite { NonFinite.raise() }
+        return signOfDet2x2(DD(dx1), DD(dy1), DD(dx2), DD(dy2))
     }
 
     static let dpSafeEpsilon = 1e-15
