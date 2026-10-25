@@ -1,10 +1,11 @@
 import Foundation
+import simd
 
-/// What lies under a point of the Roads view: the points, markings,
-/// shelters, edges and areas of the document, within `tolerance` metres.
-/// Points are pickable on every ring and line when handles show, else only
-/// on what is selected, and only those in `limit` (the working tile): a
-/// view works on its one tile.
+/// What lies under a point of the Roads view: the points, objects and edges
+/// of the plan, within `tolerance` metres, each object answering for its
+/// own shape. Points are pickable on every ring when handles show, else
+/// only on what is selected, and only those in `limit` (the working tile):
+/// a view works on its one tile.
 struct RoadHitTest {
     let doc: RoadPlan
     let selection: Set<Item>
@@ -19,22 +20,19 @@ struct RoadHitTest {
         return p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
     }
 
-    /// The rings and lines whose points can be picked.
-    func pickable() -> [(Owner, Int, [Vec2])] {
-        let owners = Set(selection.compactMap { item -> Owner? in
+    /// The rings whose points can be picked: their object's id, the ring's
+    /// place, its points.
+    func pickable() -> [(String, Int, [Vec2])] {
+        let owners = Set(selection.map { item -> String in
             switch item {
             case .vertex(let o, _, _): o
-            case .area(let a): .area(a)
-            case .marking(let m): .marking(m)
-            default: nil
+            case .object(let o): o
             }
         })
-        var out: [(Owner, Int, [Vec2])] = []
-        for (i, a) in doc.areas.enumerated() where handlesShown || owners.contains(.area(i)) {
-            for (r, ring) in a.rings.enumerated() { out.append((.area(i), r, ring)) }
-        }
-        for (i, m) in doc.markings.enumerated() where !m.points.isEmpty && (handlesShown || owners.contains(.marking(i))) {
-            out.append((.marking(i), 0, m.points))
+        var out: [(String, Int, [Vec2])] = []
+        for o in doc.objects where handlesShown || owners.contains(o.id) {
+            if o is RoadMarking && !markingsShown { continue }
+            for (r, ring) in o.rings.enumerated() { out.append((o.id, r, ring)) }
         }
         return out
     }
@@ -50,52 +48,38 @@ struct RoadHitTest {
         return best?.1
     }
 
-    func marking(_ p: Vec2) -> Item? {
-        guard markingsShown else { return nil }
-        for (i, m) in doc.markings.enumerated().reversed() {
-            switch m.kind {
-            case "zebra":
-                if winding(MarkingShapes.zebraZone(m), p) != 0 { return .marking(i) }
-            case "letter":
-                if (m.centre - p).length < 1.6 * m.size / MarkingShapes.letterSize.y + tolerance { return .marking(i) }
-            default:
-                let pts = m.kind == "zigzag" ? MarkingShapes.zigzag(m) : m.points
-                for k in 0..<max(0, pts.count - 1) where (nearestOnSegment(p, pts[k], pts[k + 1]).0 - p).length < tolerance + 0.2 {
-                    return .marking(i)
+    /// The topmost marking or shelter under the point. An area is not taken
+    /// so: a click on the roadway must not pick up the whole network.
+    func object(_ p: Vec2) -> Item? {
+        doc.objects.reversed().first { o in
+            !(o is RoadwayArea) && (markingsShown || !(o is RoadMarking)) && o.contains(p, tolerance: tolerance)
+        }.map { .object($0.id) }
+    }
+
+    /// The topmost area under the point.
+    func area(_ p: Vec2) -> Item? {
+        doc.areas.reversed().first { $0.contains(p, tolerance: tolerance) }.map { .object($0.id) }
+    }
+
+    /// The nearest edge of an object that takes new points, within reach:
+    /// its owner, ring, the index of its first point, the nearest point.
+    func edge(_ p: Vec2) -> (String, Int, Int, Vec2)? {
+        var best: (Double, (String, Int, Int, Vec2))?
+        for o in doc.objects where o.takesNewPoints {
+            for (r, pts) in o.rings.enumerated() {
+                let n = pts.count
+                for i in 0..<(o.closedRings ? n : max(0, n - 1)) {
+                    let (q, _) = nearestOnSegment(p, pts[i], pts[(i + 1) % n])
+                    let d = (q - p).length
+                    if d < tolerance && d < (best?.0 ?? .infinity) { best = (d, (o.id, r, i, q)) }
                 }
             }
         }
-        return nil
-    }
-
-    func shelter(_ p: Vec2) -> Item? {
-        doc.shelters.indices.reversed().first { winding(MarkingShapes.shelterRect(doc.shelters[$0]), p) != 0 }.map { .shelter($0) }
-    }
-
-    /// The nearest edge of an area or a line within reach: its ring, the
-    /// index of its first point and the nearest point on it.
-    func edge(_ p: Vec2) -> (Owner, Int, Int, Vec2)? {
-        var best: (Double, (Owner, Int, Int, Vec2))?
-        func scan(_ owner: Owner, _ ring: Int, _ pts: [Vec2], closed: Bool) {
-            let n = pts.count
-            for i in 0..<(closed ? n : n - 1) {
-                let (q, _) = nearestOnSegment(p, pts[i], pts[(i + 1) % n])
-                let d = (q - p).length
-                if d < tolerance && d < (best?.0 ?? .infinity) { best = (d, (owner, ring, i, q)) }
-            }
-        }
-        for (i, a) in doc.areas.enumerated() {
-            for (r, ring) in a.rings.enumerated() { scan(.area(i), r, ring, closed: true) }
-        }
-        for (i, m) in doc.markings.enumerated() where m.kind == "line" { scan(.marking(i), 0, m.points, closed: false) }
         return best?.1
     }
 
-    func area(_ p: Vec2) -> Item? {
-        doc.areas.indices.reversed().first { a in doc.areas[a].rings.reduce(0) { $0 + winding($1, p) } != 0 }.map { .area($0) }
-    }
-
-    /// Everything with its point in the box a..b.
+    /// Everything in the box a..b: the points of the rings shown, and the
+    /// objects without points (zebras, letters, shelters) by where they are.
     func box(_ a: Vec2, _ b: Vec2) -> Set<Item> {
         let lo = simd_min(a, b), hi = simd_max(a, b)
         func inside(_ p: Vec2) -> Bool { p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y && within(p) }
@@ -103,10 +87,9 @@ struct RoadHitTest {
         for (owner, ring, pts) in pickable() {
             for (i, q) in pts.enumerated() where inside(q) { picked.insert(.vertex(owner, ring: ring, index: i)) }
         }
-        for (i, m) in doc.markings.enumerated() where m.points.isEmpty && inside(m.centre) { picked.insert(.marking(i)) }
-        for (i, s) in doc.shelters.enumerated() where inside(s.position) { picked.insert(.shelter(i)) }
+        for o in doc.objects where o.rings.isEmpty && (markingsShown || !(o is RoadMarking)) && inside(o.anchor) {
+            picked.insert(.object(o.id))
+        }
         return picked
     }
 }
-
-import simd

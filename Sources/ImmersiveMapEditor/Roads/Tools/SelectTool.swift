@@ -36,7 +36,7 @@ final class SelectTool: RoadToolHandler {
             gesture = .none
             return
         }
-        var hit = ctx.hits.vertex(p.at) ?? ctx.hits.marking(p.at) ?? ctx.hits.shelter(p.at)
+        var hit = ctx.hits.vertex(p.at) ?? ctx.hits.object(p.at)
         // A whole area only with command: a click on the roadway must not
         // pick up the whole network.
         if hit == nil && p.command { hit = ctx.hits.area(p.at) }

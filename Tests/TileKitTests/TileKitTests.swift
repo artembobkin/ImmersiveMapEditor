@@ -57,8 +57,10 @@ import Testing
 
     @Test func workspacePathsFollowTheLayout() {
         let paths = WorkspacePaths(root: URL(fileURLWithPath: "/w"))
-        #expect(paths.roads.path == "/w/roads")
-        #expect(paths.tilesOut.path == "/w/out/tiles")
+        #expect(paths.tile(z: 15, x: 19808, y: 10243).path == "/w/tiles/15/19808/10243")
+        #expect(paths.tileData(z: 15, x: 19808, y: 10243).path == "/w/tiles/15/19808/10243/osm")
+        #expect(paths.roadDocument(z: 15, x: 19808, y: 10243).path == "/w/tiles/15/19808/10243/roads/roads.json")
+        #expect(paths.tileOut(z: 15, x: 19808, y: 10243).path == "/w/tiles/15/19808/10243/build")
     }
 
     @Test func aBakeSceneReadsBackWhatItWrote() throws {

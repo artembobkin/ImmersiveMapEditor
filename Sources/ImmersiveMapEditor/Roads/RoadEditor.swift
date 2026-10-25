@@ -57,11 +57,21 @@ final class RoadEditor {
 
     // MARK: Changes, undo and saving
 
-    /// Changes the document as one step of undo.
+    /// Changes the document as one step of undo: on a copy of it, so the
+    /// plan undo keeps stays as it was.
     func change(_ name: String, select: Set<Item>? = nil, _ body: (inout RoadPlan) -> Void) {
         let before = doc, selected = selection
-        body(&doc)
+        var next = doc.copy()
+        body(&next)
+        doc = next
         if let select { selection = select }
+        // Nothing selected that is gone.
+        selection = selection.filter { item in
+            switch item {
+            case .object(let id): doc.object(id) != nil
+            case let .vertex(id, ring, index): index < doc.points(id, ring).count
+            }
+        }
         registerUndo(name, before, selected)
         touched()
     }
@@ -113,11 +123,11 @@ final class RoadEditor {
     }
 
     func turn(_ degrees: Double) {
-        guard !selection.markings.isEmpty || !selection.shelters.isEmpty else { return }
+        guard !selection.objects.isEmpty else { return }
         change("Rotate") { $0.turn(selection, by: degrees) }
     }
 
-    func insertPoint(_ owner: Owner, _ ring: Int, after index: Int, at p: Vec2) {
+    func insertPoint(_ owner: String, _ ring: Int, after index: Int, at p: Vec2) {
         change("Add Point", select: [.vertex(owner, ring: ring, index: index + 1)]) { $0.insert(p, owner, ring, after: index) }
     }
 
@@ -143,8 +153,7 @@ final class RoadEditor {
     }
 
     func simplifySelection() {
-        var test = doc
-        guard let (before, after) = test.simplify(selection, tolerance: settings.tolerance) else {
+        guard let (before, after) = doc.copy().simplify(selection, tolerance: settings.tolerance) else {
             store.say("Simplify: select a run of points or an area")
             return
         }
@@ -153,28 +162,24 @@ final class RoadEditor {
     }
 
     func flipZigzags() {
-        let zigzags = selection.markings.filter { doc.markings[$0].kind == "zigzag" }
-        guard !zigzags.isEmpty else { return }
-        change("Flip Zigzag") { doc in for m in zigzags { doc.markings[m].side *= -1 } }
+        guard selection.objects.contains(where: { doc.object($0) is ZigzagMarking }) else { return }
+        change("Flip Zigzag") { plan in
+            for id in selection.objects { (plan.object(id) as? ZigzagMarking)?.flip() }
+        }
     }
 
-    func addArea(_ pts: [Vec2], op: String) {
-        guard pts.count >= 3 else { return }
-        var made = 0
-        change(op == "add" ? "Add Roadway" : "Cut Roadway") { made = $0.addArea(pts, op: op) }
-        selection = [.area(made)]
+    /// A new object (an area, a marking, a shelter), selected.
+    func add(_ o: RoadObject) {
+        var id = ""
+        change("Add \(type(of: o).kindName)") { id = $0.add(o) }
+        selection = [.object(id)]
     }
 
-    func addMarking(_ m: RoadPlan.Marking) {
-        var made = 0
-        change("Add \(m.kind.capitalized)") { made = $0.addMarking(m) }
-        selection = [.marking(made)]
-    }
-
-    func addShelter(at p: Vec2, heading: Double) {
-        var made = 0
-        change("Add Shelter") { made = $0.addShelter(at: p, heading: heading) }
-        selection = [.shelter(made)]
+    /// Sets one of an object's parameters (Parameter), as one step of undo,
+    /// on the plan's copy: nothing when the object is gone.
+    func set(_ id: String, _ name: String, _ body: @escaping (RoadObject) -> Void) {
+        guard doc.object(id) != nil else { return }
+        change(name) { plan in if let o = plan.object(id) { body(o) } }
     }
 
     // MARK: The roadway

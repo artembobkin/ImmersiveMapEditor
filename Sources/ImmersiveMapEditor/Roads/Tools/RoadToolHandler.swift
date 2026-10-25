@@ -1,4 +1,5 @@
 import Foundation
+import Geometry
 
 /// The pointer as a tool sees it: where (in metres), how many clicks, the
 /// modifier keys. No AppKit: the view translates its events into this.
@@ -62,13 +63,17 @@ extension Tool {
     func makeHandler() -> RoadToolHandler {
         switch self {
         case .select: SelectTool()
-        case .addArea: DrawTool(kind: .area(op: "add"))
-        case .cutArea: DrawTool(kind: .area(op: "cut"))
-        case .line: DrawTool(kind: .line)
-        case .zebra: DragPlaceTool(kind: .zebra)
-        case .zigzag: DragPlaceTool(kind: .zigzag)
-        case .letter: ClickPlaceTool(kind: .letter)
-        case .shelter: ClickPlaceTool(kind: .shelter)
+        case .addArea: DrawTool(closed: true) { RoadwayArea(id: "", op: "add", rings: [counterClockwise($0)]) }
+        case .cutArea: DrawTool(closed: true) { RoadwayArea(id: "", op: "cut", rings: [counterClockwise($0)]) }
+        case .line: DrawTool(closed: false) { LineMarking(id: "", points: $0) }
+        case .zebra: DragPlaceTool { a, b in ZebraMarking(id: "", centre: (a + b) / 2, heading: (b - a).angle - 90, span: (b - a).length) }
+        case .zigzag: DragPlaceTool { ZigzagMarking(id: "", points: [$0, $1]) }
+        case .letter: ClickPlaceTool { LetterMarking(id: "", centre: $0, heading: 90) }
+        case .shelter: ClickPlaceTool { BusShelter(id: "", position: $0, heading: 0) }
         }
     }
 }
+
+/// A ring wound counter-clockwise, as an area's outer ring is.
+func counterClockwise(_ ring: [Vec2]) -> [Vec2] { signedArea(ring) < 0 ? ring.reversed() : ring }
+

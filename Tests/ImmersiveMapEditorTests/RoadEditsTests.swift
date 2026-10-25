@@ -9,12 +9,12 @@ import Testing
     func square() -> RoadPlan {
         var doc = RoadPlan(tiles: .init(z: 15, x0: 19808, y0: 10243, x1: 19808, y1: 10243),
                                seededDate: "", seededRevision: "")
-        doc.areas = [.init(id: "a1", op: "add", rings: [[Vec2(0, 0), Vec2(5, 0), Vec2(10, 0), Vec2(10, 5), Vec2(10, 10),
-                                                         Vec2(5, 10), Vec2(0, 10), Vec2(0, 5)]])]
+        doc.add(RoadwayArea(id: "", op: "add", rings: [[Vec2(0, 0), Vec2(5, 0), Vec2(10, 0), Vec2(10, 5), Vec2(10, 10),
+                                                         Vec2(5, 10), Vec2(0, 10), Vec2(0, 5)]]))
         return doc
     }
 
-    func vertex(_ i: Int) -> Item { .vertex(.area(0), ring: 0, index: i) }
+    func vertex(_ i: Int) -> Item { .vertex("a1", ring: 0, index: i) }
 
     @Test func movingTwoPointsOfOneRingMovesBoth() {
         let doc = square().moved([vertex(1), vertex(2)], by: Vec2(0, -1))
@@ -65,14 +65,29 @@ import Testing
 
     @Test func insertingAPointPutsItAfterTheEdgesStart() {
         var doc = square()
-        doc.insert(Vec2(2, 0), .area(0), 0, after: 0)
+        doc.insert(Vec2(2, 0), "a1", 0, after: 0)
         #expect(doc.areas[0].rings[0][1] == Vec2(2, 0))
     }
 
     @Test func newAreasAreWoundCounterClockwise() {
         var doc = square()
-        let i = doc.addArea([Vec2(0, 0), Vec2(0, 1), Vec2(1, 1)], op: "cut")
-        #expect(signedArea(doc.areas[i].rings[0]) > 0)
-        #expect(doc.areas[i].id == "a2")
+        let id = doc.add(RoadwayArea(id: "", op: "cut", rings: [counterClockwise([Vec2(0, 0), Vec2(0, 1), Vec2(1, 1)])]))
+        #expect(signedArea(doc.object(id)!.rings[0]) > 0)
+        #expect(id == "a2")
+    }
+
+    @Test func deletingAnObjectLeavesNoneOfItsId() {
+        var doc = square()
+        let id = doc.add(BusShelter(id: "", position: Vec2(3, 3), heading: 0))
+        doc.delete([.object(id)])
+        #expect(doc.object(id) == nil)
+        #expect(doc.shelters.isEmpty)
+    }
+
+    @Test func aCopyKeepsTheOriginalAsItWas() {
+        let doc = square()
+        let moved = doc.moved([.object("a1")], by: Vec2(1, 0))
+        #expect(doc.areas[0].rings[0][0] == Vec2(0, 0))
+        #expect(moved.areas[0].rings[0][0] == Vec2(1, 0))
     }
 }

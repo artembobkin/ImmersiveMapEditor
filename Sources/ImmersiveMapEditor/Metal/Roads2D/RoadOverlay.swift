@@ -13,34 +13,19 @@ enum RoadOverlay {
         let selected = editor.selection
 
         for (owner, ring, pts) in hits.pickable() {
-            if case .marking = owner { m.pixelPolyline(pts, width: 1, Colours.draft) }
+            if editor.doc.object(owner) is RoadMarking { m.pixelPolyline(pts, width: 1, Colours.draft) }
             for (i, p) in pts.enumerated() where visible(p) {
                 let on = selected.contains(.vertex(owner, ring: ring, index: i))
                 m.pixelSquare(p, size: on ? 9 : 7, Colours.handleEdge)
                 m.pixelSquare(p, size: on ? 7 : 5, on ? Colours.selected : Colours.handle)
             }
         }
-        for item in selected {
-            switch item {
-            case .marking(let i):
-                let k = editor.doc.markings[i]
-                switch k.kind {
-                case "zebra": m.pixelPolyline(MarkingShapes.zebraZone(k), closed: true, width: 2, Colours.selected)
-                case "letter":
-                    for r in MarkingShapes.letterRings(k) { m.pixelPolyline(r, closed: true, width: 2, Colours.selected) }
-                case "zigzag": m.pixelPolyline(MarkingShapes.zigzag(k), width: 2, Colours.selected)
-                default: m.pixelPolyline(k.points, width: 2, Colours.selected)
-                }
-                // Its heading.
-                if k.kind == "zebra" || k.kind == "letter" {
-                    m.pixelLine(k.centre, k.centre + Vec2.fromAngle(k.heading) * (24 / transform.scale), width: 2, Colours.selected)
-                }
-            case .shelter(let i):
-                m.pixelPolyline(MarkingShapes.shelterRect(editor.doc.shelters[i]), closed: true, width: 2.5, Colours.selected)
-            case .area(let i):
-                for r in editor.doc.areas[i].rings { m.pixelPolyline(r, closed: true, width: 2, Colours.selected) }
-            case .vertex:
-                break
+        // Each object selected outlined as drawn, the way it faces ticked.
+        for case .object(let id) in selected {
+            guard let o = editor.doc.object(id) else { continue }
+            for r in o.outline { m.pixelPolyline(r, closed: o.outlineClosed, width: 2, Colours.selected) }
+            if let facing = o.facing {
+                m.pixelLine(o.anchor, o.anchor + Vec2.fromAngle(facing) * (24 / transform.scale), width: 2, Colours.selected)
             }
         }
         // The selection's frame: corners that scale, a handle above that turns.

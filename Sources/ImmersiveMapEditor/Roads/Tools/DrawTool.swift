@@ -1,24 +1,19 @@
 import Foundation
 
-/// Draws an area of roadway to add or cut (click the corners, Return or a
-/// click on the first point closes it) or a line marking (click the points,
-/// Return or a double-click finishes). Delete drops the last point.
+/// Draws an object point by point: an area of roadway to add or cut
+/// (`closed`: click the corners, Return or a click on the first point closes
+/// it) or a line marking (click the points, Return or a double-click
+/// finishes). Delete drops the last point. `make` makes it from the points.
 @MainActor
 final class DrawTool: RoadToolHandler {
-    enum Kind {
-        case area(op: String)
-        case line
-    }
-
-    let kind: Kind
+    let closed: Bool
+    let make: ([Vec2]) -> RoadObject
     private var points: [Vec2] = []
     private var pointer: Vec2?
 
-    init(kind: Kind) { self.kind = kind }
-
-    private var closed: Bool {
-        if case .area = kind { return true }
-        return false
+    init(closed: Bool, _ make: @escaping ([Vec2]) -> RoadObject) {
+        self.closed = closed
+        self.make = make
     }
 
     func down(_ p: Pointer, _ ctx: ToolContext) {
@@ -35,14 +30,7 @@ final class DrawTool: RoadToolHandler {
 
     func commit(_ ctx: ToolContext) -> Bool {
         guard !points.isEmpty else { return false }
-        switch kind {
-        case .area(let op):
-            ctx.editor.addArea(points, op: op)
-        case .line where points.count >= 2:
-            ctx.editor.addMarking(RoadPlan.Marking(id: "", kind: "line", style: "dashed", points: points))
-        case .line:
-            break
-        }
+        if points.count >= (closed ? 3 : 2) { ctx.editor.add(make(points)) }
         points = []
         return true
     }

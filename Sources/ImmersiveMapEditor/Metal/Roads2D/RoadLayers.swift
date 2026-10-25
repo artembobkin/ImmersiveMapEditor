@@ -37,48 +37,17 @@ struct RoadLayers {
         roadway = StencilBatch()
         cuts = StencilBatch()
         cutEdges = Mesh()
-        for a in doc.areas {
-            if a.op == "add" {
-                roadway.add(a.rings)
-                for ring in a.rings {
-                    for i in ring.indices { kerb.band(ring[i], ring[(i + 1) % ring.count], width: 0.7, Colours.kerb) }
-                }
-            } else {
-                cuts.add(a.rings)
-                for ring in a.rings { cutEdges.pixelPolyline(ring, closed: true, width: 1.5, Colours.cutEdge) }
-            }
+        paint = Mesh()
+        letters = StencilBatch()
+        shelters = Mesh()
+        // What every object paints, into the meshes of its layer: the
+        // objects say what they are made of, this how it is drawn.
+        for o in doc.objects {
+            for p in o.paint(onRoadway: model.onRoadway) { add(p) }
         }
         roadway.close(Colours.asphalt)
         cuts.close(Colours.ground)
-
-        paint = Mesh()
-        letters = StencilBatch()
-        for m in doc.markings {
-            switch m.kind {
-            case "line":
-                for q in MarkingShapes.lineQuads(m) { paint.convex(q, m.colour == "yellow" ? Colours.yellow : Colours.marking) }
-            case "zebra":
-                for (q, whole) in MarkingShapes.zebraBars(m, inside: model.onRoadway) {
-                    paint.convex(q, whole ? Colours.marking : Colours.bad)
-                }
-            case "zigzag":
-                for q in MarkingShapes.stroke(MarkingShapes.zigzag(m), width: MarkingShapes.zigzagLine) {
-                    paint.convex(q, Colours.yellow)
-                }
-            default:
-                letters.add(MarkingShapes.letterRings(m))
-            }
-        }
         letters.close(Colours.marking)
-
-        shelters = Mesh()
-        for s in doc.shelters {
-            let r = MarkingShapes.shelterRect(s)
-            shelters.convex(r, Colours.shelter)
-            shelters.pixelPolyline(r, closed: true, width: 1.5, Colours.shelterEdge)
-            // The open side, to the road.
-            shelters.pixelLine(r[3], r[2], width: 3, Colours.draft)
-        }
 
         centreLines = Mesh()
         for r in model.context.roads {
@@ -95,6 +64,38 @@ struct RoadLayers {
                 let (a, b) = proj.tileRect(x: x, y: y)
                 grid.pixelPolyline([a, Vec2(b.x, a.y), b, Vec2(a.x, b.y)], closed: true, width: 1.5, Colours.tileEdge)
             }
+        }
+    }
+
+    /// One paint into its layer's mesh.
+    private mutating func add(_ p: Paint) {
+        let colour = Self.colour(p.ink)
+        switch (p.layer, p.form) {
+        case (.roadway, .rings(let r)): roadway.add(r)
+        case (.cuts, .rings(let r)): cuts.add(r)
+        case (.markings, .rings(let r)): letters.add(r)
+        case (_, .rings(let r)): for ring in r { shelters.convex(ring, colour) }
+        case (.roadway, .band(let a, let b, let w)): kerb.band(a, b, width: w, colour)
+        case (_, .band(let a, let b, let w)): paint.band(a, b, width: w, colour)
+        case (.markings, .convex(let q)): paint.convex(q, colour)
+        case (_, .convex(let q)): shelters.convex(q, colour)
+        case (.cuts, .outline(let pts, let closed, let w)): cutEdges.pixelPolyline(pts, closed: closed, width: w, colour)
+        case (_, .outline(let pts, let closed, let w)): shelters.pixelPolyline(pts, closed: closed, width: w, colour)
+        }
+    }
+
+    private static func colour(_ ink: Paint.Ink) -> SIMD4<Float> {
+        switch ink {
+        case .asphalt: Colours.asphalt
+        case .kerb: Colours.kerb
+        case .ground: Colours.ground
+        case .cutEdge: Colours.cutEdge
+        case .white: Colours.marking
+        case .yellow: Colours.yellow
+        case .wrong: Colours.bad
+        case .shelter: Colours.shelter
+        case .shelterEdge: Colours.shelterEdge
+        case .open: Colours.draft
         }
     }
 }

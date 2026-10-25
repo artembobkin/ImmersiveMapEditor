@@ -1,16 +1,14 @@
 import Foundation
 
-/// Places a marking by a drag: a zebra across the road from kerb to kerb
+/// Places an object by a drag: a zebra across the road from kerb to kerb
 /// (its bars run square to the drag), a zigzag along the kerb (the roadway
-/// on the left of the drag).
+/// on the left of the drag). `make` makes it from the drag's ends.
 @MainActor
 final class DragPlaceTool: RoadToolHandler {
-    enum Kind { case zebra, zigzag }
-
-    let kind: Kind
+    let make: (Vec2, Vec2) -> RoadObject
     private var drag: (Vec2, Vec2)?
 
-    init(kind: Kind) { self.kind = kind }
+    init(_ make: @escaping (Vec2, Vec2) -> RoadObject) { self.make = make }
 
     func down(_ p: Pointer, _ ctx: ToolContext) { drag = (p.at, p.at) }
 
@@ -21,33 +19,20 @@ final class DragPlaceTool: RoadToolHandler {
     func up(_ p: Pointer, _ ctx: ToolContext) {
         defer { drag = nil }
         guard let (from, to) = drag, (to - from).length > 1 else { return }
-        let d = to - from
-        switch kind {
-        case .zebra:
-            ctx.editor.addMarking(RoadPlan.Marking(id: "", kind: "zebra", centre: (from + to) / 2,
-                                                       heading: d.angle - 90, span: d.length))
-        case .zigzag:
-            ctx.editor.addMarking(RoadPlan.Marking(id: "", kind: "zigzag", points: [from, to]))
-        }
+        ctx.editor.add(make(from, to))
     }
 
     var preview: ToolPreview { drag.map { .line($0.0, $0.1) } ?? .none }
 }
 
-/// Places a thing by a click: the letter A (its top north, turned with [
-/// and ]) or a bus shelter (its length east, the road on its left).
+/// Places an object by a click: the letter A (its top north, turned with [
+/// and ]) or a bus shelter (its length east, the road on its left). `make`
+/// makes it at the click.
 @MainActor
 final class ClickPlaceTool: RoadToolHandler {
-    enum Kind { case letter, shelter }
+    let make: (Vec2) -> RoadObject
 
-    let kind: Kind
+    init(_ make: @escaping (Vec2) -> RoadObject) { self.make = make }
 
-    init(kind: Kind) { self.kind = kind }
-
-    func down(_ p: Pointer, _ ctx: ToolContext) {
-        switch kind {
-        case .letter: ctx.editor.addMarking(RoadPlan.Marking(id: "", kind: "letter", centre: p.at, heading: 90))
-        case .shelter: ctx.editor.addShelter(at: p.at, heading: 0)
-        }
-    }
+    func down(_ p: Pointer, _ ctx: ToolContext) { ctx.editor.add(make(p.at)) }
 }
