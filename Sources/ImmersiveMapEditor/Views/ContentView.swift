@@ -54,12 +54,14 @@ struct ContentView: View {
                 case .roads:
                     if let model = session.model, let roads = session.roads { RoadsPanel(model: model, map: roads) }
                 case .tiles: TilesPanel()
+                case .light: LightPanel()
                 }
             }
             .inspectorColumnWidth(min: 260, ideal: 290, max: 400)
         }
         .navigationTitle(session.model.map { "\($0.url.lastPathComponent)\($0.dirty ? " (edited)" : "")" }
                          ?? session.workspace.root.lastPathComponent)
+        .onChange(of: workspace.viewMode) { session.follow(workspace.viewMode) }
         .onChange(of: undoManager, initial: true) { session.model?.undo = undoManager }
         .onChange(of: session.model.map { ObjectIdentifier($0) }) { session.model?.undo = undoManager }
         .onChange(of: phase) { if phase != .active { session.model?.saveIfNeeded() } }
@@ -89,6 +91,8 @@ struct ContentView: View {
             }
         case .tiles:
             if let tiles = session.tiles { MetalHost(view: tiles) }
+        case .light:
+            LightView()
         }
     }
 }

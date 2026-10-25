@@ -33,6 +33,8 @@ final class RoadEditor {
         var centreLines = true
         var markings = true
         var handles = true
+        /// Mapbox's satellite imagery under the document.
+        var satellite = false
     }
 
     init(url: URL) throws {

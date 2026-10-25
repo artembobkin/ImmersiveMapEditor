@@ -46,6 +46,8 @@ struct RoadsPanel: View {
                     Toggle("Buildings", isOn: $model.layers.buildings)
                     Toggle("OSM centre lines, crossings, stops", isOn: $model.layers.centreLines)
                     Toggle("Markings", isOn: $model.layers.markings)
+                    Toggle("Satellite (Mapbox)  I", isOn: $model.layers.satellite)
+                    if model.layers.satellite { MapboxToken(map: map) }
                     Toggle("Point handles  H", isOn: $model.layers.handles)
                     Button("Frame the tiles  F") { map.frameAll() }
                 }
@@ -66,5 +68,25 @@ struct RoadsPanel: View {
             Text(title).font(.headline)
             content()
         }
+    }
+}
+
+/// The Mapbox token the satellite imagery is fetched with, kept in the
+/// user's defaults. A public token (pk.) of a free Mapbox account will do.
+struct MapboxToken: View {
+    let map: RoadsView
+    @AppStorage(SatelliteTiles.tokenKey) private var token = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SecureField("Mapbox token", text: $token)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { map.satelliteTokenChanged() }
+            if token.isEmpty {
+                Link("Get a token at mapbox.com", destination: URL(string: "https://account.mapbox.com/access-tokens/")!)
+                    .font(.callout)
+            }
+        }
+        .onChange(of: token) { map.satelliteTokenChanged() }
     }
 }

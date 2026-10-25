@@ -9,6 +9,8 @@ struct MapCanvas: View {
     var box: (CGPoint, CGPoint)?
 
     var body: some View {
+        // Read here, so the map is drawn again as OpenStreetMap's tiles come.
+        let _ = raster.images.count
         Canvas { ctx, size in
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.9, green: 0.89, blue: 0.87)))
             for (z, x, y) in camera.rasterTiles(in: size) {

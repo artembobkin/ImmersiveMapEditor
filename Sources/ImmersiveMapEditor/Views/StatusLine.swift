@@ -15,6 +15,9 @@ struct StatusLine: View {
                     Text(model.tool.hint).lineLimit(1)
                     Spacer()
                     Text(model.status).lineLimit(1).foregroundStyle(.secondary)
+                    if model.layers.satellite {
+                        Text("© Mapbox © Maxar").lineLimit(1).foregroundStyle(.secondary)
+                    }
                 } else {
                     Spacer()
                 }
@@ -25,6 +28,10 @@ struct StatusLine: View {
                     .lineLimit(1)
                 Spacer()
                 Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
+            case .light:
+                Text("The light maps of the tiles picked, from above. Drag to move, scroll to zoom, F frames.")
+                    .lineLimit(1)
+                Spacer()
             }
             // A build going on is shown here too, the log open or not.
             if session.build.running {

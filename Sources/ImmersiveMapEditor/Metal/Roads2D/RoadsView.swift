@@ -40,7 +40,7 @@ final class RoadsView: MTKView {
         guard let model else { return }
         withObservationTracking {
             _ = (model.revision, model.selection, model.tool, model.layers.buildings, model.layers.centreLines,
-                 model.layers.markings, model.layers.handles)
+                 model.layers.markings, model.layers.handles, model.layers.satellite)
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.needsDisplay = true
@@ -53,6 +53,21 @@ final class RoadsView: MTKView {
         guard let model else { return }
         let t = model.doc.tiles, proj = model.doc.projection
         transform.frame(proj.tileRect(x: t.x0, y: t.y1).0, proj.tileRect(x: t.x1, y: t.y0).1, in: bounds.size)
+        needsDisplay = true
+    }
+
+    /// The imagery tried again with a new token.
+    func satelliteTokenChanged() {
+        renderer?.retrySatellite()
+        needsDisplay = true
+    }
+
+    /// Frames some tiles of the document (the ones picked on the map).
+    func frame(tiles: [TileKey]) {
+        guard let model, !tiles.isEmpty else { return frameAll() }
+        let proj = model.doc.projection
+        let xs = tiles.map(\.x), ys = tiles.map(\.y)
+        transform.frame(proj.tileRect(x: xs.min()!, y: ys.max()!).0, proj.tileRect(x: xs.max()!, y: ys.min()!).1, in: bounds.size)
         needsDisplay = true
     }
 
@@ -196,6 +211,7 @@ final class RoadsView: MTKView {
             case "]": model.turn(shift ? -5 : -1)
             case "f": frameAll()
             case "h": model.layers.handles.toggle()
+            case "i": model.layers.satellite.toggle()
             case "x": model.flipZigzags()
             case let key:
                 if let next = Tool.allCases.first(where: { $0.key.lowercased() == key }) {

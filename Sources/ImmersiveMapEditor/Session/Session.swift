@@ -10,6 +10,8 @@ final class Session {
     let camera = MapCamera()
     let raster = RasterTiles()
     let build = BuildRunner()
+    let lights = LightMaps()
+    let lightSettings = LightSettings()
     private(set) var tiles: TileView?
     private(set) var model: RoadEditor?
     private(set) var roads: RoadsView?
@@ -66,6 +68,41 @@ final class Session {
             workspace.scan()
             let built = tiles.filter { workspace.built.contains($0) }
             if !built.isEmpty { workspace.shown = built } else { workspace.tilesRevision += 1 }
+        }
+    }
+
+    /// Bakes the light of built tiles again with the Light view's settings,
+    /// their geometry as built, then shows the new light maps.
+    func bake(_ tiles: [TileKey]) {
+        guard let z = tiles.first?.z else { return }
+        let workspace = self.workspace, s = lightSettings
+        workspace.building = true
+        build.run(root: workspace.root, arguments: ["bake", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }
+                  + ["--size", "\(s.size)", "--samples", "\(s.samples)", "--bounces", "\(s.bounces)"]) {
+            workspace.building = false
+            workspace.scan()
+            workspace.tilesRevision += 1
+        }
+    }
+
+    /// The tiles picked on the map are what every view works on: entering a
+    /// view, the Roads view opens the road document holding them and frames
+    /// them, the 3D view shows those built. Nothing picked, a view keeps what
+    /// it had.
+    func follow(_ mode: ViewMode) {
+        let picked = workspace.selection.sorted()
+        guard !picked.isEmpty else { return }
+        switch mode {
+        case .map, .light:
+            break
+        case .roads:
+            guard let url = picked.lazy.compactMap({ self.workspace.document(holding: $0) }).first else { return }
+            if model?.url != url { open(roads: url) }
+            let inside = picked.filter { workspace.document(holding: $0) == url }
+            Task { @MainActor in self.roads?.frame(tiles: inside) }
+        case .tiles:
+            let built = picked.filter { workspace.built.contains($0) }
+            if !built.isEmpty && built != workspace.shown { workspace.shown = built }
         }
     }
 

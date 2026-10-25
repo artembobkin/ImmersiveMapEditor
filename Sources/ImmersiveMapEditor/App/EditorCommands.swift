@@ -23,6 +23,7 @@ struct EditorCommands: Commands {
             Button("Map") { session.workspace.viewMode = .map }.keyboardShortcut("1")
             Button("Roads") { session.workspace.viewMode = .roads }.keyboardShortcut("2")
             Button("Tiles 3D") { session.workspace.viewMode = .tiles }.keyboardShortcut("3")
+            Button("Light") { session.workspace.viewMode = .light }.keyboardShortcut("4")
             Divider()
         }
         CommandMenu("Tiles") {

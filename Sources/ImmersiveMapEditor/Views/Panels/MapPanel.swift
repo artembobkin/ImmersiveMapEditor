@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The map's panel: what the colours mean, the tiles picked, and what to do
-/// with them.
+/// The map's panel: the tiles picked, and what to do with them.
 struct MapPanel: View {
     @Environment(Session.self) private var session
 
@@ -12,12 +11,7 @@ struct MapPanel: View {
         let built = picked.filter { workspace.built.contains($0) }
         let documents = Set(picked.compactMap { workspace.document(holding: $0) })
         Form {
-            Section("Tiles") {
-                legend(.green, "built")
-                legend(.yellow, "OSM fetched, not built")
-                legend(.purple, "has a road document", outline: true)
-                legend(.blue, "picked")
-                legend(.orange, "shown in 3D", outline: true)
+            Section {
                 Text("\(workspace.built.count) built, \(workspace.fetched.count) fetched, \(workspace.documents.count) road documents")
                     .foregroundStyle(.secondary)
             }
@@ -47,16 +41,5 @@ struct MapPanel: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    func legend(_ colour: Color, _ text: String, outline: Bool = false) -> some View {
-        Label {
-            Text(text)
-        } icon: {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(outline ? Color.clear : colour.opacity(0.5))
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(colour, lineWidth: outline ? 2 : 0))
-                .frame(width: 14, height: 14)
-        }
     }
 }
