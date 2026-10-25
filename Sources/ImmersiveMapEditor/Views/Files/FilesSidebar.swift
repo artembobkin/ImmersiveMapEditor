@@ -25,6 +25,7 @@ struct FilesSidebar: View {
             if let tile = session.shownTile {
                 ForEach(TileFiles(tile: tile, workspace: workspace).groups) { group in
                     Section {
+                        FolderRow(folder: group.folder, root: workspace.root)
                         if group.files.isEmpty {
                             Text("Nothing yet").foregroundStyle(.secondary)
                         }
@@ -37,14 +38,7 @@ struct FilesSidebar: View {
                                 .onTapGesture(count: 2) { openURL(file.url) }
                         }
                     } header: {
-                        HStack {
-                            Label(group.title, systemImage: group.systemImage)
-                            Spacer()
-                            Button("Open Folder", systemImage: "arrow.up.forward.square") { openURL(group.folder) }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(.borderless)
-                                .help(group.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                        }
+                        Label(group.title, systemImage: group.systemImage)
                     }
                 }
             } else {
@@ -76,3 +70,27 @@ private struct FileRow: View {
         return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : file.name
     }
 }
+
+/// A group's folder, within the workspace: a click opens it in Finder. Grey
+/// while the pipeline has not made it yet.
+private struct FolderRow: View {
+    @Environment(\.openURL) private var openURL
+    let folder: URL
+    let root: URL
+
+    var body: some View {
+        let exists = FileManager.default.fileExists(atPath: folder.path)
+        let base = root.standardizedFileURL.path + "/"
+        let path = folder.standardizedFileURL.path
+        let shown = path.hasPrefix(base) ? String(path.dropFirst(base.count)) + "/" : path
+        Button { openURL(folder) } label: {
+            Label(exists ? shown : shown + " (not created yet)", systemImage: "folder")
+                .lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(exists ? .primary : .secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(!exists)
+        .help(exists ? "Open in Finder" : "The pipeline makes this folder when it first writes to it")
+    }
+}
+
