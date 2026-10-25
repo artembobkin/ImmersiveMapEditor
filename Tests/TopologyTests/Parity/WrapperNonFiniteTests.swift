@@ -103,26 +103,11 @@ extension WrapperReplayTests {
         }
     }
 
-    /// The inputs where the port is known to differ from GEOS, with the
-    /// operations that differ (Docs/PortingParity.md, phase 8, "Open"). Each
-    /// is compared in full apart from the others: the test fails if it
-    /// differs anywhere else, or stops differing (then it comes off the list).
-    ///
-    /// 536: the intersection of a polygon with a NaN vertex. GEOS fails in
-    /// every stage of its robust overlay, the last its snap rounding, which
-    /// leaves an edge whose ends compare equal (three NaN vertices at each
-    /// end); the port's snap rounding leaves one NaN vertex at its start and
-    /// gives POLYGON EMPTY.
-    static let openCases: [Int: Set<String>] = [536: ["intersection"]]
-
     @Test func nonFinite() {
-        let main = Tallies("wrapper, non-finite coordinates")
-        var open: [Int: Tallies] = [:]
+        let t = Tallies("wrapper, non-finite coordinates")
         var r = NonFiniteGenerator(rng: SeededRandom(seed: 8008))
         for k in 0..<2000 {
             let sa = r.spec(poisoned: r.chance(0.8)), sb = r.spec(poisoned: r.chance(0.3))
-            let t = WrapperReplayTests.openCases[k] == nil ? main : Tallies("open case #\(k)")
-            if WrapperReplayTests.openCases[k] != nil { open[k] = t }
             let oa = sa.old(), na = sa.new(), ob = sb.old(), nb = sb.new()
             let what = "#\(k) \(sa) | \(sb)"
             WrapperReplayTests.reading(t, what, oa, na)
@@ -175,11 +160,6 @@ extension WrapperReplayTests {
             c.same(t, "STRtree.query", what, tro.query(ob), trn.query(nb))
             c.same(t, "STRtree.nearest", what, tro.nearest(ob), trn.nearest(nb))
         }
-        main.report()
-        for (k, t) in open.sorted(by: { $0.key < $1.key }) {
-            let differing = Set(t.byName.filter { $0.value.differences > 0 }.keys)
-            print("parity wrapper, non-finite coordinates: open case #\(k) differs in \(differing.sorted())")
-            #expect(differing == WrapperReplayTests.openCases[k], "open case #\(k): \(differing.sorted())")
-        }
+        t.report()
     }
 }
