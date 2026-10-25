@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The sections of the map a tile is chosen on: opening the tile picked, the
-/// view, and what the workspace has.
+/// The sections of the map a tile is chosen on: opening the tile picked, and
+/// what the workspace has.
 struct MapSections: View {
     @Environment(Session.self) private var session
 
@@ -18,9 +18,6 @@ struct MapSections: View {
                 Text("Fetches its OSM and seeds its roads when they are missing, then its views are there. Double-click a tile, or ↩.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-        }
-        Section("View") {
-            Button("Frame the work  F") { session.camera.frame(workspace) }
         }
         Section("Workspace") {
             Text("\(workspace.built.count) built, \(workspace.fetched.count) fetched, \(workspace.documents.count) road documents")

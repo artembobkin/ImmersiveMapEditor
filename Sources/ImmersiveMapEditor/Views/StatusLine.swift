@@ -6,7 +6,7 @@ struct StatusLine: View {
     var body: some View {
         HStack {
             if session.phase != .working {
-                Text("Drag to move, scroll to zoom. Click picks a tile, double-click or ↩ opens it.")
+                Text("Drag to move, scroll to zoom. Click picks a tile, double-click or ↩ opens it. F shows the tile picked.")
                     .lineLimit(1)
                 Spacer()
             } else {
