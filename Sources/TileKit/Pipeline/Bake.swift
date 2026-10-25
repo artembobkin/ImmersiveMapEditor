@@ -16,22 +16,30 @@ public enum Bake {
 
     /// Bakes the scene's light with `settings` and writes lightmap.png and
     /// stats.json into `out`, with `export` the GLB, placement.json,
-    /// metadata.json and bake/settings.json. `cutDone` hears the triangle
+    /// metadata.json and bake/settings.json. Without `bake` the light map is
+    /// plain white (a multiplier of 1: the palette as it is), small, until
+    /// the light is baked (`pipeline bake`). `cutDone` hears the triangle
     /// count of the cut mesh. Returns the light map's size in pixels.
     @discardableResult
     static func light(_ scene: BakeScene, _ settings: Lighting.Settings, tile: Tile, out: URL, export: Bool, started: Date,
-                      log: String, cutDone: (Int) -> Void = { _ in }) throws -> Int {
-        let size = max(64, Int((Double(settings.size) * (2 * scene.reach) / tile.size / 16).rounded(.toNearestOrEven)) * 16)
+                      log: String, bake: Bool = true, cutDone: (Int) -> Void = { _ in }) throws -> Int {
+        let size = bake ? max(64, Int((Double(settings.size) * (2 * scene.reach) / tile.size / 16).rounded(.toNearestOrEven)) * 16) : 64
         // The light map sees a white ground plane under the tile that the
         // model does not have (the vector tile is its ground), so walls and
         // roads keep the light they had on it.
         let lit = scene.lit
         let (x0, y0, x1, y1) = Geometry.box(lit.0, lit.1, lit.2, lit.3).buffer(20, join: .mitre).bounds
         let plane = [x0, y0, -0.01, x1, y0, -0.01, x1, y1, -0.01, x0, y0, -0.01, x1, y1, -0.01, x0, y1, -0.01]
-        print("[\(log)] baking a \(size) px light map")
-        let irradiance = try Lighting.bake(scene.mesh.pos + plane, bounds: lit, size: size, samples: settings.samples,
-                                           bounces: settings.bounces)
-        let light = Lighting.shape(irradiance, settings)
+        let light: [UInt8]
+        if bake {
+            print("[\(log)] baking a \(size) px light map")
+            let irradiance = try Lighting.bake(scene.mesh.pos + plane, bounds: lit, size: size, samples: settings.samples,
+                                               bounces: settings.bounces)
+            light = Lighting.shape(irradiance, settings)
+        } else {
+            print("[\(log)] the light not baked: a white light map")
+            light = [UInt8](repeating: 255, count: size * size * 3)
+        }
         try PNG.write(out.appendingPathComponent("lightmap.png"), light, width: size, height: size, channels: 3)
 
         Progress.report("Cutting the tile and exporting")
@@ -40,6 +48,7 @@ public enum Bake {
         cutDone(m.count)
         var stats = scene.stats
         stats["triangles"] = m.count
+        stats["light_baked"] = bake
         stats["light_map_px"] = size
         stats["metres_per_texel"] = tile.size / Double(settings.size)
         stats["seconds"] = (Date().timeIntervalSince(started) * 10).rounded() / 10

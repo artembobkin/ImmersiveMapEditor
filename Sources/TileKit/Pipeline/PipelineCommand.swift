@@ -9,7 +9,7 @@ import Foundation
 ///   pipeline build 15 19808 10243                 one tile
 ///   pipeline build 15 19808 10242 19809 10243     a range of tiles
 ///   pipeline build 15 --tiles 19810/10243 ...     any set of tiles
-///       [--refetch] [--samples 256]
+///       [--refetch] [--samples 256] [--no-light]   (the light baked later: bake)
 ///   pipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
 ///       [--samples 128] [--roads roads/....json]
 ///   pipeline fetch 15 19808 10243 [--force]
@@ -35,6 +35,7 @@ public enum PipelineCommand {
             case "build":
                 var options = Pipeline.Options()
                 options.refetch = args.flag("--refetch")
+                options.bakeLight = !args.flag("--no-light")
                 if let s = args.value("--samples"), let n = Int(s[0]) { options.samples = n }
                 var tiles = args.tiles()
                 let n = args.list.compactMap { Int($0) }
@@ -110,7 +111,7 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N]
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light]
                ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
                ImmersiveMapEditor pipeline fetch Z X Y [--force]
                ImmersiveMapEditor pipeline seed Z X Y [--force]

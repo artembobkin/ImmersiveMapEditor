@@ -6,7 +6,8 @@ import Foundation
 ///
 /// - Roads: the road document, seeded from osm2streets and OSM (again, over
 ///   the hand edits, only when confirmed).
-/// - Tiles 3D: the tile built from its sources and its road document.
+/// - Tiles 3D: the tile built from its sources, its road document and its
+///   landmark models, its light left white.
 /// - Light: the tile's light baked again, its geometry as built.
 enum TileAction {
     case roads, tile, light
@@ -32,7 +33,7 @@ enum TileAction {
         case .roads:
             "Seed the road document holding the tile from osm2streets and OSM: a new one, or again over the hand edits once confirmed (⌘B)"
         case .tile:
-            "Build the tile's model from its OSM and its road document, bake its light and export it (⌘B)"
+            "Build the tile's model from its OSM, its road document and its landmark models, and export it. The light is not baked: Light bakes it (⌘B)"
         case .light:
             "Bake the tile's light map again with the Light view's settings, its geometry as built (⌘B)"
         }

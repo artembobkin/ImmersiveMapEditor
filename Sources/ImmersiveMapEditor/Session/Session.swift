@@ -223,10 +223,11 @@ final class Session {
         }
     }
 
-    /// The pipeline's command building one tile: fetching what is missing,
+    /// The pipeline's command building one tile, its models all, its light
+    /// not baked (the Light view bakes it): fetching what is missing,
     /// seeding its roads when no document holds it.
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)"]
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"]
     }
 
     /// Runs pipeline commands on the workspace, the road document open saved

@@ -22,7 +22,7 @@ struct LightSections: View {
             ForEach(built, id: \.self) { t in
                 if let map = session.lights.maps[t] {
                     LabeledContent {
-                        Text("\(map.px) px, overhang \(map.overhang, specifier: "%.0f") m")
+                        Text(map.baked ? "\(map.px) px, overhang \(map.overhang, specifier: "%.0f") m" : "not baked yet")
                             .monospacedDigit().foregroundStyle(.secondary)
                     } label: {
                         Text(verbatim: t.name).font(.callout.monospaced())

@@ -18,7 +18,8 @@ public enum Build {
     static let margin = 40.0
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
-                           export: Bool = false, light: Lighting.Settings = Lighting.Settings(), roads: URL? = nil) throws {
+                           export: Bool = false, light: Lighting.Settings = Lighting.Settings(), bakeLight: Bool = true,
+                           roads: URL? = nil) throws {
         guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -29,7 +30,8 @@ public enum Build {
         let osm = try Osm(tile)
         Progress.report("Placing the landmarks")
         // The landmark models first: their colours join the palette.
-        let (models, replaced, covered) = Imported.load(tile, work, paths)
+        // A whole tile takes the landmark models standing in it alone.
+        let (models, replaced, covered) = Imported.load(tile, work, paths, within: whole ? region : nil)
         let palette = PaletteTexture()
         try PNG.write(out.appendingPathComponent("palette.png"), palette.pixels, width: PaletteTexture.size,
                       height: PaletteTexture.size, channels: 3)
@@ -94,7 +96,7 @@ public enum Build {
                               region: region.bounds, lit: lit, reach: reach, mesh: m)
         // An exported tile keeps its scene, so its light can be baked again.
         if export { try Bake.store(scene, out: out) }
-        try Bake.light(scene, light, tile: tile, out: out, export: export, started: started, log: "lab") { count in
+        try Bake.light(scene, light, tile: tile, out: out, export: export, started: started, log: "lab", bake: bakeLight) { count in
             print("[lab] \(ordinaryCount) ordinary buildings and parts, landmarks \(pending), \(count) triangles")
         }
     }

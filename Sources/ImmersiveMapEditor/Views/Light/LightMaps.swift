@@ -14,6 +14,8 @@ final class LightMaps {
         /// the tile's edge.
         var px: Int
         var overhang: Double
+        /// False while the tile is built with its light left white.
+        var baked: Bool
         /// The bake's settings, when the tile keeps them (`bake/settings.json`).
         var settings: [String: Any]
     }
@@ -50,7 +52,8 @@ final class LightMaps {
         let side = px * size / (size + 2 * overhang)
         let crop = CGRect(x: (px - side) / 2, y: (px - side) / 2, width: side, height: side).integral
         guard let image = whole.cropping(to: crop) else { return nil }
-        return Map(image: image, px: whole.width, overhang: overhang, settings: json("bake/settings.json"))
+        return Map(image: image, px: whole.width, overhang: overhang, baked: stats["light_baked"] as? Bool ?? true,
+                   settings: json("bake/settings.json"))
     }
 }
 

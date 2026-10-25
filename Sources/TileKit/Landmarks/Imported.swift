@@ -88,14 +88,15 @@ public enum Imported {
 
     // MARK: The landmarks of a tile
 
-    /// The models near `work`, read and repainted, ready to build, the OSM
+    /// The models near `work` (only those whose origin stands `within`, when
+    /// given: a tile's own), read and repainted, ready to build, the OSM
     /// elements they replace, and what they cover in plan.
-    public static func load(_ tile: Tile, _ work: Geometry, _ paths: WorkspacePaths)
+    public static func load(_ tile: Tile, _ work: Geometry, _ paths: WorkspacePaths, within: Geometry? = nil)
         -> (models: [Model], replaced: Set<String>, covered: Geometry) {
         let book = recipes(paths)
         var models: [Model] = []
         var replaced = Set<String>()
-        for place in placements(tile, work, paths) {
+        for place in placements(tile, work, paths) where within?.contains(place.origin) ?? true {
             guard let (faces, images) = try? readModel(place, tile) else {
                 print("[landmarks] cannot read \(place.glb.path)")
                 continue

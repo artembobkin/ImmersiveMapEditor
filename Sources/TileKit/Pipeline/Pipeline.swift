@@ -21,6 +21,9 @@ public enum Pipeline {
     public struct Options {
         public var refetch = false
         public var samples = 256
+        /// Whether the light is baked with the build: without it the light
+        /// map is white, until `pipeline bake`.
+        public var bakeLight = true
         public init() {}
     }
 
@@ -87,7 +90,7 @@ public enum Pipeline {
                 let t0 = Date()
                 var light = Lighting.Settings()
                 light.samples = options.samples
-                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light)
+                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light, bakeLight: options.bakeLight)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
                 Progress.report("Validating")

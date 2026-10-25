@@ -88,6 +88,7 @@ swift build -c release            # or open the folder (Package.swift) in Xcode:
 ./make_app.sh                     # build/Immersive Map Editor.app
 tp() { .build/release/ImmersiveMapEditor pipeline "$@"; }   # the pipeline's commands: tp COMMAND, in the data folder or with --root
 tp build 15 --tiles 19808/10243 19810/10243     # fetch, seed roads, build, validate (or Z X Y, or Z X0 Y0 X1 Y1)
+tp build 15 --tiles 19808/10243 --no-light      # the model alone, its light map white until tp bake (the editor's Tiles 3D)
 tp lab data/15_19808_10243 OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
 tp fetch 15 19808 10243 [--force]
 tp seed 15 19808 10243 [--force]                # a tile's road document, never over hand edits without --force
