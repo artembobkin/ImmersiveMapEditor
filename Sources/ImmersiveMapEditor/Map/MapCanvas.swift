@@ -61,8 +61,8 @@ struct MapCanvas: View {
                     ctx.stroke(Path(r.insetBy(dx: 4, dy: 4)), with: .color(.orange),
                                style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                 }
-                if r.width > 70 {
-                    ctx.draw(Text(verbatim: "\(x)/\(y)").font(.system(size: 10, weight: .medium, design: .monospaced))
+                if r.width > 90 {
+                    ctx.draw(Text(verbatim: t.name).font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.black.opacity(0.85)),
                              at: CGPoint(x: r.minX + 5, y: r.minY + 4), anchor: .topLeading)
                 }

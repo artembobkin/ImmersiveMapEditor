@@ -30,10 +30,10 @@ struct LightPanel: View {
                             Text("\(map.px) px, overhang \(map.overhang, specifier: "%.0f") m")
                                 .monospacedDigit().foregroundStyle(.secondary)
                         } label: {
-                            Text(verbatim: "\(t.x)/\(t.y)").font(.callout.monospaced())
+                            Text(verbatim: t.name).font(.callout.monospaced())
                         }
                     } else {
-                        Text(verbatim: "\(t.x)/\(t.y)").font(.callout.monospaced()).foregroundStyle(.secondary)
+                        Text(verbatim: t.name).font(.callout.monospaced()).foregroundStyle(.secondary)
                     }
                 }
             }

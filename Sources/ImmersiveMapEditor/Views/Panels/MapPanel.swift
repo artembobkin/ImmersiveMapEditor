@@ -17,7 +17,7 @@ struct MapPanel: View {
             }
             Section("Picked: \(picked.count)") {
                 if !picked.isEmpty {
-                    Text(picked.map { "\($0.x)/\($0.y)" }.joined(separator: "  "))
+                    Text(picked.map(\.name).joined(separator: "  "))
                         .font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(6)
                 }
                 Button("Show in 3D (\(built.count) built)") {

@@ -31,7 +31,7 @@ struct LightView: View {
                             ctx.fill(Path(r), with: .color(Color(white: 0.2)))
                         }
                         ctx.stroke(Path(r), with: .color(.white.opacity(0.35)), lineWidth: 1)
-                        ctx.draw(Text(verbatim: "\(t.x)/\(t.y)").font(.system(size: 11, design: .monospaced))
+                        ctx.draw(Text(verbatim: t.name).font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.8)),
                                  at: CGPoint(x: r.minX + 6, y: r.minY + 4), anchor: .topLeading)
                     }
