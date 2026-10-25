@@ -44,6 +44,9 @@ struct MuvLanesOracleTests {
             r = try SyntheticWays.compare(sets, in: box, work: work)
         } catch OracleError.failed {
             rejected = try SyntheticWays.rustRejected(sets, in: box, work: work.appendingPathComponent("alone"))
+            for k in rejected.sorted() {
+                print("MUV random \(box.name): the Rust panics on " + sets[k].map { "\($0.0)=\($0.1)" }.joined(separator: " "))
+            }
             sets = sets.enumerated().filter { !rejected.contains($0.offset) }.map(\.element)
             r = try SyntheticWays.compare(sets, in: box, work: work)
         }

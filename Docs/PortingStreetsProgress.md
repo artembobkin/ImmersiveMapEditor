@@ -49,7 +49,7 @@ The committed `geometry.json` of the 29 cases, made as osm2streets's tests make 
 MuvLanes against the Rust on synthetic ways (`Tests/StreetsTests/MuvLanes/`): one way per tag set across a box, in ten countries (RU, DE, GB, US, FR, NL, IE, AU, AT, BE), the four outputs compared:
 
 - 280 tag sets written by hand (every class, lane counts and placements, per-lane keys, access with case and alias clashes, every kind of speed and condition, opening hours accepted and refused, sidewalks, cycleways, bus lanes and bays, shoulders, both parking schemes, widths and units, surfaces and colours, overtaking, railways, odd values): 10 of 10 boxes identical, 1537 to 1539 lanes each.
-- 400 tag sets drawn at random per box (a highway class and 2 to 9 of 120 lane keys, SplitMix64 from the box's name): 10 of 10 identical, 1941 to 2189 lanes each. One random way in FR makes the Rust itself panic (geom's `dist_along` of a negative distance): it is found alone and left out, as there is no output to compare.
+- 400 tag sets drawn at random per box (a highway class and 2 to 9 of 120 lane keys, SplitMix64 from the box's name): 10 of 10 identical, 1941 to 2189 lanes each. One random way in FR makes the Rust itself panic (geom's `dist_along` of a negative distance, `polyline.rs:392`): `highway=busway width:lanes=3|3|3 shoulder=right est_width=5 lanes:backward=2 parking:right:capacity=4 motorcar:lanes=yes|no|yes turn=left turn:lanes:backward=left|through`. It is found alone and left out, as there is no output to compare. The port stops on it with the same error (`dist_along -4m is negative`, checked once by hand).
 - Muv's own unit tests of the parts it rests on, translated (`MuvUnitTests`, 10 tests): the subtag order (`iter_tags`), numbers, quantities, parentheses, conditionals, separated values, the hierarchy, opening hours.
 
 The Rust is not deterministic where two crossings (or traffic signals) on one road both fall within 30% of the same end: streets_reader iterates them in `HashMap` order, random per process, and the last one sets the stop line. The parity test runs the Rust 16 times when the first run differs, and passes only when the port's four files equal one run's four files, byte for byte. Measured before: `roosevelt_cycletrack` 2 results in 12 runs, 15/19809/10242 5 in 16, 15/19808/10243 2 in 16.
@@ -62,7 +62,7 @@ Seeding parity, `tilepipeline seed 15 19808 10242 19809 10243` into temporary ro
 
 - the road document `roads/15_19808_10242_19809_10243.json`: identical but the `"seeded"` date line (42 areas, markings line 698, zebra 186, letter 111, zigzag 32, 29 shelters);
 - `streets/plain.geojson`, `lanes.geojson`, `lane_markings.geojson`, `intersection_markings.geojson`: byte-identical;
-- `osm.json`, `clip.geojson`, `context.json`: the same content, their key order differs, as it does between two runs of the old binary (`JSONSerialization` of Swift dictionaries).
+- `osm.json` and `clip.geojson`: the same content in another key order, `context.json` the same size: these differ the same way between two runs of the old binary (`JSONSerialization` writes Swift dictionaries in their per-process order).
 
 Time of the whole seed, release builds: before 14.36 and 14.50 s, after 15.80 and 15.88 s (1.10 times, the goal 1.5).
 
@@ -76,6 +76,8 @@ Release builds, this machine (Apple silicon), see "Phase 11" for the seeding as 
 | One tile, unclipped | | 0.71 to 1.11 s |
 
 The seeding of the 2x2 block stays within the goal (1.10 times), so nothing was optimised. The speed table is one text decoded at first use, not dictionary literals: those cost the optimised build of `MuvLanes` 40 s (65 s against 25 s).
+
+The whole `swift test`: 401 tests in 55 suites pass, in 557 s in debug and 86 s optimised (`-c release -Xswiftc -enable-testing`).
 
 ## The release test hang
 

@@ -2,6 +2,8 @@
 /// per feature of Muv's lane reading, and drawn at random from a
 /// vocabulary of the lane keys and their typical (and odd) values.
 
+import Foundation
+
 enum MuvTagSets {
     private static func t(_ s: String) -> [(String, String)] {
         s.split(separator: " ").map { kv in
