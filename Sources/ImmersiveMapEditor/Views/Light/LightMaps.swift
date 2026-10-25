@@ -57,18 +57,33 @@ final class LightMaps {
     }
 }
 
-/// The Light view's settings for a bake, kept between runs.
+/// The Light view's settings for a bake, kept between runs: TileKit's
+/// Lighting.Settings as the bake command takes them.
 @Observable
 @MainActor
 final class LightSettings {
+    private static func value<T>(_ key: String, _ fallback: T) -> T { UserDefaults.standard.object(forKey: "light." + key) as? T ?? fallback }
+    private static func keep(_ key: String, _ v: Any) { UserDefaults.standard.set(v, forKey: "light." + key) }
+
     /// Texels of the light map across one tile, as the build's 1024.
-    var size = UserDefaults.standard.object(forKey: "light.size") as? Int ?? 1024 {
-        didSet { UserDefaults.standard.set(size, forKey: "light.size") }
-    }
-    var samples = UserDefaults.standard.object(forKey: "light.samples") as? Int ?? 256 {
-        didSet { UserDefaults.standard.set(samples, forKey: "light.samples") }
-    }
-    var bounces = UserDefaults.standard.object(forKey: "light.bounces") as? Int ?? 3 {
-        didSet { UserDefaults.standard.set(bounces, forKey: "light.bounces") }
+    var size: Int = value("size", 1024) { didSet { Self.keep("size", size) } }
+    var samples: Int = value("samples", 256) { didSet { Self.keep("samples", samples) } }
+    var bounces: Int = value("bounces", 3) { didSet { Self.keep("bounces", bounces) } }
+    /// What light is gathered: the sky with its bounces, or ambient occlusion.
+    var mode: String = value("mode", "sky") { didSet { Self.keep("mode", mode) } }
+    var aoRadius: Double = value("aoRadius", 8.0) { didSet { Self.keep("aoRadius", aoRadius) } }
+    var skyStrength: Double = value("skyStrength", 1.0) { didSet { Self.keep("skyStrength", skyStrength) } }
+    /// A sun baked in, off by default (the engine casts the sun's shadows).
+    var sun: Bool = value("sun", false) { didSet { Self.keep("sun", sun) } }
+    var sunAzimuth: Double = value("sunAzimuth", 225.0) { didSet { Self.keep("sunAzimuth", sunAzimuth) } }
+    var sunElevation: Double = value("sunElevation", 45.0) { didSet { Self.keep("sunElevation", sunElevation) } }
+    var sunStrength: Double = value("sunStrength", 1.0) { didSet { Self.keep("sunStrength", sunStrength) } }
+
+    /// The bake command's options for these settings.
+    var arguments: [String] {
+        var a = ["--size", "\(size)", "--samples", "\(samples)", "--bounces", "\(bounces)",
+                 "--mode", mode, "--ao-radius", "\(aoRadius)", "--sky", "\(skyStrength)"]
+        a += sun ? ["--sun", "\(sunAzimuth)", "\(sunElevation)", "\(sunStrength)"] : ["--no-sun"]
+        return a
     }
 }

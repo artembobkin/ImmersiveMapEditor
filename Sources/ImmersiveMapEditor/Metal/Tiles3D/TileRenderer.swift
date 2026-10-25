@@ -7,6 +7,16 @@ import simd
 /// map, raw values, no lighting of its own, back faces culled, each tile
 /// placed and scaled as the engine places it, over a plain plane where the
 /// vector tile's ground would be. Metal only: no camera, no input.
+/// How the 3D view colours a tile: its palette alone (Tiles 3D), the palette
+/// times its light map as the engine draws it, or its light map alone on a
+/// white model, to judge the light (the Light view).
+enum TileShading: String, CaseIterable, Identifiable {
+    case palette = "Palette"
+    case lit = "Palette and light"
+    case light = "Light alone"
+    var id: String { rawValue }
+}
+
 final class TileRenderer {
     let device: MTLDevice
     let queue: MTLCommandQueue
@@ -89,9 +99,9 @@ final class TileRenderer {
         groundColour = solid(Colours.ground)
     }
 
-    /// Draws the ground and the tiles.
+    /// Draws the ground and the tiles, coloured by `shading`.
     func encode(_ enc: MTLRenderCommandEncoder, tiles library: TileLibrary, viewProjection vp: simd_float4x4,
-                lightMap: Bool) {
+                shading: TileShading) {
         enc.setRenderPipelineState(pipeline)
         enc.setDepthStencilState(depth)
         enc.setFrontFacing(.counterClockwise)
@@ -117,18 +127,18 @@ final class TileRenderer {
             enc.setVertexBuffer(t.uv0, offset: 0, index: 1)
             enc.setVertexBuffer(t.uv1, offset: 0, index: 2)
             enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 3)
-            enc.setFragmentTexture(t.palette, index: 0)
-            enc.setFragmentTexture(lightMap ? t.light : white, index: 1)
+            enc.setFragmentTexture(shading == .light ? white : t.palette, index: 0)
+            enc.setFragmentTexture(shading == .palette ? white : t.light, index: 1)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: t.indexCount, indexType: t.indexType,
                                       indexBuffer: t.indices, indexBufferOffset: 0)
         }
     }
 
     /// The tiles drawn offscreen to a PNG, `width` by `height`.
-    func snapshot(_ library: TileLibrary, viewProjection: simd_float4x4, lightMap: Bool, to url: URL,
+    func snapshot(_ library: TileLibrary, viewProjection: simd_float4x4, shading: TileShading, to url: URL,
                   width: Int, height: Int) throws {
         try Self.renderPNG(device: device, queue: queue, to: url, width: width, height: height) { enc in
-            encode(enc, tiles: library, viewProjection: viewProjection, lightMap: lightMap)
+            encode(enc, tiles: library, viewProjection: viewProjection, shading: shading)
         }
     }
 

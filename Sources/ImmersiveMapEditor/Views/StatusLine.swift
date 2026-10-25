@@ -43,7 +43,7 @@ struct StatusLine: View {
         case .tiles:
             Text(session.workspace.flying
                 ? "Flight: W A S D, Q down, E up, shift faster, right-drag to look, scroll for speed. Tab to orbit."
-                : "Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom to the cursor. Tab flies, F frames, L light map.")
+                : "Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom to the cursor. Tab flies, F frames.")
                 .lineLimit(1)
             Spacer()
             Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
@@ -53,7 +53,7 @@ struct StatusLine: View {
             Spacer()
             Text(session.landmarkStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
         case .light:
-            Text("The tile's light map, from above. Drag to move, scroll to zoom, F frames.")
+            Text("The tile lit by its light map. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames.")
                 .lineLimit(1)
             Spacer()
         }

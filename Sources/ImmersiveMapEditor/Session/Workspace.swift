@@ -44,7 +44,8 @@ final class Workspace {
         didSet { tilesRevision += 1 }
     }
     var flying = false
-    var showLightMap = true
+    /// How the Light view colours the tile: lit, or its light alone.
+    var lightShading = TileShading.lit
     var tileStatus = ""
     /// Bumped when the tiles shown or their builds change, so the 3D view
     /// reloads them.

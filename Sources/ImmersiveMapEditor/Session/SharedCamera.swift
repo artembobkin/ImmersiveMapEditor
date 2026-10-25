@@ -7,8 +7,8 @@ import TileKit
 /// view's own metres), how many metres of ground a point of the screen
 /// covers there, and the 3D view's heading and tilt. A view takes it when it
 /// is shown and gives it back as it moves, so switching views keeps the
-/// place in sight. The Roads and Light views look straight down and leave
-/// the heading and tilt as the 3D view left them. Opening another tile
+/// place in sight. The Roads view looks straight down and leaves the
+/// heading and tilt as the 3D views (Tiles 3D, Light) left them. Opening another tile
 /// forgets it: the views frame their new tile.
 @MainActor
 final class SharedCamera {
@@ -38,23 +38,6 @@ final class SharedCamera {
         latitude = lat
         longitude = lon
         if metresPerPoint.isFinite && metresPerPoint > 0 { self.metresPerPoint = metresPerPoint }
-    }
-
-    /// The middle of the view in z`z` tile units (x east, y south), for the
-    /// Light view's grid of tiles.
-    func tileUnits(z: Int) -> SIMD2<Double>? {
-        guard let latitude, let longitude else { return nil }
-        let n = pow(2, Double(z)), r = latitude * .pi / 180
-        return SIMD2((longitude + 180) / 360 * n, (1 - asinh(tan(r)) / .pi) / 2 * n)
-    }
-
-    /// Takes a middle in z`z` tile units and points per tile.
-    func set(tileUnits c: SIMD2<Double>, z: Int, pointsPerTile: Double) {
-        let n = pow(2, Double(z))
-        longitude = c.x / n * 360 - 180
-        let lat = atan(sinh(.pi * (1 - 2 * c.y / n))) * 180 / .pi
-        latitude = lat
-        metresPerPoint = Self.tileMetres(z: z, latitude: lat) / max(pointsPerTile, 1e-6)
     }
 
     /// A z`z` tile's width in metres at a latitude.

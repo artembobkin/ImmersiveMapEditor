@@ -104,7 +104,13 @@ struct ContentView: View {
                 MetalHost(view: tiles)
             }
         case .light:
-            LightView()
+            // The same 3D tile, lit: its light map on the palette, or alone.
+            if session.workspace.shown.isEmpty {
+                ContentUnavailableView("The tile is not built", systemImage: "sun.max",
+                                       description: Text("Build the tile in Tiles 3D, then bake its light here."))
+            } else if let tiles = session.tiles {
+                MetalHost(view: tiles)
+            }
         case .landmarks:
             Group {
                 if session.landmarks.selected == nil {

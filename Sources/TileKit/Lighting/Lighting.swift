@@ -30,14 +30,41 @@ public enum Lighting {
         public var lit = [Lighting.lit.0, Lighting.lit.1, Lighting.lit.2]
         public var shade = [Lighting.shade.0, Lighting.shade.1, Lighting.shade.2]
         public var gamma = Lighting.gamma
+        /// What light is gathered: the sky with its bounces ("sky"), or only
+        /// how open each surface is within `aoRadius` metres ("ao").
+        public var mode = "sky"
+        public var aoRadius = 8.0
+        /// A sun baked in, from a compass bearing (`SUN_FROM` by default)
+        /// at a height in degrees: off by default, the engine casting the
+        /// sun's shadows itself.
+        public var sun = false
+        public var sunAzimuth = 225.0
+        public var sunElevation = 45.0
+        public var sunStrength = 1.0
+        public var skyStrength = 1.0
 
         public init() {}
+
+        /// The baker's options from these settings.
+        var options: LightBaker.Options {
+            var o = LightBaker.Options()
+            o.mode = mode == "ao" ? .ambientOcclusion : .sky
+            o.radius = Float(aoRadius)
+            if sun {
+                let az = sunAzimuth * .pi / 180, el = sunElevation * .pi / 180
+                o.sun = SIMD3(Float(sin(az) * cos(el)), Float(cos(az) * cos(el)), Float(sin(el)))
+            }
+            o.sunStrength = Float(sunStrength)
+            o.skyStrength = Float(skyStrength)
+            return o
+        }
 
         /// The settings as bake/settings.json has them, with the light map's
         /// size in pixels it gave (`light_map_px`, for the reader only).
         public func json(lightMapPixels: Int) -> [String: Any] {
             ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma,
-             "light_map_px": lightMapPixels]
+             "mode": mode, "ao_radius": aoRadius, "sun": sun, "sun_azimuth": sunAzimuth, "sun_elevation": sunElevation,
+             "sun_strength": sunStrength, "sky_strength": skyStrength, "light_map_px": lightMapPixels]
         }
 
         /// Read from bake/settings.json: what it lacks keeps its default.
@@ -48,6 +75,13 @@ public enum Lighting {
             if let v = json["lit"] as? [Double], v.count == 3 { lit = v }
             if let v = json["shade"] as? [Double], v.count == 3 { shade = v }
             if let v = json["gamma"] as? Double { gamma = v }
+            if let v = json["mode"] as? String { mode = v }
+            if let v = json["ao_radius"] as? Double { aoRadius = v }
+            if let v = json["sun"] as? Bool { sun = v }
+            if let v = json["sun_azimuth"] as? Double { sunAzimuth = v }
+            if let v = json["sun_elevation"] as? Double { sunElevation = v }
+            if let v = json["sun_strength"] as? Double { sunStrength = v }
+            if let v = json["sky_strength"] as? Double { skyStrength = v }
         }
     }
 
@@ -55,14 +89,18 @@ public enum Lighting {
     /// north. `tris` hold the geometry of the margin around the region too,
     /// so the light at the edges is what a neighbour tile sees.
     public static func bake(_ tris: [Double], bounds: (Double, Double, Double, Double), size: Int,
-                            samples: Int, bounces: Int) throws -> [Float] {
+                            settings: Settings) throws -> [Float] {
         let started = Date()
-        let detail = "\(size) px, \(samples) samples, \(bounces) bounces"
+        let what = settings.mode == "ao" ? String(format: "ambient occlusion %.0f m", settings.aoRadius)
+            : "sky, \(settings.bounces) bounces"
+        let sun = settings.sun ? String(format: ", sun from %.0f° at %.0f°", settings.sunAzimuth, settings.sunElevation) : ""
+        let detail = "\(size) px, \(settings.samples) samples, " + what + sun
         Progress.report("Baking the light", fraction: 0, detail: detail)
-        let light = try LightBaker.bake(triangles: tris.map(Float.init), bounds: bounds, size: size, samples: samples,
-                                        bounces: bounces) { Progress.report("Baking the light", fraction: $0, detail: detail) }
-        print(String(format: "[bake] %d triangles, %d px, %d samples, %d bounces in %.1f s", tris.count / 9, size,
-                     samples, bounces, Date().timeIntervalSince(started)))
+        let light = try LightBaker.bake(triangles: tris.map(Float.init), bounds: bounds, size: size, samples: settings.samples,
+                                        bounces: settings.bounces, options: settings.options) {
+            Progress.report("Baking the light", fraction: $0, detail: detail)
+        }
+        print(String(format: "[bake] %d triangles, %@ in %.1f s", tris.count / 9, detail, Date().timeIntervalSince(started)))
         return light
     }
 

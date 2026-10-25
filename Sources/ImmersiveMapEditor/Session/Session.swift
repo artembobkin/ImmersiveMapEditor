@@ -142,7 +142,7 @@ final class Session {
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
-        if phase == .working, mode == .tiles {
+        if phase == .working, mode == .tiles || mode == .light {
             // The 3D view where the others looked, once it is laid out.
             Task { @MainActor in self.tiles?.takeSharedCamera() }
         }
@@ -202,10 +202,8 @@ final class Session {
         case .light:
             // A tile built before builds kept what a bake needs builds once first.
             let ready = FileManager.default.fileExists(atPath: workspace.build(tile).appendingPathComponent("bake/scene.bin").path)
-            let s = lightSettings
             run((ready ? [] : [buildStep(tile)])
-                + [["bake", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)",
-                    "--size", "\(s.size)", "--samples", "\(s.samples)", "--bounces", "\(s.bounces)"]])
+                + [["bake", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)"] + lightSettings.arguments])
         case .roads:
             if workspace.document(holding: tile) != nil { reseedAsked = true } else { seedRoads(force: false) }
         }

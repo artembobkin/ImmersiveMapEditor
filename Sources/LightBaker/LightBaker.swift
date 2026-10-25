@@ -1,5 +1,6 @@
 import Foundation
 import Metal
+import simd
 
 /// The light map's bake, on the GPU with Metal ray tracing: the tile seen
 /// from straight above, every surface white, lit by the sky, light bouncing
@@ -8,8 +9,11 @@ import Metal
 /// In: every triangle's corners, x y z (Z up), nine floats a triangle, in
 /// local metres. Out: size x size floats, row 0 on the north, each the light
 /// leaving the topmost surface over that texel (a white diffuse surface: the
-/// light reaching it). The sky is even all round, a little brighter toward
-/// the zenith, no sun: the engine casts the sun's shadows.
+/// light reaching it). By `Options`: the sky even all round, a little
+/// brighter toward the zenith, its light bouncing between surfaces (`sky`),
+/// or only how open each surface is within a radius (`ambientOcclusion`);
+/// and, if asked, a sun from one direction with its shadows (the engine
+/// casts the sun's shadows itself, so it is off by default).
 public enum LightBaker {
     public struct Failure: Error, CustomStringConvertible {
         public let description: String
@@ -25,6 +29,10 @@ public enum LightBaker {
         float x0, y0, x1, y1;
         uint size, samples, bounces, row0, seed;
         float top;
+        uint mode;              // 0 sky, 1 ambient occlusion
+        float radius;           // ambient occlusion: how far a surface looks
+        float sunX, sunY, sunZ; // toward the sun, unit; zero for none
+        float sunStrength, skyStrength;
     };
 
     // The sky: brightness by the height of the direction, as the bake's world
@@ -61,6 +69,13 @@ public enum LightBaker {
         intersector<triangle_data> hit;
         hit.assume_geometry_type(geometry_type::triangle);
         hit.force_opacity(forced_opacity::opaque);
+        // Shadow rays: any surface in the way will do.
+        intersector<triangle_data> blocked;
+        blocked.assume_geometry_type(geometry_type::triangle);
+        blocked.force_opacity(forced_opacity::opaque);
+        blocked.accept_any_intersection(true);
+        float3 sun = float3(p.sunX, p.sunY, p.sunZ);
+        bool sunny = p.sunStrength > 0 && length(sun) > 0.5;
         uint s = hash(gid.x * 9781 + row * 6271 + p.seed * 26699);
         float total = 0;
         for (uint k = 0; k < p.samples; k++) {
@@ -76,7 +91,7 @@ public enum LightBaker {
             for (uint b = 0; b <= p.bounces + 1; b++) {
                 auto i = hit.intersect(r, accel);
                 if (i.type == intersection_type::none) {
-                    light = sky(r.direction);
+                    light += p.mode == 1 ? 1.0 : p.skyStrength * sky(r.direction);
                     break;
                 }
                 if (b == p.bounces + 1) break;
@@ -86,9 +101,27 @@ public enum LightBaker {
                 // Both sides of a face are white: it faces the ray that met it.
                 if (dot(n, r.direction) > 0) n = -n;
                 float3 at = r.origin + r.direction * i.distance;
+                // The sun on this surface, where nothing stands in its way.
+                if (sunny && dot(n, sun) > 0) {
+                    ray toSun;
+                    toSun.origin = at + n * 0.01;
+                    toSun.direction = sun;
+                    toSun.min_distance = 0.001;
+                    toSun.max_distance = 1e7;
+                    if (blocked.intersect(toSun, accel).type == intersection_type::none) {
+                        light += p.sunStrength * dot(n, sun);
+                    }
+                }
                 r.origin = at + n * 0.01;
                 r.direction = cosine(n, s);
                 r.min_distance = 0.001;
+                if (p.mode == 1) {
+                    // Ambient occlusion: one look out from the surface, open
+                    // or shut within the radius, no bounce.
+                    r.max_distance = p.radius;
+                    if (hit.intersect(r, accel).type == intersection_type::none) light += 1.0;
+                    break;
+                }
             }
             total += light;
         }
@@ -100,11 +133,29 @@ public enum LightBaker {
         var x0, y0, x1, y1: Float
         var size, samples, bounces, row0, seed: UInt32
         var top: Float
+        var mode: UInt32
+        var radius: Float
+        var sunX, sunY, sunZ: Float
+        var sunStrength, skyStrength: Float
+    }
+
+    /// What light a bake gathers.
+    public struct Options {
+        public enum Mode: UInt32 { case sky = 0, ambientOcclusion = 1 }
+        public var mode = Mode.sky
+        /// Ambient occlusion: how far a surface looks for what shuts it in.
+        public var radius: Float = 8
+        /// Toward the sun (X east, Y north, Z up), nil for no sun.
+        public var sun: SIMD3<Float>?
+        public var sunStrength: Float = 1
+        public var skyStrength: Float = 1
+        public init() {}
     }
 
     /// `progress` hears the fraction of rows done after each band.
     public static func bake(triangles: [Float], bounds: (Double, Double, Double, Double), size: Int,
-                            samples: Int = 256, bounces: Int = 3, progress: (Double) -> Void = { _ in }) throws -> [Float] {
+                            samples: Int = 256, bounces: Int = 3, options: Options = Options(),
+                            progress: (Double) -> Void = { _ in }) throws -> [Float] {
         func fail(_ s: String) -> Failure { Failure(description: "light bake: \(s)") }
         guard let device = MTLCreateSystemDefaultDevice(), device.supportsRaytracing, let queue = device.makeCommandQueue()
         else { throw fail("no Metal device with ray tracing") }
@@ -146,8 +197,11 @@ public enum LightBaker {
         var row = 0
         while row < size {
             guard let cmd = queue.makeCommandBuffer(), let c = cmd.makeComputeCommandEncoder() else { throw fail("no command buffer") }
+            let sun = options.sun.map { simd_normalize($0) } ?? .zero
             var p = Params(x0: Float(x0), y0: Float(y0), x1: Float(x1), y1: Float(y1), size: UInt32(size),
-                           samples: UInt32(samples), bounces: UInt32(bounces), row0: UInt32(row), seed: 7, top: top + 10)
+                           samples: UInt32(samples), bounces: UInt32(bounces), row0: UInt32(row), seed: 7, top: top + 10,
+                           mode: options.mode.rawValue, radius: options.radius, sunX: sun.x, sunY: sun.y, sunZ: sun.z,
+                           sunStrength: options.sun == nil ? 0 : options.sunStrength, skyStrength: options.skyStrength)
             c.setComputePipelineState(pipeline)
             c.setBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
             c.setAccelerationStructure(accel, bufferIndex: 1)

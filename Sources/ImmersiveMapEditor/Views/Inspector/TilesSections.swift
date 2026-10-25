@@ -9,7 +9,6 @@ struct TilesSections: View {
         @Bindable var workspace = session.workspace
         Section("View") {
             Toggle("Fly  Tab", isOn: $workspace.flying)
-            Toggle("Light map  L", isOn: $workspace.showLightMap)
             Button("Frame  F") { session.tiles?.frameTiles() }
             Button("Reload the built tiles") { workspace.tilesRevision += 1 }
         }

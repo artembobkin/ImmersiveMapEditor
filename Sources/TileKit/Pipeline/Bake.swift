@@ -33,8 +33,7 @@ public enum Bake {
         let light: [UInt8]
         if bake {
             print("[\(log)] baking a \(size) px light map")
-            let irradiance = try Lighting.bake(scene.mesh.pos + plane, bounds: lit, size: size, samples: settings.samples,
-                                               bounces: settings.bounces)
+            let irradiance = try Lighting.bake(scene.mesh.pos + plane, bounds: lit, size: size, settings: settings)
             light = Lighting.shape(irradiance, settings)
         } else {
             print("[\(log)] the light not baked: a white light map")

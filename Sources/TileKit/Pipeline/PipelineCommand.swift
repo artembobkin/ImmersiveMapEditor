@@ -17,6 +17,7 @@ import Foundation
 ///   pipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
 ///   pipeline bake 15 --tiles 19808/10243 ...      the light of built tiles again
 ///       [--size 1024] [--samples 256] [--bounces 3] [--gamma 1.6] [--lit R G B] [--shade R G B]
+///       [--mode sky|ao] [--ao-radius 8] [--sky 1] [--sun AZIMUTH ELEVATION STRENGTH | --no-sun]
 ///   pipeline validate tiles/15/19808/10243/build
 ///   pipeline fit detsky-mir
 ///
@@ -58,6 +59,9 @@ public enum PipelineCommand {
                 let size = number("--size").map(Int.init), samples = number("--samples").map(Int.init)
                 let bounces = number("--bounces").map(Int.init), gamma = number("--gamma")
                 let lit = colour("--lit"), shade = colour("--shade")
+                let mode = args.value("--mode")?[0], aoRadius = number("--ao-radius"), sky = number("--sky")
+                let noSun = args.flag("--no-sun")
+                let sun = args.value("--sun", count: 3).map { $0.compactMap(Double.init) }.flatMap { $0.count == 3 ? $0 : nil }
                 let tiles = args.tiles()
                 guard let z = args.list.first.flatMap({ Int($0) }), args.list.count == 1, !tiles.isEmpty else { usage() }
                 exit(Bake.run(paths, z: z, tiles: tiles) { s in
@@ -67,6 +71,11 @@ public enum PipelineCommand {
                     if let v = gamma { s.gamma = v }
                     if let v = lit { s.lit = v }
                     if let v = shade { s.shade = v }
+                    if let v = mode { s.mode = v }
+                    if let v = aoRadius { s.aoRadius = v }
+                    if let v = sky { s.skyStrength = v }
+                    if noSun { s.sun = false }
+                    if let v = sun { (s.sun, s.sunAzimuth, s.sunElevation, s.sunStrength) = (true, v[0], v[1], v[2]) }
                 } ? 0 : 1)
             case "lab":
                 let whole = args.flag("--whole"), export = args.flag("--export")
@@ -117,6 +126,7 @@ public enum PipelineCommand {
                ImmersiveMapEditor pipeline seed Z X Y [--force]
                ImmersiveMapEditor pipeline migrate OLD_WORKSPACE
                ImmersiveMapEditor pipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
+                   [--mode sky|ao] [--ao-radius M] [--sky S] [--sun AZ EL S | --no-sun]
                ImmersiveMapEditor pipeline validate FOLDER
                ImmersiveMapEditor pipeline fit ID
 

@@ -10,7 +10,7 @@ import simd
 /// The mouse as in the engine: drag to move over the ground, right-drag (or
 /// option-drag) to turn and tilt, scroll or pinch to zoom toward the cursor.
 /// Tab flies (W A S D, Q down, E up, shift faster, right-drag to look,
-/// scroll for speed). F frames the tiles, L the light map.
+/// scroll for speed). F frames the tiles. The Light view shows them lit.
 final class TileView: MTKView {
     let model: Workspace
     private let renderer: TileRenderer
@@ -92,7 +92,7 @@ final class TileView: MTKView {
     func snapshot(to url: URL, width: Int, height: Int) throws {
         refresh()
         try renderer.snapshot(library, viewProjection: controller.camera.viewProjection(aspect: Double(width) / Double(height)),
-                              lightMap: model.showLightMap, to: url, width: width, height: height)
+                              shading: .lit, to: url, width: width, height: height)
     }
 
     // MARK: Input
@@ -156,7 +156,6 @@ final class TileView: MTKView {
             model.flying.toggle()
             controller.setFlying(model.flying)
         case 3: frameTiles()                        // F
-        case 37: model.showLightMap.toggle()        // L
         default:
             if let key = Self.flightKeys[event.keyCode], model.flying {
                 controller.press(key)
@@ -183,7 +182,7 @@ extension TileView: MTKViewDelegate {
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
         renderer.encode(enc, tiles: library, viewProjection: controller.camera.viewProjection(aspect: aspect),
-                        lightMap: model.showLightMap)
+                        shading: model.viewMode == .light ? model.lightShading : .palette)
         enc.endEncoding()
         buffer.present(drawable)
         buffer.commit()
