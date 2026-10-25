@@ -114,15 +114,21 @@ struct ContentView: View {
                 MetalHost(view: tiles)
             }
         case .landmarks:
+            // The tile's landmark picked: its model when one is there.
             Group {
-                if session.landmarks.selected == nil {
+                if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
+                    if landmark.model == nil {
+                        ContentUnavailableView("No model yet", systemImage: "building.columns",
+                                               description: Text("Put its model (a GLB) in its folder, made from its landmark.json."))
+                    } else if let view = session.landmarkView {
+                        MetalHost(view: view)
+                    }
+                } else {
                     ContentUnavailableView("No landmark picked", systemImage: "building.columns",
-                                           description: Text("Pick a model in the list on the right."))
-                } else if let view = session.landmarkView {
-                    MetalHost(view: view)
+                                           description: Text("The tile's landmarks are made in Buildings: pick one on the right."))
                 }
             }
-            .onChange(of: session.landmarks.picked, initial: true) { session.showLandmark() }
+            .onChange(of: session.pickedLandmark, initial: true) { session.showLandmark() }
         }
     }
 }

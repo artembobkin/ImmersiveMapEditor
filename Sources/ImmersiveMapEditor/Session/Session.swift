@@ -27,12 +27,13 @@ final class Session {
     let panels = PanelLayout()
     let lights = LightMaps()
     let lightSettings = LightSettings()
-    let landmarks = LandmarkCatalog()
     /// The open tile's buildings of OSM, for the Buildings view.
     let buildings = OsmBuildings()
-    /// The open tile's landmark candidates, and the OSM elements they hold.
-    private(set) var candidates: [(id: String, name: String, tile: String, folder: URL)] = []
-    private(set) var candidateBuildings: [String] = []
+    /// The open tile's landmarks (its landmarks/ folder), the one picked in
+    /// the Landmarks view, and the OSM elements they are made of.
+    private(set) var candidates: [TileLandmark] = []
+    var pickedLandmark: String?
+    var candidateBuildings: [String] { candidates.flatMap(\.buildings) }
     private(set) var landmarkView: LandmarkView?
     /// When and how sharp the imagery over the working tile was taken, by its
     /// source's metadata (Esri says it, Mapbox does not).
@@ -54,7 +55,6 @@ final class Session {
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
-        scanLandmarks()
     }
 
     /// Another data folder instead of the current one, back to choosing a
@@ -69,7 +69,6 @@ final class Session {
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
-        scanLandmarks()
     }
 
     // MARK: The tile open
@@ -129,24 +128,20 @@ final class Session {
         }
     }
 
-    /// The landmark models read again from Modeling and the workspace.
-    func scanLandmarks() {
-        landmarks.scan(WorkspacePaths(root: workspace.root))
-    }
-
     /// The Landmarks view, made when first shown, showing the model picked.
     func showLandmark() {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
             landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
         }
-        landmarkView?.show(landmarks.selected?.glb)
+        landmarkView?.show(candidates.first { $0.id == pickedLandmark }?.model)
     }
 
     /// The tile open is what every view works on, alone: entering the Roads
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
+        if phase == .working, mode == .landmarks { readCandidates() }
         if phase == .working, mode == .buildings {
             let tile = workspace.tile, paths = workspace.paths
             Task { @MainActor in
@@ -198,7 +193,6 @@ final class Session {
     func readCandidates() {
         guard let tile = workspace.tile else { return }
         candidates = LandmarkCandidates.list(workspace.paths, tile: tile)
-        candidateBuildings = LandmarkCandidates.osmIDs(workspace.paths, tile: tile)
     }
 
     /// The buildings picked in the Buildings view made a landmark candidate.

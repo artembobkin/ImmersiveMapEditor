@@ -1,38 +1,35 @@
 import SwiftUI
 
-/// The Landmarks view's sections: the landmark models ready that stand in the
-/// tile open, to pick one and look at it.
+/// The Landmarks view's sections: the tile's landmarks (made in the
+/// Buildings view, each a folder of the tile's landmarks/), to pick one and
+/// see its model, its buildings and its folder.
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
 
     var body: some View {
-        @Bindable var catalog = session.landmarks
-        let picked: Set<TileKey> = session.workspace.tile.map { [$0] } ?? []
-        let listed = catalog.listed(in: picked)
-        Section("Find") {
-            TextField("Search", text: $catalog.query)
-            Text("\(listed.count) models stand in the tile").foregroundStyle(.secondary)
-        }
-        Section("Models") {
-            ForEach(listed) { m in
-                Button { catalog.picked = m.id } label: {
+        @Bindable var session = session
+        Section("The tile's landmarks: \(session.candidates.count)") {
+            if session.candidates.isEmpty {
+                Text("None yet: pick buildings in Buildings and make a landmark of them.").foregroundStyle(.secondary)
+            }
+            ForEach(session.candidates) { landmark in
+                Button { session.pickedLandmark = landmark.id } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(m.name)
-                        Text(verbatim: "\(m.tile.name) · \(m.source.rawValue)\(m.hasRecipe ? " · recipe" : "")")
+                        Text(landmark.name)
+                        Text(verbatim: "\(landmark.buildings.count) buildings · " + (landmark.model == nil ? "no model yet" : landmark.model!.lastPathComponent))
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(catalog.picked == m.id ? Color.accentColor.opacity(0.25) : nil)
+                .listRowBackground(session.pickedLandmark == landmark.id ? Color.accentColor.opacity(0.25) : nil)
             }
         }
-        Section {
-            if let m = catalog.selected {
-                Button("Open its folder") { Platform.open(m.folder) }
+        if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
+            Section {
+                Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
             }
-            Button("Read the models again") { session.scanLandmarks() }
         }
     }
 }

@@ -10,26 +10,32 @@ import TileKit
 /// (the same outlines, the tags as properties, for any GIS tool). A
 /// candidate changes nothing of the tile's build until a model of it is
 /// made and placed.
+/// One of a tile's landmarks, as its folder has it: its name, the OSM
+/// elements it is made of, and its model when one is there (a GLB in its
+/// folder, made from what the folder holds).
+struct TileLandmark: Identifiable {
+    let id: String
+    let name: String
+    let folder: URL
+    let buildings: [String]
+    var model: URL? {
+        ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
+    }
+}
+
 enum LandmarkCandidates {
     static func folder(_ paths: WorkspacePaths, _ tile: TileKey) -> URL { paths.tileLandmarks(z: tile.z, x: tile.x, y: tile.y) }
 
-    /// The tile's candidates: their ids, names and folders.
-    static func list(_ paths: WorkspacePaths, tile: TileKey) -> [(id: String, name: String, tile: String, folder: URL)] {
+    /// The tile's landmarks, by their folders.
+    static func list(_ paths: WorkspacePaths, tile: TileKey) -> [TileLandmark] {
         let root = folder(paths, tile)
         return ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted().compactMap { id in
             let f = root.appendingPathComponent(id)
             guard let data = try? Data(contentsOf: f.appendingPathComponent("landmark.json")),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-            return (id, json["name"] as? String ?? id, json["tile"] as? String ?? "", f)
-        }
-    }
-
-    /// The OSM elements the candidates of a tile are made of.
-    static func osmIDs(_ paths: WorkspacePaths, tile: TileKey) -> [String] {
-        list(paths, tile: tile).flatMap { c -> [String] in
-            guard let data = try? Data(contentsOf: c.folder.appendingPathComponent("landmark.json")),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-            return (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
+            let osm = (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
+            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm)
         }
     }
 
