@@ -39,12 +39,15 @@ struct ContentView: View {
             ToolbarItem {
                 Button("Fetch and Build the Tile", systemImage: "hammer") { session.buildTile() }
                 .disabled(session.build.running || workspace.tile == nil)
+                .help("Fetch the tile's OSM if missing, seed its roads if no document holds it, build, bake and export it (⌘B)")
             }
             ToolbarItem {
                 Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
+                    .help("Show or hide the build's log (⌘L)")
             }
             ToolbarItem {
                 Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
+                    .help("Show or hide the panel")
             }
         }
         .inspector(isPresented: $inspector) {
