@@ -33,6 +33,7 @@ struct WindowLayout<Main: View, Console: View>: View {
                 Color.clear
                     .frame(height: 9)
                     .contentShape(Rectangle())
+                    .pointerStyle(.rowResize)
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global).onChanged { v in
                         if dragFrom == nil { dragFrom = height }
                         height = min(700, max(90, dragFrom! - v.translation.height))
