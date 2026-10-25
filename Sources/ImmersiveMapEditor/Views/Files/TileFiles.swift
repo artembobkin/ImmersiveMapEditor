@@ -13,6 +13,17 @@ struct TileFiles {
         var name: String { url.lastPathComponent }
     }
 
+    /// A file, or a folder of files and folders: a group's files as a tree.
+    struct Node: Identifiable {
+        let url: URL
+        let file: File?
+        let children: [Node]
+        var id: URL { url }
+        var name: String { url.lastPathComponent }
+        /// How many files it holds, all the way down.
+        var count: Int { file != nil ? 1 : children.reduce(0) { $0 + $1.count } }
+    }
+
     struct Group: Identifiable {
         let title: String
         let systemImage: String
@@ -20,6 +31,9 @@ struct TileFiles {
         let folder: URL
         let files: [File]
         var id: String { title }
+
+        /// Its files as a tree: the folders of `folder` first, by name.
+        var tree: [Node] { TileFiles.tree(files, under: folder.standardizedFileURL) }
 
         init(title: String, systemImage: String, folder: URL) {
             self.title = title
@@ -44,6 +58,27 @@ struct TileFiles {
             Group(title: "Build", systemImage: "cube", folder: p.tileOut(z: tile.z, x: tile.x, y: tile.y)),
             Group(title: "Landmarks", systemImage: "building.columns", folder: p.tileLandmarks(z: tile.z, x: tile.x, y: tile.y)),
         ]
+    }
+
+    static func tree(_ files: [File], under folder: URL) -> [Node] {
+        let base = folder.path + "/"
+        var direct: [Node] = []
+        var below: [String: [File]] = [:]
+        for f in files {
+            let path = f.url.standardizedFileURL.path
+            guard path.hasPrefix(base) else { continue }
+            let rest = path.dropFirst(base.count)
+            if let slash = rest.firstIndex(of: "/") {
+                below[String(rest[..<slash]), default: []].append(f)
+            } else {
+                direct.append(Node(url: f.url, file: f, children: []))
+            }
+        }
+        let folders = below.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { name -> Node in
+            let sub = folder.appendingPathComponent(name)
+            return Node(url: sub, file: nil, children: tree(below[name]!, under: sub))
+        }
+        return folders + direct
     }
 
     /// The files of a folder and of its folders, by name.

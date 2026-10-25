@@ -29,14 +29,7 @@ struct FilesSidebar: View {
                         if group.files.isEmpty {
                             Text("Nothing yet").foregroundStyle(.secondary)
                         }
-                        ForEach(group.files) { file in
-                            FileRow(file: file, folder: group.folder)
-                                .contextMenu {
-                                    Button("Open") { Platform.open(file.url) }
-                                    Button("Show in Finder") { Platform.reveal(file.url) }
-                                }
-                                .onTapGesture(count: 2) { Platform.open(file.url) }
-                        }
+                        ForEach(group.tree) { NodeRow(node: $0) }
                     } header: {
                         Label(group.title, systemImage: group.systemImage)
                     }
@@ -49,24 +42,45 @@ struct FilesSidebar: View {
     }
 }
 
-/// A file of a tile: its path within its group's folder, its size and age.
+/// A file, or a folder folded until opened (a landmark, its references,
+/// its views), so a group stays short.
+private struct NodeRow: View {
+    let node: TileFiles.Node
+
+    var body: some View {
+        if let file = node.file {
+            FileRow(file: file)
+                .contextMenu {
+                    Button("Open") { Platform.open(file.url) }
+                    Button("Show in Finder") { Platform.reveal(file.url) }
+                }
+                .onTapGesture(count: 2) { Platform.open(file.url) }
+        } else {
+            DisclosureGroup {
+                ForEach(node.children) { NodeRow(node: $0) }
+            } label: {
+                HStack {
+                    Label(node.name, systemImage: "folder").lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    Text("\(node.count)").font(.caption).foregroundStyle(.secondary)
+                }
+                .contextMenu { Button("Open in Finder") { Platform.open(node.url) } }
+            }
+        }
+    }
+}
+
+/// A file of a tile: its name, its size and age.
 private struct FileRow: View {
     let file: TileFiles.File
-    let folder: URL
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(relative).lineLimit(1).truncationMode(.middle)
+            Text(file.name).lineLimit(1).truncationMode(.middle)
             Text([ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file),
                   file.modified.map { $0.formatted(.relative(presentation: .named)) }].compactMap { $0 }.joined(separator: " · "))
                 .font(.caption).foregroundStyle(.secondary)
         }
         .help(file.url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-    }
-
-    private var relative: String {
-        let base = folder.standardizedFileURL.path + "/"
-        let path = file.url.standardizedFileURL.path
-        return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : file.name
     }
 }
