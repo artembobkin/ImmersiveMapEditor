@@ -44,6 +44,10 @@ struct DebugCaseTests {
             print("debug GEOS distinct normalized results over 20 runs: \(seen.count)")
             theirs = ga.binary(gb!, fs[code]!, grid)
             run = { try OverlayNG.overlay(a, b!, code, PrecisionModel(scale: 1.0 / grid)) }
+        case "buffer":
+            let d = Double(env["DEBUG_DIST"] ?? "0")!
+            theirs = ga.unary(GEOSBuffer_r, d, 8)
+            run = { try a.buffer(d) }
         default: theirs = ga.unaryUnion; run = { try a.union() }
         }
         print("debug GEOS: \(theirs.map { "\($0.shape)" } ?? "fails: \(o.takeError() ?? "")")")
@@ -73,7 +77,13 @@ struct DebugCaseTests {
                 }
                 guard let l, let r else { return nil }
                 let pu = try? l.0.union(r.0)
-                let gu = l.1.binary(r.1, GEOSUnion_r)
+                var gu = l.1.binary(r.1, GEOSUnion_r)
+                if gu == nil {
+                    print("debug cascade GEOS union fails at \(s)..<\(e): \(o.takeError() ?? "")")
+                    let gc = o.geos(a.factory.createGeometryCollection([l.0, r.0]))
+                    gu = gc.unary(GEOSBuffer_r, 0, 8)
+                    print("debug cascade GEOS buffer: \(gu == nil ? "fails \(o.takeError() ?? "")" : "ok"); port buffer: \((try? a.factory.createGeometryCollection([l.0, r.0]).buffer(0)) == nil ? "fails" : "ok")")
+                }
                 guard let pu, let gu else { print("debug cascade: a side fails"); return nil }
                 if Shape(pu) != gu.shape && !reported {
                     reported = true
@@ -85,6 +95,57 @@ struct DebugCaseTests {
                 return (pu, gu)
             }
             _ = cascade(0, geoms.count)
+        }
+        if env["DEBUG_PARTS"] != nil {
+            var polys: [Polygon] = [], lines: [LineString] = []
+            a.applyGeometries { g in
+                if let p = g as? Polygon { polys.append(p) }
+                if let l = g as? LineString { lines.append(l) }
+            }
+            let mp = a.factory.createMultiPolygon(polys), ml = a.factory.createMultiLineString(lines)
+            let pp = try? mp.union(), pl = try? ml.union()
+            let gp = o.geos(mp).unaryUnion, gl = o.geos(ml).unaryUnion
+            print("debug parts polygons: port \(pp.map { "\(Shape($0))".prefix(200) } ?? "fails") GEOS \(gp.map { "\($0.shape)".prefix(200) } ?? "fails \(o.takeError() ?? "")")")
+            print("debug parts polygons equal: \(pp.map { Shape($0) } == gp?.shape)  lines equal: \(pl.map { Shape($0) } == gl?.shape)")
+            if let pp, let pl, let gp, let gl {
+                let pu = Result { try pl.union(pp) }
+                let gu = gl.binary(gp, GEOSUnion_r)
+                print("debug parts lines with polygons: port \((try? pu.get()) == nil ? "fails" : "ok") GEOS \(gu == nil ? "fails \(o.takeError() ?? "")" : "ok")")
+            }
+        }
+        if env["DEBUG_TRIPLES"] != nil {
+            var polys: [Polygon] = []
+            a.applyGeometries { if let p = $0 as? Polygon { polys.append(p) } }
+            for i in polys.indices {
+                let rest = polys.indices.filter { $0 != i }
+                guard rest.count == 2 else { continue }
+                func step(_ x: Topology.Geometry, _ y: Topology.Geometry) -> Topology.Geometry? {
+                    do { return try GeometryOverlay.heuristicOverlay(x, y, OverlayNG.union) } catch {
+                        let gc = a.factory.createGeometryCollection([x, y])
+                        let gb = o.geos(gc).unary(GEOSBuffer_r, 0, 8)
+                        let pb = Result { try gc.buffer(0) }
+                        print("debug triple overlay fails (\(error)); buffer GEOS \(gb == nil ? "fails \(o.takeError() ?? "")" : "ok") port \((try? pb.get()) == nil ? "fails" : "ok") equal \((try? pb.get()).map { o.normalizedShapes($0, gb!).0 == o.normalizedShapes($0, gb!).1 } ?? false)")
+                        if let env = ProcessInfo.processInfo.environment["DEBUG_SAVE"] { try? "\(gc)".write(toFile: env, atomically: true, encoding: .utf8) }
+                        return try? pb.get()
+                    }
+                }
+                guard let u = step(polys[rest[0]], polys[rest[1]]) else { continue }
+                print("debug triple \(i) with \(rest): \(step(polys[i], u) == nil ? "fails" : "ok")")
+            }
+        }
+        if env["DEBUG_PAIRS"] != nil {
+            var polys: [Polygon] = []
+            a.applyGeometries { if let p = $0 as? Polygon { polys.append(p) } }
+            for i in polys.indices {
+                for j in polys.indices where j > i {
+                    let gc = a.factory.createGeometryCollection([polys[i], polys[j]])
+                    let gb = o.geos(gc).unary(GEOSBuffer_r, 0, 8)
+                    let gu = o.geos(polys[i]).binary(o.geos(polys[j]), GEOSUnion_r)
+                    let pb = Result { try gc.buffer(0) }
+                    let pu = Result { try polys[i].union(polys[j]) }
+                    print("debug pair \(i) \(j): GEOS union \(gu == nil ? "fails \(o.takeError() ?? "")" : "ok") buffer \(gb == nil ? "fails \(o.takeError() ?? "")" : "ok"); port union \((try? pu.get()) == nil ? "fails" : "ok") buffer \((try? pb.get()) == nil ? "fails" : "ok")")
+                }
+            }
         }
         if env["DEBUG_NODE"] != nil {
             let lines = Shape(a.factory.createMultiLineString(NodingParityTests.lines(a).map { a.factory.createLineString(CoordinateArrays.removeRepeatedPoints($0)) }))

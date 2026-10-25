@@ -26,7 +26,7 @@ struct PredicateReplayTests {
                 time.geos += clock.measure { g = ga.predicate(gb, theirs) }
                 var m: Bool?
                 time.port += clock.measure { m = try? mine(a, b) }
-                tally.check(m == g, "\(r.name) #\(c.geometries): port \(m) GEOS \(String(describing: g))")
+                tally.check(m == g, "\(r.name) #\(c.geometries): port \(String(describing: m)) GEOS \(String(describing: g))")
             }
         }
         tally.report()
@@ -60,9 +60,9 @@ struct PredicateReplayTests {
                     var m: Bool?
                     time.port += clock.measure { m = try? (isContains ? p.contains(b) : p.intersects(b)) }
                     if isContains {
-                        contains.check(m == g, "\(r.name) #\(c.geometries[0]): port \(m) GEOS \(String(describing: g))")
+                        contains.check(m == g, "\(r.name) #\(c.geometries[0]): port \(String(describing: m)) GEOS \(String(describing: g))")
                     } else {
-                        intersects.check(m == g, "\(r.name) #\(c.geometries[0]): port \(m) GEOS \(String(describing: g))")
+                        intersects.check(m == g, "\(r.name) #\(c.geometries[0]): port \(String(describing: m)) GEOS \(String(describing: g))")
                     }
                 default: break
                 }

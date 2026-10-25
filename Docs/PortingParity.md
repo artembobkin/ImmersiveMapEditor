@@ -228,3 +228,34 @@ The JTS XML suites, the predicates and distance: the port passes exactly the tes
 - **The rectangle's intersects**: its last test meets each segment of the rectangle's ring with each segment of the other's lines (JTS: each segment with the rectangle's diagonals). The answers agree.
 - **Prepared polygons**: the point locator is the simple one the first time and the indexed one afterwards (JTS: always indexed); on invalid polygons they locate some points differently (14 of 16,000 random prepared predicates differed before). `contains` and `covers` decide first on the outermost location of the test components (JTS: whether all are in), as GEOS's `OutermostLocationFilter` has it.
 - **Distance**: the second geometry's polygons are tried first for containment (JTS: the first's), segment envelopes are compared by their squared distance with the minimum's square, envelope distance is the root of GEOS's `distanceSquared` (JTS: `hypot` of the gaps), and `isWithinDistance` of an empty geometry is false. These were read in GEOS's sources; the random and recorded inputs give the same results with JTS's forms, so they are not observed differences, but they are GEOS's arithmetic.
+
+## Phase 5: buffer and offset curve against GEOS
+
+The buffer is compared with `GEOSBufferWithStyle`, the offset curve with `GEOSOffsetCurve`: results in GEOS's normal form bit for bit, and as they come; where GEOS fails, the port must throw. The random inputs are those of the overlays (polygons with holes, lines with repeated points and closed lines, points, multi-geometries, collections, empties, some on a grid), with distances of 0.001, 0.05, 0.3, 1 and 3 times their size (times 0.5 to 1.5), a third of them negative and one in twenty zero, segments a quadrant 1, 2, 3, 4, 8, 16, 0 and -1, every cap and join style, mitre limits 0.5 to 10.
+
+| Function | Compared | Equal (normalized) | Equal as they come |
+|---|---:|---:|---:|
+| buffer, random | 8,000 | 8,000 | 8,000 |
+| offset curve, random (60% lines) | 4,000 | 4,000 | 4,000 |
+| buffer, every recorded call | 112,586 | 112,586 | 112,586 |
+| offset curve, every recorded call | 273 | 273 | 273 |
+
+No tolerance was used: the arcs come out bit for bit, as GEOS and the port take `sin` and `cos` from the same system library.
+
+| Function | Recorded calls | Port, optimized | GEOS | Port / GEOS |
+|---|---:|---:|---:|---:|
+| buffer | 112,586 | 10.9 s | 2.6 s | 4.1 |
+| offsetCurve | 273 | 3 ms | 1 ms | 2.2 |
+
+The JTS XML suites: `buffer` 151 tests, all passed as on GEOS; `bufferMitredJoin` 5, 2 passed, the 3 GEOS does not pass not passed either (`GEOSBaseline`). Every result of the operations the port has, 9,351 now, is GEOS's. The buffer matcher of the port's engine measures the symmetric difference with the port and the boundaries' Hausdorff distance with GEOS (the port has no Hausdorff distance yet).
+
+#### Where GEOS 3.13 differs from JTS 1.20 in the buffer and the offset curve
+
+- **Retries**: after a topology failure at the input's precision, the buffer is retried snap-rounded at 12 significant digits down to 6 (JTS: down to 0). Only topology failures lead to a retry, the first try's too (JTS's first try catches any runtime error).
+- **Offset segments**: their length is `sqrt(dx * dx + dy * dy)` (JTS: `hypot`); the input simplification tolerance is the distance divided by 100 (JTS: times 0.01, another double); a point of an outside turn whose offsets nearly meet is the first offset's end, within 1e-3 of the distance (JTS: the longer segment's, within 0.05); a repeated next point leaves the generator's segments as they are (JTS moves them on); the limited mitre join is built from the bisector's outward direction; the curve's points are taken with the ring closed, so the raw offset curve of a line ends where it starts.
+- **Input simplification** (`BufferInputLineSimplifier`): the scan starts at the second vertex for rings too, the sampled test measures the middle vertex against the segments from the first to each sample (JTS: each sample against the first and middle), the kept points have no repeats.
+- **Curves of a polygon**: a shell is tested for complete erosion before its repeated points go, a shell with no valid point fails, a ring buffered by zero is itself at any size, the test for an inverted ring curve takes every vertex of the curve.
+- **Noding and the graph**: the noding of a zero buffer is not validated, repeated points are removed from each noded edge, the parts of the graph are sorted by `std::sort` (equal rightmost x in its order), an edge end of a direction already at a node is left out (JTS's `TreeMap` keeps the later), a part with no forward edge fails, the depth locator skips parts and edges left of the point.
+- **Polygons**: a free hole is placed by an indexed point-in-area locator per shell (JTS: the point against the ring, the same answer), two shells among minimal rings fail as topology (JTS asserts).
+- **Offset curve**: a buffer segment matches a raw segment when both its ends are within the match distance of it (JTS tests the shorter segment's ends against the longer), sections are sorted by `std::sort`, only polygons count for the buffer's largest.
+- **The union by buffer is out of reach for floating inputs.** GEOS's `ClassicUnionStrategy` falls back to the buffer by zero of two areas when their overlay throws a `TopologyException`, but robust OverlayNG keeps its first failure in a `std::runtime_error` (sliced) and throws that when every strategy fails, which the fallback does not catch. The port throws that failure as a `RuntimeError` likewise. Found when the buffer arrived: with the fallback reaching the buffer, 446 of 2,000 random unary unions gave a result where GEOS fails.

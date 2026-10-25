@@ -1,5 +1,6 @@
 import Foundation
 import Topology
+import geos
 
 /// The port as an engine of the JTS XML tests: the operations ported so far,
 /// nil (unsupported) for the rest. Grows phase by phase.
@@ -35,7 +36,23 @@ struct TopologyEngine: JTSTestEngine {
         actual.norm().equalsExact(expected.norm(), tolerance: tolerance)
     }
 
-    func bufferMatch(_ actual: Topology.Geometry, _ expected: Topology.Geometry, distance: Double) -> Bool { false }
+    /// JTS's `BufferResultMatcher` as `GEOSEngine` runs it: the area of the
+    /// symmetric difference by the port, the Hausdorff distance of the
+    /// boundaries by GEOS (the port has no Hausdorff distance).
+    func bufferMatch(_ actual: Topology.Geometry, _ expected: Topology.Geometry, distance: Double) -> Bool {
+        if actual.isEmpty() && expected.isEmpty() { return true }
+        guard let diff = try? actual.symDifference(expected) else { return false }
+        let areaDiff = diff.getArea(), area = expected.getArea()
+        if areaDiff > 0 {
+            let frac = area > 0 ? areaDiff / area : .infinity
+            if !(frac < 1e-3) { return false }
+        }
+        let o = GEOSOracle()
+        let ab = o.geos(actual.getBoundary()), eb = o.geos(expected.getBoundary())
+        var d = 0.0
+        guard GEOSHausdorffDistanceDensify_r(o.handle, ab.ptr, eb.ptr, 0.25, &d) == 1 else { return false }
+        return d <= max(abs(distance) / 100, 1e-8)
+    }
 
     /// The operations of the port, by the JTS test names.
     static let supported: Set<String> = [
@@ -43,7 +60,7 @@ struct TopologyEngine: JTSTestEngine {
         "intersection", "intersectionng", "union", "unionng", "difference", "differenceng", "symdifference", "symdifferenceng",
         "intersectionsr", "unionsr", "differencesr", "symdifferencesr", "unionarea", "unionlength", "overlayareatest",
         "intersects", "contains", "within", "covers", "coveredby", "touches", "crosses", "overlaps", "disjoint",
-        "equalstopo", "relate", "containsproperly", "distance", "iswithindistance",
+        "equalstopo", "relate", "containsproperly", "distance", "iswithindistance", "buffer", "buffermitredjoin",
     ]
 
     func evaluate(_ t: JTSTestFile.Test, target g: Topology.Geometry, a: Topology.Geometry?, b: Topology.Geometry?,
@@ -97,6 +114,12 @@ struct TopologyEngine: JTSTestEngine {
         case "overlayareatest": return .boolean(try overlayAreaTest(g, try geometry(0)))
         case "distance": return .number(g.distance(try geometry(0)))
         case "iswithindistance": return .boolean(g.isWithinDistance(try geometry(0), try number(1)))
+        case "buffer":
+            // GEOSBuffer: the default style, the segments a quadrant given.
+            let quadSegs = t.arguments.count > 1 ? Int(try number(1)) : BufferParameters.defaultQuadrantSegments
+            return .geometry(try g.buffer(try number(0), quadSegs: quadSegs))
+        case "buffermitredjoin":
+            return .geometry(try g.buffer(try number(0), joinStyle: BufferParameters.joinMitre))
         case "relate":
             guard t.arguments.count > 1 else { throw JTSEngineError("relate without a pattern") }
             return .boolean(try g.relate(try geometry(0), t.arguments[1]))

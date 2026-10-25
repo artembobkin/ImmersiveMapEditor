@@ -15,6 +15,10 @@ extension GEOSGeom {
         oracle.wrap(f(handle, ptr, d))
     }
 
+    func unary(_ f: (Handle?, OpaquePointer?, Double, Int32) -> OpaquePointer?, _ d: Double, _ n: Int32) -> GEOSGeom? {
+        oracle.wrap(f(handle, ptr, d, n))
+    }
+
     func binary(_ o: GEOSGeom, _ f: (Handle?, OpaquePointer?, OpaquePointer?) -> OpaquePointer?) -> GEOSGeom? {
         oracle.wrap(f(handle, ptr, o.ptr))
     }

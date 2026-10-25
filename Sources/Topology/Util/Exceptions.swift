@@ -33,3 +33,14 @@ public enum Assert {
         AssertionFailedException(message)
     }
 }
+
+/// A failure as GEOS rethrows it under its base class, `std::runtime_error`,
+/// so that it is no longer the topology failure it was: robust OverlayNG
+/// keeps its first failure that way and throws it when every strategy has
+/// failed. A caller catching only topology failures (the classic union's
+/// fallback to the buffer) lets it pass, as in GEOS 3.13.
+public struct RuntimeError: Error, CustomStringConvertible {
+    public let message: String
+    public init(_ message: String) { self.message = message }
+    public var description: String { message }
+}

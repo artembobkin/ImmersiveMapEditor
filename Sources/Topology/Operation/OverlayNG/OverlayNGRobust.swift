@@ -36,7 +36,9 @@ public enum OverlayNGRobust {
             trace?("snap rounding")
             return result
         }
-        throw exOriginal
+        // GEOS keeps the first failure as a `std::runtime_error` (sliced from
+        // whatever it was) and throws that.
+        throw RuntimeError(String(describing: exOriginal))
     }
 
     /// Told which stage each overlay ended at, when set (a test's probe).
