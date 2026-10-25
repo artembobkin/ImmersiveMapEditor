@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The window: its one layout (WindowLayout: the view's content, the console
-/// under it, the inspector on the right), the same whatever the view. The
-/// view chosen at the top fills the regions, never changes them. Hints and
-/// state along the bottom, the views in the toolbar.
+/// under it, the status line at the foot, the inspector on the right), the
+/// same whatever the view. The view chosen at the top fills the regions,
+/// never changes them. The views in the toolbar.
 struct ContentView: View {
     @Environment(Session.self) private var session
     @Environment(\.undoManager) private var undoManager
@@ -17,15 +17,10 @@ struct ContentView: View {
             mode
         } console: {
             BottomPanel().environment(session.build)
+        } status: {
+            StatusLine()
         }
         .frame(minWidth: 600, minHeight: 400)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            StatusLine()
-                .font(.callout)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(.bar)
-        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("View", selection: $workspace.viewMode) {
