@@ -1,9 +1,9 @@
 IN PROGRESS
 
-Phase: 8 (Geometry onto Topology, the pipeline end to end). Phases 1 to 7 and 9 to 11 done.
-Last green commit: 50caf95 on main (phases 1 to 7 and 9 to 11 merged, 449 tests passing). Seeding of the 2x2 block checked by the main session: road document identical but the date, streets GeoJSON byte-identical, 16.6 s against 15.0 s.
+Phase: 12 (GEOS frozen into stored expectations, then removed). Phases 1 to 11 done.
+Last green commit: cfd9d74 on main (phases 1 to 11 merged, 453 tests passing). Geometry runs on Topology: the five tiles' GLB geometry, stats and palettes byte-identical to the GEOS build, builds 1.06 to 1.29 times as long, seeding 1.17 times.
 Branches: port/topology in .worktrees/topology, port/streets in .worktrees/streets, merged into main by the main session when green
-Next step: merge phase 8, then 12 (remove GEOS)
+Next step: merge phase 12, remove the GEOSwift/geos dependency from Package.swift (main session), run everything, write DONE
 Decisions taken on the user's behalf:
 - All port targets are declared once in Package.swift up front, so the parallel branches never edit it.
 - The branches live in local git worktrees under .worktrees/ (ignored), never pushed.
