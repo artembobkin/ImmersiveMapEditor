@@ -1,9 +1,9 @@
-IN PROGRESS
+DONE
 
-Phase: 12 (GEOS frozen into stored expectations, then removed). Phases 1 to 11 done.
-Last green commit: cfd9d74 on main (phases 1 to 11 merged, 453 tests passing). Geometry runs on Topology: the five tiles' GLB geometry, stats and palettes byte-identical to the GEOS build, builds 1.06 to 1.29 times as long, seeding 1.17 times.
+Phase: all 12 done. GEOS is frozen into stored answers (Tests/TopologyTests/.oracle) and removed: the package has no dependencies and no C, C++, Rust or Python in its build.
+Last green commit: the commit that wrote DONE, on main (phase 12 merged as 51f7d47, the GEOS package removed from Package.swift). 451 tests in 74 suites pass in debug (598 s) and in release with -enable-testing (83 s), clean debug and release builds have no warnings.
 Branches: port/topology in .worktrees/topology, port/streets in .worktrees/streets, merged into main by the main session when green
-Next step: merge phase 12, remove the GEOSwift/geos dependency from Package.swift (main session), run everything, write DONE
+Next step: none for the goal. The user's review of the decisions below. Nothing is pushed.
 Decisions taken on the user's behalf:
 - All port targets are declared once in Package.swift up front, so the parallel branches never edit it.
 - The branches live in local git worktrees under .worktrees/ (ignored), never pushed.
