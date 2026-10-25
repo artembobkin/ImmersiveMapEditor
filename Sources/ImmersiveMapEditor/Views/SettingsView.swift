@@ -8,6 +8,11 @@ struct SettingsView: View {
     @State private var picking = false
     @AppStorage(CameraController.invertTurningKey) private var invertTurning = true
     @AppStorage(CameraController.invertTiltingKey) private var invertTilting = false
+    @AppStorage(ClaudeSettings.executableKey) private var claudePath = ""
+    /// The proxy, edited here and kept in the keychain (never shown in full).
+    @State private var proxy = ClaudeSettings.proxy
+    @State private var noProxy = ClaudeSettings.noProxy
+    @State private var proxySaid = ""
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
 
@@ -25,6 +30,29 @@ struct SettingsView: View {
                     Button("Use the Standard Folder") { use(nil) }
                         .disabled(root.standardizedFileURL == DataFolder.standard.standardizedFileURL)
                 }
+            }
+            Section("Claude") {
+                TextField("claude", text: $claudePath, prompt: Text(ClaudeSettings.executable?.path ?? "~/.local/bin/claude"))
+                SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
+                    .onSubmit { ClaudeSettings.proxy = proxy }
+                    .onChange(of: proxy) { ClaudeSettings.proxy = proxy }
+                SecureField("No proxy (NO_PROXY)", text: $noProxy)
+                    .onChange(of: noProxy) { ClaudeSettings.noProxy = noProxy }
+                HStack {
+                    Button("Take from ~/bin/claude") {
+                        let launcher = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/claude")
+                        if ClaudeSettings.takeProxy(fromLauncher: launcher) {
+                            proxy = ClaudeSettings.proxy
+                            noProxy = ClaudeSettings.noProxy
+                            proxySaid = "Taken from ~/bin/claude."
+                        } else {
+                            proxySaid = "No proxy in ~/bin/claude."
+                        }
+                    }
+                    Text(proxySaid).font(.callout).foregroundStyle(.secondary)
+                }
+                Text("The landmarks' agent runs Claude Code on your subscription, every request through this proxy. The proxy is kept in your keychain, never in the project.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Camera") {
                 Toggle("Invert turning (left and right)", isOn: $invertTurning)
