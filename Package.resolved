@@ -1,0 +1,24 @@
+{
+  "originHash" : "72ffd49b110fee610f52452a72dd46f58ee6af52585064f7d8370a3d8344f1a6",
+  "pins" : [
+    {
+      "identity" : "swiftstreets",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/artembobkin/SwiftStreets.git",
+      "state" : {
+        "revision" : "bcd3572fcbe7d3f216f2266396596f9f34c1fe54",
+        "version" : "0.1.0"
+      }
+    },
+    {
+      "identity" : "swifttopology",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/artembobkin/SwiftTopology.git",
+      "state" : {
+        "revision" : "e15ea27ba8fd6fc71ba1d226ec3b0846e6ebd1a3",
+        "version" : "0.1.0"
+      }
+    }
+  ],
+  "version" : 3
+}

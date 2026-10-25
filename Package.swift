@@ -8,34 +8,25 @@ let package = Package(
         .executable(name: "ImmersiveMapEditor", targets: ["ImmersiveMapEditor"]),
         .executable(name: "tilepipeline", targets: ["TilePipelineCommand"]),
     ],
+    dependencies: [
+        // The ports, each its own repository: JTS 1.20.0 behaving as GEOS 3.13,
+        // and osm2streets (rev fc119c4) with what it stands on.
+        .package(url: "https://github.com/artembobkin/SwiftTopology.git", exact: "0.1.0"),
+        .package(url: "https://github.com/artembobkin/SwiftStreets.git", exact: "0.1.0"),
+    ],
     targets: [
         // What the build does with polygons and lines, shapely's names on Topology.
-        .target(name: "Geometry", dependencies: ["Topology"], path: "Sources/Geometry"),
-
-        // The ports (Docs/PortingGoal.md). Topology: the JTS Topology Suite
-        // 1.20.0 in Swift (EDL-1.0), the engine under Geometry (behaving as GEOS 3.13).
-        .target(name: "Topology", path: "Sources/Topology", exclude: ["LICENSE", "LICENSE-LLVM"]),
-        // osm2streets (rev fc119c4) and what it stands on, each its own target.
-        .target(name: "Earcut", path: "Sources/Earcut", exclude: ["LICENSE"]),
-        .target(name: "GeoAlgorithms", path: "Sources/GeoAlgorithms", exclude: ["LICENSE"]),
-        .target(name: "StreetGeom", dependencies: ["GeoAlgorithms", "Earcut"], path: "Sources/StreetGeom", exclude: ["NOTICE"]),
-        .target(name: "OSMReader", path: "Sources/OSMReader", exclude: ["NOTICE"]),
-        .target(name: "CountryBoundaries", path: "Sources/CountryBoundaries", exclude: ["NOTICE"]),
-        // Muv's reading of lanes from OSM tags (muv-osm, rev 2404d40), the one
-        // MPL-2.0 target: its files stay under the MPL, the rest of the package MIT.
-        .target(name: "MuvLanes", path: "Sources/MuvLanes", exclude: ["LICENSE"]),
-        .target(name: "Streets", dependencies: ["StreetGeom", "GeoAlgorithms", "OSMReader", "CountryBoundaries", "MuvLanes"],
-                path: "Sources/Streets", exclude: ["NOTICE"]),
-        // The port against GEOS 3.13's answers, stored when GEOS left (Docs/PortingParity.md).
-        .testTarget(name: "TopologyTests", dependencies: ["Topology", "Geometry"], path: "Tests/TopologyTests"),
-        .testTarget(name: "StreetsTests", dependencies: ["Streets", "StreetGeom", "GeoAlgorithms", "Earcut", "OSMReader",
-                                                         "CountryBoundaries", "MuvLanes"], path: "Tests/StreetsTests"),
+        .target(name: "Geometry", dependencies: [.product(name: "Topology", package: "SwiftTopology")], path: "Sources/Geometry"),
+        // The wrapper against GEOS 3.13's answers, stored when GEOS left (Docs/PortingParity.md).
+        .testTarget(name: "GeometryTests", dependencies: ["Geometry", .product(name: "Topology", package: "SwiftTopology")],
+                    path: "Tests/GeometryTests"),
         // glTF binaries read and written.
         .target(name: "GLTF", path: "Sources/GLTF"),
         // The light map's bake on the GPU: Metal ray tracing.
         .target(name: "LightBaker", path: "Sources/LightBaker"),
         // The tile pipeline: OSM to one 3D model per map tile.
-        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", "Streets"], path: "Sources/TileKit"),
+        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", .product(name: "Streets", package: "SwiftStreets"),
+                                              .product(name: "StreetGeom", package: "SwiftStreets")], path: "Sources/TileKit"),
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
