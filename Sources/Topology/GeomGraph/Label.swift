@@ -55,7 +55,7 @@ extension GeomGraph {
     /// (index 0 and 1). A class, as in JTS: an edge's label is changed in
     /// place when an equal edge merges into it.
     final class Label {
-        var elt: [TopologyLocation]
+        @exclusivity(unchecked) var elt: [TopologyLocation]
 
         init(_ onLoc: Int) { elt = [TopologyLocation(onLoc), TopologyLocation(onLoc)] }
 

@@ -1,7 +1,7 @@
 /// A noder whose result is checked to be fully noded: JTS's `ValidatingNoder`.
 public final class ValidatingNoder: Noder {
     let noder: Noder
-    var nodedSS: [SegmentString] = []
+    @exclusivity(unchecked) var nodedSS: [SegmentString] = []
 
     public init(_ noder: Noder) { self.noder = noder }
 

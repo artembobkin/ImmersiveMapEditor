@@ -3,9 +3,9 @@
 /// first query: JTS's `IndexedPointInAreaLocator`. Only closed lines count,
 /// so an empty or lineal geometry has every point outside.
 public final class IndexedPointInAreaLocator: PointOnGeometryLocator {
-    private var geom: Geometry?
-    private var index: SortedPackedIntervalRTree<LineSegment>?
-    private var isEmpty = false
+    @exclusivity(unchecked) private var geom: Geometry?
+    @exclusivity(unchecked) private var index: SortedPackedIntervalRTree<LineSegment>?
+    @exclusivity(unchecked) private var isEmpty = false
 
     public init(_ g: Geometry) { geom = g }
 
@@ -23,7 +23,9 @@ public final class IndexedPointInAreaLocator: PointOnGeometryLocator {
         let g = geom!
         isEmpty = g.isEmpty()
         if !isEmpty {
-            for line in LinearComponentExtracter.getLines(g) where line.isClosed() {
+            let lines = LinearComponentExtracter.getLines(g)
+            tree.reserveCapacity(lines.reduce(0) { $0 + $1.points.count })
+            for line in lines where line.isClosed() {
                 let pts = line.points
                 for i in stride(from: 1, to: pts.count, by: 1) {
                     let seg = LineSegment(pts[i - 1], pts[i])

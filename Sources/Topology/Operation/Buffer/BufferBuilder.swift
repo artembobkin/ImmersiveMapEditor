@@ -10,10 +10,10 @@
 /// parts with the same rightmost x are in its order, `CxxAlgorithms`).
 final class BufferBuilder {
     private let bufParams: BufferParameters
-    var workingPrecisionModel: PrecisionModel?
-    var workingNoder: Noder?
-    var isInvertOrientation = false
-    private var geomFact: GeometryFactory!
+    @exclusivity(unchecked) var workingPrecisionModel: PrecisionModel?
+    @exclusivity(unchecked) var workingNoder: Noder?
+    @exclusivity(unchecked) var isInvertOrientation = false
+    @exclusivity(unchecked) private var geomFact: GeometryFactory!
     private let edgeList = GeomGraph.EdgeList()
 
     init(_ bufParams: BufferParameters) { self.bufParams = bufParams }

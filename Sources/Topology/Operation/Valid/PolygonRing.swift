@@ -44,11 +44,11 @@ final class PolygonRing {
     let id: Int
     /// The shell of the ring's polygon (itself for a shell); unowned, as
     /// the analyzer keeps every ring.
-    unowned(unsafe) var shell: PolygonRing!
+    @exclusivity(unchecked) unowned(unsafe) var shell: PolygonRing!
     let ring: LinearRing
-    var touchSetRoot: PolygonRing?
-    var touches: [Int: PolygonRingTouch] = [:]
-    var selfNodes: [PolygonRingSelfNode] = []
+    @exclusivity(unchecked) var touchSetRoot: PolygonRing?
+    @exclusivity(unchecked) var touches: [Int: PolygonRingTouch] = [:]
+    @exclusivity(unchecked) var selfNodes: [PolygonRingSelfNode] = []
 
     /// A shell.
     init(_ ring: LinearRing) {

@@ -20,18 +20,18 @@ extension Polygonize {
         }
 
         let factory: GeometryFactory
-        private(set) var deList: [PolygonizeDirectedEdge] = []
-        private var ring: LinearRing?
-        private var locator: IndexedPointInAreaLocator?
-        private var ringPts: [Coordinate]?
-        var holes: [LinearRing]?
-        unowned(unsafe) var shell: EdgeRing?
-        private(set) var isHole = false
-        private(set) var isValid = false
-        var isProcessed = false
-        private(set) var isIncludedSet = false
-        private(set) var isIncluded = false
-        var visitedByUpdateIncludedRecursive = false
+        @exclusivity(unchecked) private(set) var deList: [PolygonizeDirectedEdge] = []
+        @exclusivity(unchecked) private var ring: LinearRing?
+        @exclusivity(unchecked) private var locator: IndexedPointInAreaLocator?
+        @exclusivity(unchecked) private var ringPts: [Coordinate]?
+        @exclusivity(unchecked) var holes: [LinearRing]?
+        @exclusivity(unchecked) unowned(unsafe) var shell: EdgeRing?
+        @exclusivity(unchecked) private(set) var isHole = false
+        @exclusivity(unchecked) private(set) var isValid = false
+        @exclusivity(unchecked) var isProcessed = false
+        @exclusivity(unchecked) private(set) var isIncludedSet = false
+        @exclusivity(unchecked) private(set) var isIncluded = false
+        @exclusivity(unchecked) var visitedByUpdateIncludedRecursive = false
 
         init(_ factory: GeometryFactory) { self.factory = factory }
 

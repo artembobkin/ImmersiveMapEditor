@@ -10,9 +10,9 @@ extension Polygonize {
     }
 
     final class PolygonizeDirectedEdge: Planargraph.DirectedEdge {
-        unowned(unsafe) var edgeRing: EdgeRing?
-        unowned(unsafe) var next: PolygonizeDirectedEdge?
-        var label = -1
+        @exclusivity(unchecked) unowned(unsafe) var edgeRing: EdgeRing?
+        @exclusivity(unchecked) unowned(unsafe) var next: PolygonizeDirectedEdge?
+        @exclusivity(unchecked) var label = -1
 
         var isInRing: Bool { edgeRing != nil }
         var pSym: PolygonizeDirectedEdge { unsafeDowncast(sym!, to: PolygonizeDirectedEdge.self) }
@@ -22,7 +22,7 @@ extension Polygonize {
     final class PolygonizeGraph: Planargraph.PlanarGraph {
         /// Every edge ring made, kept alive here (the directed edges refer
         /// to theirs unowned).
-        var edgeRings: [EdgeRing] = []
+        @exclusivity(unchecked) var edgeRings: [EdgeRing] = []
         let factory: GeometryFactory
 
         init(_ factory: GeometryFactory) { self.factory = factory }

@@ -14,9 +14,9 @@ public enum Planargraph {}
 extension Planargraph {
     /// The flags every component has: JTS's `GraphComponent`.
     class GraphComponent {
-        var isMarked = false
-        var isVisited = false
-        var data: AnyObject?
+        @exclusivity(unchecked) var isMarked = false
+        @exclusivity(unchecked) var isVisited = false
+        @exclusivity(unchecked) var data: AnyObject?
     }
 
     /// A node: JTS's `planargraph.Node`.
@@ -34,7 +34,7 @@ extension Planargraph {
 
     /// An edge of two directed edges: JTS's `planargraph.Edge`.
     class Edge: GraphComponent {
-        var dirEdge: [DirectedEdge] = []
+        @exclusivity(unchecked) var dirEdge: [DirectedEdge] = []
 
         func setDirectedEdges(_ de0: DirectedEdge, _ de1: DirectedEdge) {
             dirEdge = [de0, de1]
@@ -53,12 +53,12 @@ extension Planargraph {
     /// JTS's `planargraph.DirectedEdge`, ordered around its node by quadrant,
     /// then by orientation.
     class DirectedEdge: GraphComponent {
-        unowned(unsafe) var parentEdge: Edge!
+        @exclusivity(unchecked) unowned(unsafe) var parentEdge: Edge!
         unowned(unsafe) let from: Node
         unowned(unsafe) let to: Node
         let p0: Coordinate
         let p1: Coordinate
-        unowned(unsafe) var sym: DirectedEdge?
+        @exclusivity(unchecked) unowned(unsafe) var sym: DirectedEdge?
         let edgeDirection: Bool
         let quadrant: Int
 
@@ -91,8 +91,8 @@ extension Planargraph {
     /// `planargraph.DirectedEdgeStar`, sorted with libc++'s `std::sort` as
     /// GEOS sorts it.
     final class DirectedEdgeStar {
-        private var outEdges: [DirectedEdge] = []
-        private var sorted = false
+        @exclusivity(unchecked) private var outEdges: [DirectedEdge] = []
+        @exclusivity(unchecked) private var sorted = false
 
         func add(_ de: DirectedEdge) {
             outEdges.append(de)
@@ -133,10 +133,10 @@ extension Planargraph {
 
     /// A graph: JTS's `PlanarGraph`, its components in GEOS's orders.
     class PlanarGraph {
-        private(set) var edges: [Edge] = []
-        private(set) var dirEdges: [DirectedEdge] = []
-        private var nodeMap: [Coordinate: Node] = [:]
-        private var nodesInOrder: [Node]?
+        @exclusivity(unchecked) private(set) var edges: [Edge] = []
+        @exclusivity(unchecked) private(set) var dirEdges: [DirectedEdge] = []
+        @exclusivity(unchecked) private var nodeMap: [Coordinate: Node] = [:]
+        @exclusivity(unchecked) private var nodesInOrder: [Node]?
 
         func findNode(_ pt: Coordinate) -> Node? { nodeMap[pt] }
 

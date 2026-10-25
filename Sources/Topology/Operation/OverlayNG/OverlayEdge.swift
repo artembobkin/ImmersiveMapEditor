@@ -7,13 +7,13 @@ public final class OverlayEdge: HalfEdge {
     public let direction: Bool
     let dirPt: Coordinate
     public let label: OverlayLabel
-    public private(set) var isInResultArea = false
-    public private(set) var isInResultLine = false
-    public private(set) var isVisited = false
-    var nextResultEdge: OverlayEdge?
-    var edgeRing: OverlayEdgeRing?
-    var maxEdgeRing: MaximalEdgeRing?
-    var nextResultMaxEdge: OverlayEdge?
+    @exclusivity(unchecked) public private(set) var isInResultArea = false
+    @exclusivity(unchecked) public private(set) var isInResultLine = false
+    @exclusivity(unchecked) public private(set) var isVisited = false
+    @exclusivity(unchecked) unowned(unsafe) var nextResultEdge: OverlayEdge?
+    @exclusivity(unchecked) var edgeRing: OverlayEdgeRing?
+    @exclusivity(unchecked) var maxEdgeRing: MaximalEdgeRing?
+    @exclusivity(unchecked) unowned(unsafe) var nextResultMaxEdge: OverlayEdge?
 
     init(_ orig: Coordinate, _ dirPt: Coordinate, _ direction: Bool, _ label: OverlayLabel, _ pts: [Coordinate]) {
         self.dirPt = dirPt
@@ -29,11 +29,13 @@ public final class OverlayEdge: HalfEdge {
         return OverlayEdge(pts[ilast], pts[ilast - 1], direction, lbl, pts)
     }
 
-    static func createEdgePair(_ pts: [Coordinate], _ lbl: OverlayLabel) -> OverlayEdge {
+    /// Both edges of the pair, linked: the caller keeps both (the links
+    /// are unowned).
+    static func createEdgePair(_ pts: [Coordinate], _ lbl: OverlayLabel) -> (OverlayEdge, OverlayEdge) {
         let e0 = createEdge(pts, lbl, true)
         let e1 = createEdge(pts, lbl, false)
         e0.link(e1)
-        return e0
+        return (e0, e1)
     }
 
     override func unlink() {

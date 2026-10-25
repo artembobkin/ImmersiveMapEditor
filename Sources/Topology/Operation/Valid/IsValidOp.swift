@@ -14,8 +14,8 @@ public final class IsValidOp {
     public static func isValid(_ coord: Coordinate) -> Bool { coord.x.isFinite && coord.y.isFinite }
 
     let inputGeometry: Geometry
-    var isInvertedRingValid = false
-    var validErr: TopologyValidationError?
+    @exclusivity(unchecked) var isInvertedRingValid = false
+    @exclusivity(unchecked) var validErr: TopologyValidationError?
 
     public init(_ inputGeometry: Geometry) {
         self.inputGeometry = inputGeometry

@@ -7,13 +7,13 @@
 extension GeomGraph {
     class EdgeEnd {
         let edge: Edge
-        var label: Label!
-        var node: Node?
-        private(set) var p0 = Coordinate(0, 0)
-        private(set) var p1 = Coordinate(0, 0)
-        private(set) var dx = 0.0
-        private(set) var dy = 0.0
-        private(set) var quadrant = 0
+        @exclusivity(unchecked) var label: Label!
+        @exclusivity(unchecked) var node: Node?
+        @exclusivity(unchecked) private(set) var p0 = Coordinate(0, 0)
+        @exclusivity(unchecked) private(set) var p1 = Coordinate(0, 0)
+        @exclusivity(unchecked) private(set) var dx = 0.0
+        @exclusivity(unchecked) private(set) var dy = 0.0
+        @exclusivity(unchecked) private(set) var quadrant = 0
 
         init(_ edge: Edge) { self.edge = edge }
 
@@ -42,15 +42,15 @@ extension GeomGraph {
 
     final class DirectedEdge: EdgeEnd {
         let isForward: Bool
-        var isInResult = false
-        var isVisited = false
-        unowned(unsafe) var sym: DirectedEdge!
-        unowned(unsafe) var next: DirectedEdge?
-        unowned(unsafe) var nextMin: DirectedEdge?
-        var edgeRing: EdgeRing?
-        var minEdgeRing: EdgeRing?
+        @exclusivity(unchecked) var isInResult = false
+        @exclusivity(unchecked) var isVisited = false
+        @exclusivity(unchecked) unowned(unsafe) var sym: DirectedEdge!
+        @exclusivity(unchecked) unowned(unsafe) var next: DirectedEdge?
+        @exclusivity(unchecked) unowned(unsafe) var nextMin: DirectedEdge?
+        @exclusivity(unchecked) var edgeRing: EdgeRing?
+        @exclusivity(unchecked) var minEdgeRing: EdgeRing?
         /// The depths on the edge, its left and its right (`Position`).
-        private var depth = [0, -999, -999]
+        @exclusivity(unchecked) private var depth = [0, -999, -999]
 
         init(_ edge: Edge, _ isForward: Bool) {
             self.isForward = isForward

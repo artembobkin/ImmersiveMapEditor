@@ -5,12 +5,12 @@
 /// of its parts). Coordinates come back nil where GEOS returns a null
 /// sequence, which makes an empty component.
 class GeometryTransformer {
-    var factory: GeometryFactory = .default
-    var inputGeom: Geometry?
-    var pruneEmptyGeometry = true
-    var preserveGeometryCollectionType = true
-    var preserveType = false
-    var skipTransformedInvalidInteriorRings = false
+    @exclusivity(unchecked) var factory: GeometryFactory = .default
+    @exclusivity(unchecked) var inputGeom: Geometry?
+    @exclusivity(unchecked) var pruneEmptyGeometry = true
+    @exclusivity(unchecked) var preserveGeometryCollectionType = true
+    @exclusivity(unchecked) var preserveType = false
+    @exclusivity(unchecked) var skipTransformedInvalidInteriorRings = false
 
     func transform(_ inputGeom: Geometry) throws -> Geometry {
         self.inputGeom = inputGeom

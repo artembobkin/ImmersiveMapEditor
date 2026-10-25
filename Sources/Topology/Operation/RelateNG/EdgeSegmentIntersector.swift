@@ -7,9 +7,9 @@ final class EdgeSegmentIntersector: SegmentIntersector {
 
     init(_ topoBuilder: TopologyComputer) { topoComputer = topoBuilder }
 
-    func isDone() -> Bool { topoComputer.isResultKnown() }
+    override func isDone() -> Bool { topoComputer.isResultKnown() }
 
-    func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
+    override func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
         if ss0 === ss1 && segIndex0 == segIndex1 { return }
         let rss0 = ss0 as! RelateSegmentString, rss1 = ss1 as! RelateSegmentString
         if rss0.isA {

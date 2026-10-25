@@ -4,16 +4,16 @@
 public final class IntersectionAdder: SegmentIntersector {
     public static func isAdjacentSegments(_ i1: Int, _ i2: Int) -> Bool { abs(i1 - i2) == 1 }
 
-    public private(set) var hasIntersection = false
-    public private(set) var hasProper = false
-    public private(set) var hasProperInterior = false
-    public private(set) var hasInterior = false
-    public private(set) var properIntersectionPoint: Coordinate?
+    @exclusivity(unchecked) public private(set) var hasIntersection = false
+    @exclusivity(unchecked) public private(set) var hasProper = false
+    @exclusivity(unchecked) public private(set) var hasProperInterior = false
+    @exclusivity(unchecked) public private(set) var hasInterior = false
+    @exclusivity(unchecked) public private(set) var properIntersectionPoint: Coordinate?
     @exclusivity(unchecked) public var li: RobustLineIntersector
-    public var numIntersections = 0
-    public var numInteriorIntersections = 0
-    public var numProperIntersections = 0
-    public var numTests = 0
+    @exclusivity(unchecked) public var numIntersections = 0
+    @exclusivity(unchecked) public var numInteriorIntersections = 0
+    @exclusivity(unchecked) public var numProperIntersections = 0
+    @exclusivity(unchecked) public var numTests = 0
 
     public init(_ li: RobustLineIntersector) { self.li = li }
 
@@ -28,7 +28,7 @@ public final class IntersectionAdder: SegmentIntersector {
         return false
     }
 
-    public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
         if e0 === e1 && segIndex0 == segIndex1 { return }
         numTests += 1
         li.computeIntersection(e0.getCoordinate(segIndex0), e0.getCoordinate(segIndex0 + 1),
@@ -52,5 +52,5 @@ public final class IntersectionAdder: SegmentIntersector {
         }
     }
 
-    public func isDone() -> Bool { false }
+    override public func isDone() -> Bool { false }
 }

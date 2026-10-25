@@ -6,20 +6,20 @@ final class PolygonIntersectionAnalyzer: SegmentIntersector {
     static let noInvalidIntersection = -1
 
     let isInvertedRingValid: Bool
-    var li = RobustLineIntersector()
-    private(set) var invalidCode = PolygonIntersectionAnalyzer.noInvalidIntersection
-    private(set) var invalidLocation: Coordinate?
-    private(set) var hasDoubleTouch = false
-    private(set) var doubleTouchLocation: Coordinate?
+    @exclusivity(unchecked) var li = RobustLineIntersector()
+    @exclusivity(unchecked) private(set) var invalidCode = PolygonIntersectionAnalyzer.noInvalidIntersection
+    @exclusivity(unchecked) private(set) var invalidLocation: Coordinate?
+    @exclusivity(unchecked) private(set) var hasDoubleTouch = false
+    @exclusivity(unchecked) private(set) var doubleTouchLocation: Coordinate?
 
     init(_ isInvertedRingValid: Bool) {
         self.isInvertedRingValid = isInvertedRingValid
     }
 
-    func isDone() -> Bool { isInvalid() || hasDoubleTouch }
+    override func isDone() -> Bool { isInvalid() || hasDoubleTouch }
     func isInvalid() -> Bool { invalidCode >= 0 }
 
-    func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
+    override func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
         // don't test a segment with itself
         let isSameSegString = ss0 === ss1
         let isSameSegment = isSameSegString && segIndex0 == segIndex1

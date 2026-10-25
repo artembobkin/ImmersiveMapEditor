@@ -5,11 +5,11 @@
 extension GeomGraph {
     final class Edge {
         let pts: [Coordinate]
-        var label: Label
+        @exclusivity(unchecked) var label: Label
         /// The change of depth from the edge's right to its left.
-        var depthDelta = 0
-        var isInResult = false
-        private var env: Envelope?
+        @exclusivity(unchecked) var depthDelta = 0
+        @exclusivity(unchecked) var isInResult = false
+        @exclusivity(unchecked) private var env: Envelope?
 
         init(_ pts: [Coordinate], _ label: Label) {
             self.pts = pts
@@ -38,8 +38,8 @@ extension GeomGraph {
     /// The edges of a graph, with the edge equal to a given one (the same
     /// points in either direction) found at once.
     final class EdgeList {
-        private(set) var edges: [Edge] = []
-        private var ocaMap: [OrientedKey: Edge] = [:]
+        @exclusivity(unchecked) private(set) var edges: [Edge] = []
+        @exclusivity(unchecked) private var ocaMap: [OrientedKey: Edge] = [:]
 
         func add(_ e: Edge) {
             edges.append(e)

@@ -20,11 +20,11 @@ public final class STRtree<Item> {
 
     final class Node {
         let level: Int
-        var children: [Boundable] = []
+        @exclusivity(unchecked) var children: [Boundable] = []
         /// For a node of the lowest level, the index of its first item
         /// among the leaves in the order the tree packed them.
-        var firstLeaf = 0
-        private var cached: Envelope?
+        @exclusivity(unchecked) var firstLeaf = 0
+        @exclusivity(unchecked) private var cached: Envelope?
 
         init(level: Int) { self.level = level }
 
@@ -47,11 +47,12 @@ public final class STRtree<Item> {
     /// envelope centres and equal distances come out in another order.
     public enum TieOrder { case jts, geos }
     public let tieOrder: TieOrder
-    private var itemBoundables: [Boundable] = []
+    /// The items as inserted, before the tree is built.
+    @exclusivity(unchecked) private var items: [(Envelope, Item)] = []
+    @exclusivity(unchecked) private var isBuilt = false
     /// The items in the order the tree packed them (sorted by x, then each
     /// slice by y), the order GEOS keeps its leaves in.
-    private var leaves: [(Envelope, Item)] = []
-    private var root: Node?
+    @exclusivity(unchecked) private var leaves: [(Envelope, Item)] = []
     /// The built tree in one array for the queries: each node's children
     /// next to each other, in their order (`flat[0]` the root). An entry
     /// with `item >= 0` is an item, its index among `leaves`.
@@ -61,7 +62,9 @@ public final class STRtree<Item> {
         var count = 0
         var item = -1
     }
-    private var flat: [FlatEntry] = []
+    @exclusivity(unchecked) private var flat: [FlatEntry] = []
+    /// The tree as nodes, made from `flat` for the nearest neighbour search.
+    @exclusivity(unchecked) private var nodeRoot: Node?
 
     public init(nodeCapacity: Int = 10, tieOrder: TieOrder = .geos) {
         precondition(nodeCapacity > 1, "Node capacity must be greater than 1")
@@ -69,123 +72,147 @@ public final class STRtree<Item> {
         self.tieOrder = tieOrder
     }
 
-    /// Sorted by a key, ties broken by the tree's order.
-    func sorted(_ b: [Boundable], by key: (Envelope) -> Double) -> [Boundable] {
-        switch tieOrder {
-        case .jts: return javaSorted(b) { STRtree.compareDoubles(key($0.bounds), key($1.bounds)) }
-        case .geos:
-            var a = b
-            CxxAlgorithms.sort(&a) { key($0.bounds) < key($1.bounds) }
-            return a
-        }
-    }
-
     /// Adds an item. One with a null envelope is not indexed, as in JTS.
     public func insert(_ env: Envelope, _ item: Item) {
-        precondition(root == nil, "Cannot insert items into an STR packed R-tree after it has been built.")
+        precondition(!isBuilt, "Cannot insert items into an STR packed R-tree after it has been built.")
         if env.isNull { return }
-        itemBoundables.append(.item(env, item))
-    }
-
-    public func build() {
-        if root != nil { return }
-        root = itemBoundables.isEmpty ? Node(level: 0) : createHigherLevels(itemBoundables, -1)
-        itemBoundables = []
-        flatten()
-    }
-
-    private func flatten() {
-        let root = root!
-        flat = [FlatEntry(env: root.bounds)]
-        var queue: [(Int, Node)] = [(0, root)]
-        var head = 0
-        while head < queue.count {
-            let (idx, node) = queue[head]
-            head += 1
-            let first = flat.count
-            for (k, c) in node.children.enumerated() {
-                switch c {
-                case .node(let n):
-                    flat.append(FlatEntry(env: n.bounds))
-                    queue.append((flat.count - 1, n))
-                case .item(let e, _):
-                    flat.append(FlatEntry(env: e, item: node.firstLeaf + k))
-                }
-            }
-            flat[idx].first = first
-            flat[idx].count = node.children.count
-        }
-    }
-
-    public var isEmpty: Bool {
-        guard let root else { return itemBoundables.isEmpty }
-        return root.children.isEmpty
-    }
-
-    public var size: Int {
-        if isEmpty { return 0 }
-        build()
-        func count(_ n: Node) -> Int {
-            n.children.reduce(0) { s, c in
-                if case .node(let m) = c { return s + count(m) }
-                return s + 1
-            }
-        }
-        return count(root!)
+        items.append((env, item))
     }
 
     // MARK: Building
 
-    static func centreX(_ e: Envelope) -> Double { (e.minX + e.maxX) / 2 }
-    static func centreY(_ e: Envelope) -> Double { (e.minY + e.maxY) / 2 }
+    /// A node of a level while the tree is packed: its envelope and its
+    /// children, a range of the level's child list (indices into the level
+    /// below; for the lowest level, into the items).
+    private struct PackNode {
+        var env: Envelope
+        var first: Int
+        var count: Int
+    }
+
+    /// Packs the tree, as JTS's `AbstractSTRtree` packs it, into value
+    /// arrays: level by level, the boundables sorted by the x of their
+    /// centre, cut into vertical slices, each slice sorted by the y of the
+    /// centre and packed into nodes of `nodeCapacity`, until one node is
+    /// left. The sorts see the same sequences and the same comparisons as
+    /// JTS's (or libc++'s) sort of the boundables, so the packing is theirs.
+    public func build() {
+        if isBuilt { return }
+        isBuilt = true
+        flat = []
+        if items.isEmpty {
+            flat = [FlatEntry(env: Envelope())]
+            return
+        }
+        var levels: [(nodes: [PackNode], children: [Int])] = []
+        // The boundables of the level below: their envelopes, by index.
+        var envs = items.map(\.0)
+        var level = 0
+        while true {
+            var nodes: [PackNode] = []
+            var children: [Int] = []
+            let n = envs.count
+            children.reserveCapacity(n)
+            nodes.reserveCapacity(n / nodeCapacity + Int(Double(n).squareRoot()) + 2)
+            let minLeafCount = Int((Double(n) / Double(nodeCapacity)).rounded(.up))
+            let sliceCount = Int(Double(minLeafCount).squareRoot().rounded(.up))
+            var order = Array(0..<n)
+            // The centres once per level: the comparisons see the same values.
+            let centreX = envs.map { ($0.minX + $0.maxX) / 2 }, centreY = envs.map { ($0.minY + $0.maxY) / 2 }
+            sortIndices(&order, centreX)
+            let sliceCapacity = Int((Double(n) / Double(sliceCount)).rounded(.up))
+            var i = 0
+            for _ in 0..<sliceCount {
+                let end = min(n, i + sliceCapacity)
+                var slice = Array(order[i..<end])
+                i = end
+                // An empty slice gives one empty node in JTS; only the last
+                // slices can be empty, and only when n is small (JTS asserts
+                // a slice is not empty).
+                precondition(!slice.isEmpty)
+                sortIndices(&slice, centreY)
+                var k = 0
+                while k < slice.count {
+                    let count = min(nodeCapacity, slice.count - k)
+                    var env = envs[slice[k]]
+                    for c in (k + 1)..<(k + count) { env.expandToInclude(envs[slice[c]]) }
+                    nodes.append(PackNode(env: env, first: children.count, count: count))
+                    children.append(contentsOf: slice[k..<(k + count)])
+                    k += count
+                }
+            }
+            levels.append((nodes, children))
+            if nodes.count == 1 { break }
+            envs = nodes.map(\.env)
+            level += 1
+        }
+        // The leaves in packed order: the items of the lowest level's nodes.
+        let lowest = levels[0]
+        var firstLeaf = [Int](repeating: 0, count: lowest.nodes.count)
+        leaves.reserveCapacity(items.count)
+        for (k, node) in lowest.nodes.enumerated() {
+            firstLeaf[k] = leaves.count
+            for c in node.first..<(node.first + node.count) { leaves.append(items[lowest.children[c]]) }
+        }
+        items = []
+        // The flat tree, breadth first from the root, as the nodes had it.
+        let top = levels.count - 1
+        flat.reserveCapacity(leaves.count + levels.reduce(0) { $0 + $1.nodes.count })
+        flat.append(FlatEntry(env: levels[top].nodes[0].env))
+        var queue: [(flatIndex: Int, level: Int, node: Int)] = [(0, top, 0)]
+        queue.reserveCapacity(levels.reduce(0) { $0 + $1.nodes.count })
+        var head = 0
+        while head < queue.count {
+            let (idx, lvl, nodeIndex) = queue[head]
+            head += 1
+            let node = levels[lvl].nodes[nodeIndex]
+            let first = flat.count
+            for c in node.first..<(node.first + node.count) {
+                let child = levels[lvl].children[c]
+                if lvl == 0 {
+                    flat.append(FlatEntry(env: leaves[firstLeaf[nodeIndex] + (c - node.first)].0, item: firstLeaf[nodeIndex] + (c - node.first)))
+                } else {
+                    flat.append(FlatEntry(env: levels[lvl - 1].nodes[child].env))
+                    queue.append((flat.count - 1, lvl - 1, child))
+                }
+            }
+            flat[idx].first = first
+            flat[idx].count = node.count
+        }
+    }
+
+    /// Sorts indices by their keys, ties as the tree breaks them.
+    private func sortIndices(_ a: inout [Int], _ keys: [Double]) {
+        keys.withUnsafeBufferPointer { k in
+            switch tieOrder {
+            case .jts: a = javaSorted(a) { STRtree.compareDoubles(k[$0], k[$1]) }
+            case .geos: CxxAlgorithms.sort(&a) { k[$0] < k[$1] }
+            }
+        }
+    }
+
+
+    public var isEmpty: Bool { isBuilt ? leaves.isEmpty : items.isEmpty }
+
+    public var size: Int { isBuilt ? leaves.count : items.count }
 
     static func compareDoubles(_ a: Double, _ b: Double) -> Int { a > b ? 1 : (a < b ? -1 : 0) }
 
-    func createHigherLevels(_ boundablesOfALevel: [Boundable], _ level: Int) -> Node {
-        let parents = createParentBoundables(boundablesOfALevel, level + 1)
-        if parents.count == 1, case .node(let n) = parents[0] { return n }
-        return createHigherLevels(parents, level + 1)
-    }
-
-    func createParentBoundables(_ children: [Boundable], _ newLevel: Int) -> [Boundable] {
-        let minLeafCount = Int((Double(children.count) / Double(nodeCapacity)).rounded(.up))
-        let sorted = self.sorted(children, by: STRtree.centreX)
-        let slices = verticalSlices(sorted, Int(Double(minLeafCount).squareRoot().rounded(.up)))
-        return slices.flatMap { createParentBoundablesFromVerticalSlice($0, newLevel) }
-    }
-
-    func verticalSlices(_ children: [Boundable], _ sliceCount: Int) -> [[Boundable]] {
-        let sliceCapacity = Int((Double(children.count) / Double(sliceCount)).rounded(.up))
-        var slices: [[Boundable]] = []
-        var i = 0
-        for _ in 0..<sliceCount {
-            var slice: [Boundable] = []
-            while i < children.count && slice.count < sliceCapacity {
-                slice.append(children[i])
-                i += 1
+    /// The tree as nodes, for the nearest neighbour search.
+    private func nodes() -> Node {
+        if let n = nodeRoot { return n }
+        func make(_ idx: Int, _ level: Int) -> Node {
+            let node = Node(level: level)
+            let e = flat[idx]
+            for c in e.first..<(e.first + e.count) {
+                let ch = flat[c]
+                node.children.append(ch.item >= 0 ? .item(ch.env, leaves[ch.item].1) : .node(make(c, level - 1)))
             }
-            slices.append(slice)
+            return node
         }
-        return slices
-    }
-
-    /// AbstractSTRtree's packing of one slice: sorted by the y of the centre,
-    /// into nodes of `nodeCapacity`.
-    func createParentBoundablesFromVerticalSlice(_ children: [Boundable], _ newLevel: Int) -> [Boundable] {
-        precondition(!children.isEmpty)
-        var parents = [Node(level: newLevel)]
-        let sorted = self.sorted(children, by: STRtree.centreY)
-        for c in sorted {
-            if parents.last!.children.count == nodeCapacity { parents.append(Node(level: newLevel)) }
-            parents.last!.children.append(c)
-        }
-        if newLevel == 0 {
-            for p in parents {
-                p.firstLeaf = leaves.count
-                for case .item(let e, let item) in p.children { leaves.append((e, item)) }
-            }
-        }
-        return parents.map { .node($0) }
+        let n = make(0, 0)
+        nodeRoot = n
+        return n
     }
 
     // MARK: Querying
@@ -211,7 +238,7 @@ public final class STRtree<Item> {
         let e = f[idx]
         for c in e.first..<(e.first + e.count) {
             let ch = f[c]
-            guard ch.env.intersects(searchEnv) else { continue }
+            guard ch.env.intersectsNonNull(searchEnv) else { continue }
             if ch.item >= 0 { visit(l[ch.item].1) } else { queryFlat(f, l, searchEnv, c, visit) }
         }
     }
@@ -235,27 +262,36 @@ public final class STRtree<Item> {
     public func queryPairs(_ visit: (Item, Item) -> Bool) {
         build()
         guard leaves.count >= 2 else { return }
+        leaves.withUnsafeBufferPointer { l in
+            queryPairIndices { visit(l[$0].1, l[$1].1) }
+        }
+    }
+
+    /// `queryPairs` by the items' positions in the packed order
+    /// (`itemsInPackedOrder`), for callers that keep the items themselves.
+    public func queryPairIndices(_ visit: (Int, Int) -> Bool) {
+        build()
+        guard leaves.count >= 2 else { return }
         flat.withUnsafeBufferPointer { f in
             leaves.withUnsafeBufferPointer { l in
-                for i in l.indices { _ = STRtree.queryPairsFlat(f, l, i, l[i].0, 0, visit) }
+                for i in l.indices { _ = STRtree.queryPairsFlat(f, i, l[i].0, 0, visit) }
             }
         }
     }
 
-    private static func queryPairsFlat(_ f: UnsafeBufferPointer<FlatEntry>, _ l: UnsafeBufferPointer<(Envelope, Item)>,
-                                       _ i: Int, _ queryEnv: Envelope, _ idx: Int, _ visit: (Item, Item) -> Bool) -> Bool {
+    private static func queryPairsFlat(_ f: UnsafeBufferPointer<FlatEntry>, _ i: Int, _ queryEnv: Envelope, _ idx: Int,
+                                       _ visit: (Int, Int) -> Bool) -> Bool {
         let e = f[idx]
         for c in e.first..<(e.first + e.count) {
             let ch = f[c]
             if ch.item >= 0 {
-                if ch.item > i && ch.env.intersects(queryEnv) && !visit(l[i].1, l[ch.item].1) { return false }
-            } else if ch.env.intersects(queryEnv) && !queryPairsFlat(f, l, i, queryEnv, c, visit) {
+                if ch.item > i && ch.env.intersectsNonNull(queryEnv) && !visit(i, ch.item) { return false }
+            } else if ch.env.intersectsNonNull(queryEnv) && !queryPairsFlat(f, i, queryEnv, c, visit) {
                 return false
             }
         }
         return true
     }
-
 
     // MARK: Nearest neighbour
 
@@ -344,7 +380,7 @@ public final class STRtree<Item> {
     public func nearestNeighbour(_ env: Envelope, _ item: Item, _ itemDistance: (Item, Item) -> Double) -> Item? {
         if isEmpty { return nil }
         build()
-        let initial = BoundablePair(.node(root!), .item(env, item), itemDistance)
+        let initial = BoundablePair(.node(nodes()), .item(env, item), itemDistance)
         guard let pair = nearestNeighbour(initial, itemDistance), case .item(_, let found) = pair.b1 else { return nil }
         return found
     }

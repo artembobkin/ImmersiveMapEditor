@@ -8,8 +8,8 @@
 /// its node set (GEOS's `Node::add`).
 extension GeomGraph {
     final class DirectedEdgeStar {
-        private(set) var edges: [DirectedEdge] = []
-        private var resultAreaEdgeList: [DirectedEdge]?
+        @exclusivity(unchecked) private(set) var edges: [DirectedEdge] = []
+        @exclusivity(unchecked) private var resultAreaEdgeList: [DirectedEdge]?
 
         /// Inserts an end in its place around the node, unless an end of the
         /// same direction is there.

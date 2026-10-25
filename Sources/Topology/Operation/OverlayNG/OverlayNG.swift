@@ -67,13 +67,13 @@ public final class OverlayNG {
     private let inputGeom: InputGeometry
     private let factory: GeometryFactory
     private let pm: PrecisionModel?
-    var noder: Noder?
+    @exclusivity(unchecked) var noder: Noder?
     /// Strict mode keeps a result homogeneous: no collapsed lines, no lower
     /// dimension parts of an intersection.
-    public var isStrictMode = OverlayNG.strictModeDefault
+    @exclusivity(unchecked) public var isStrictMode = OverlayNG.strictModeDefault
     /// Whether edges are clipped to the result's envelope first.
-    public var isOptimized = true
-    var isAreaResultOnly = false
+    @exclusivity(unchecked) public var isOptimized = true
+    @exclusivity(unchecked) var isAreaResultOnly = false
 
     public init(_ geom0: Geometry, _ geom1: Geometry?, _ pm: PrecisionModel?, _ opCode: Int) {
         self.pm = pm
@@ -123,7 +123,7 @@ public final class OverlayNG {
     }
 
     private func buildGraph(_ edges: [Edge]) throws -> OverlayGraph {
-        let graph = OverlayGraph()
+        let graph = OverlayGraph(capacity: edges.count)
         for e in edges { try graph.addEdge(e.pts, e.createLabel()) }
         return graph
     }

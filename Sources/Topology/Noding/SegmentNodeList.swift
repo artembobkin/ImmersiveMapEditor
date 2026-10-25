@@ -8,9 +8,9 @@
 /// equal nodes (`0.0` and `-0.0`) stays follows from that, so the port does
 /// the same, with the sort translated in `CxxAlgorithms`.
 public final class SegmentNodeList {
-    private var nodes: [SegmentNode] = []
+    @exclusivity(unchecked) private var nodes: [SegmentNode] = []
     /// Whether `nodes` is sorted and free of duplicates.
-    private var ready = true
+    @exclusivity(unchecked) private var ready = true
     unowned let edge: NodedSegmentString
 
     init(_ edge: NodedSegmentString) { self.edge = edge }

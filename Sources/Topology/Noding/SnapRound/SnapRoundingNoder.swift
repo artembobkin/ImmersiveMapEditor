@@ -7,7 +7,7 @@ public final class SnapRoundingNoder: Noder {
 
     let pm: PrecisionModel
     let pixelIndex: HotPixelIndex
-    var snappedResult: [NodedSegmentString] = []
+    @exclusivity(unchecked) var snappedResult: [NodedSegmentString] = []
 
     public init(_ pm: PrecisionModel) {
         self.pm = pm

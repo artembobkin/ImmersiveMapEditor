@@ -2,11 +2,11 @@
 /// `InteriorIntersectionFinderAdder`.
 public final class InteriorIntersectionFinderAdder: SegmentIntersector {
     @exclusivity(unchecked) public var li: RobustLineIntersector
-    public private(set) var interiorIntersections: [Coordinate] = []
+    @exclusivity(unchecked) public private(set) var interiorIntersections: [Coordinate] = []
 
     public init(_ li: RobustLineIntersector) { self.li = li }
 
-    public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
         if e0 === e1 && segIndex0 == segIndex1 { return }
         li.computeIntersection(e0.getCoordinate(segIndex0), e0.getCoordinate(segIndex0 + 1),
                                e1.getCoordinate(segIndex1), e1.getCoordinate(segIndex1 + 1))
@@ -17,5 +17,5 @@ public final class InteriorIntersectionFinderAdder: SegmentIntersector {
         }
     }
 
-    public func isDone() -> Bool { false }
+    override public func isDone() -> Bool { false }
 }

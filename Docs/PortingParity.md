@@ -279,6 +279,46 @@ Optimized, on every recorded call (the port's objects of `swift build -c release
 
 What changed: the stable merge sort behind JTS's sorts (`javaSorted`) merges in one scratch buffer instead of allocating arrays at every level (the same order, the same comparisons); the STR tree is queried from one flat array of its nodes; the line intersector keeps its points inline instead of in arrays; the segment envelope test uses GEOS's `std::min` and `std::max`; the intersectors held by noders skip the dynamic exclusivity checks. The rest is reference counting and allocation, for a later pass. Run to run the times vary by about 10%.
 
+## Speed after the second optimization pass: one whole tile
+
+Every recorded call of the tile `15/19808/10243` (545,244 calls), each timed alone on each side, its result made and freed inside the measure, in an optimized build (`TOPOLOGY_SPEED=1 swift test -c release -Xswiftc -enable-testing --filter SpeedTests`, `Recording/SpeedTests`; GEOS at the release flags of the same build). The goal's bar (Docs/PortingGoal.md, "Performance") is a tile in at most 1.5 times GEOS's time.
+
+| Function | Calls | Port | GEOS | Port / GEOS | Before the pass |
+|---|---:|---:|---:|---:|---:|
+| unaryUnion | 19,562 | 9,775 ms | 6,263 ms | 1.56 | 3.10 |
+| intersection | 1,654 | 720 ms | 557 ms | 1.29 | 2.22 |
+| buffer | 56,897 | 564 ms | 376 ms | 1.50 | 2.26 |
+| constrainedDelaunay | 1,437 | 456 ms | 407 ms | 1.12 | 1.98 |
+| intersects | 311,181 | 399 ms | 382 ms | 1.04 | 1.19 |
+| difference | 614 | 122 ms | 93 ms | 1.31 | 2.71 |
+| setPrecision | 27 | 105 ms | 89 ms | 1.18 | 1.71 |
+| polygonize | 3,745 | 59 ms | 35 ms | 1.70 | 3.28 |
+| Prepared.contains | 47,777 | 53 ms | 32 ms | 1.69 | 2.34 |
+| makeValid | 54 | 46 ms | 43 ms | 1.08 | 2.06 |
+| isValid | 6,690 | 33 ms | 21 ms | 1.52 | 3.34 |
+| lineMerge | 3,746 | 32 ms | 23 ms | 1.39 | 1.68 |
+| contains | 8,278 | 23 ms | 10 ms | 2.36 | 2.89 |
+| distance | 8,368 | 18 ms | 7 ms | 2.72 | 2.69 |
+| simplify | 2,057 | 16 ms | 26 ms | 0.64 | 0.83 |
+| area | 56,362 | 11 ms | 28 ms | 0.39 | 0.40 |
+| union | 1 | 8 ms | 8 ms | 1.04 | 2.14 |
+| the 11 others (bounds, length, interpolate, the STR tree, ...) | 16,794 | 3 ms | 3 ms | | |
+| **total** | **545,244** | **12,443 ms** | **8,400 ms** | **1.48** | **2.81** |
+
+Run to run the total ratio was 1.48 to 1.50 over four runs. Not a result changed: before the pass and after it, every parity suite, the JTS XML suites and every recorded call of every function (2.2 million, the long replays in an optimized build) were GEOS's bit for bit.
+
+What changed (the profile was taken with Instruments' Time Profiler, `xctrace`, on the port's side alone; `sample` showed the port at 1.2 times GEOS where the clock said 1.9, and misled the first steps):
+
+- **Exclusivity checks off** on the stored properties of the port's classes (`@exclusivity(unchecked)`, 327 of them): the dynamic checks were a tenth of the time. The debug suite, which keeps the checks on, has never met an overlapping access.
+- **Segment strings and segment intersectors are base classes**, not class-bound protocols: calls through a protocol existential retained and released each argument and looked up its type, at every pair of segments the noders test. `SegmentString` holds the points and the data, with final methods.
+- **The noders call the intersector without a closure** (`MonotoneChain.computeOverlaps(_:_:_:)` with a `SegmentIntersector`), the chains' points read through buffers taken once per pair of chains, and `MCIndexNoder` keeps its chains in its tree as `Unmanaged` references (alive in its own array), so the pair search reads them without reference counting.
+- **The STR tree is built into flat value arrays** (no node objects, no boundable enums), the sort keys computed once per level: the same sorts on the same sequences, so the same packing and the same order. Its queries skip the null test of entries that cannot be null. The nearest neighbour search makes its node tree from the flat one when first used.
+- **The overlay graph's half-edge links are `unowned(unsafe)`** (the graph's edge array owns every edge while the graph is used), its node map a class (reading a struct of arrays out of a class property copied it each time) with its arrays reserved.
+- **The interval tree of the indexed point locator** sorts indices of its intervals' middles (Swift's sort; any order of equal middles gives the same query sets, and the crossing count depends only on the set), with its arrays reserved.
+- **Fewer allocations**: a noded segment string makes its node list only when a node is added, the chains are appended straight into the noder's array, the KD-tree reuses its query stack, the edge merger and the graph reserve their arrays.
+
+Tried and dropped: `unowned(unsafe)` local variables for the graph traversals (slower: 9.8 s to 10.2 s for the unary union).
+
 ## Phases 6 and 7: validity, make valid, precision, simplify, triangulation, polygonize, line merge, linear referencing against GEOS
 
 Every comparison is exact: geometries in GEOS's normal form bit for bit and as they come (not normalized), numbers by their bits, the validity with its reason and its location bit for bit (`GEOSisValidDetail`); where GEOS fails, the port must throw. The random inputs are phase 2's (`RandomGeometries`) and new often invalid ones (`InvalidGeometries`: rings of shuffled grid points, bow-ties and figure eights, spikes and gores, holes inside, crossing, touching or outside their shell, nested and repeated holes, holes touching each other and the shell in a cycle, a hole touching its shell twice, inverted rings, overlapping, touching and nested parts of multipolygons, rings and lines of too few distinct points, NaN and infinite ordinates, collections of these). The linework of the polygonizer and the line merger is pieces of random walks on grids (shared ends, reversed pieces, loops, repeats), the noded boundaries of random geometries (GEOS's unary union of them), polygons and raw crossing lines.

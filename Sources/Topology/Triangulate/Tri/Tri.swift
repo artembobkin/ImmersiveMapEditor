@@ -3,12 +3,12 @@
 /// neighbour across it is `getAdjacent(i)`. Triangles are classes (their
 /// adjacency is by identity), kept alive by the list that holds them.
 final class Tri {
-    var p0: Coordinate
-    var p1: Coordinate
-    var p2: Coordinate
-    unowned(unsafe) var tri0: Tri?
-    unowned(unsafe) var tri1: Tri?
-    unowned(unsafe) var tri2: Tri?
+    @exclusivity(unchecked) var p0: Coordinate
+    @exclusivity(unchecked) var p1: Coordinate
+    @exclusivity(unchecked) var p2: Coordinate
+    @exclusivity(unchecked) unowned(unsafe) var tri0: Tri?
+    @exclusivity(unchecked) unowned(unsafe) var tri1: Tri?
+    @exclusivity(unchecked) unowned(unsafe) var tri2: Tri?
 
     init(_ p0: Coordinate, _ p1: Coordinate, _ p2: Coordinate) {
         self.p0 = p0

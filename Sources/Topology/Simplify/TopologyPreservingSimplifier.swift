@@ -18,7 +18,7 @@ public final class TopologyPreservingSimplifier {
     }
 
     let inputGeom: Geometry
-    var distanceTolerance = 0.0
+    @exclusivity(unchecked) var distanceTolerance = 0.0
 
     public init(_ inputGeom: Geometry) { self.inputGeom = inputGeom }
 
@@ -59,18 +59,18 @@ public final class TopologyPreservingSimplifier {
 /// A segment of an input line, with the line and its index in it: JTS's
 /// `TaggedLineSegment`, a class (the indexes keep segments by identity).
 final class TaggedLineSegment {
-    var p0: Coordinate
-    var p1: Coordinate
+    @exclusivity(unchecked) var p0: Coordinate
+    @exclusivity(unchecked) var p1: Coordinate
     /// The line it belongs to (nil for a segment made by simplifying).
     unowned(unsafe) let parent: LineString?
     let index: Int
     /// Whether it is in the input index now.
-    var inInputIndex = false
+    @exclusivity(unchecked) var inInputIndex = false
     /// Whether it is in the output index now.
-    var inOutputIndex = false
+    @exclusivity(unchecked) var inOutputIndex = false
     /// The last query of each index that saw it.
-    var inputStamp = 0
-    var outputStamp = 0
+    @exclusivity(unchecked) var inputStamp = 0
+    @exclusivity(unchecked) var outputStamp = 0
 
     init(_ p0: Coordinate, _ p1: Coordinate, _ parent: LineString? = nil, _ index: Int = -1) {
         self.p0 = p0
@@ -88,8 +88,8 @@ final class TaggedLineSegment {
 /// JTS's `TaggedLineString`.
 final class TaggedLineString {
     let parentLine: LineString
-    private(set) var segs: [TaggedLineSegment] = []
-    var resultSegs: [TaggedLineSegment] = []
+    @exclusivity(unchecked) private(set) var segs: [TaggedLineSegment] = []
+    @exclusivity(unchecked) var resultSegs: [TaggedLineSegment] = []
     let minimumSize: Int
     let isRing: Bool
 
@@ -139,9 +139,9 @@ final class LineSegmentIndex {
     private let frame: Envelope
     private let nx: Int, ny: Int
     private let cellW: Double, cellH: Double
-    private var cells: [[TaggedLineSegment]]
+    @exclusivity(unchecked) private var cells: [[TaggedLineSegment]]
     /// A query's mark, so a segment in several cells is seen once.
-    private var stamp = 0
+    @exclusivity(unchecked) private var stamp = 0
 
     init(input: Bool, frame: Envelope, count: Int) {
         isInput = input

@@ -2,9 +2,9 @@
 /// JTS's `FastNodingValidator`.
 public final class FastNodingValidator {
     let segStrings: [SegmentString]
-    public var findAllIntersections = false
-    var segInt: NodingIntersectionFinder?
-    var valid = true
+    @exclusivity(unchecked) public var findAllIntersections = false
+    @exclusivity(unchecked) var segInt: NodingIntersectionFinder?
+    @exclusivity(unchecked) var valid = true
 
     public init(_ segStrings: [SegmentString]) { self.segStrings = segStrings }
 

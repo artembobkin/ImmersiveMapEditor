@@ -10,7 +10,7 @@
 final class OffsetCurveBuilder {
     private static let simplifyFactor = 100.0
 
-    private var distance = 0.0
+    @exclusivity(unchecked) private var distance = 0.0
     private let precisionModel: PrecisionModel
     let bufParams: BufferParameters
 

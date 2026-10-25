@@ -6,7 +6,7 @@
 final class EdgeSetIntersector {
     private let index = STRtree<MonotoneChain>()
     private let envelope: Envelope?
-    private var idCounter = 0
+    @exclusivity(unchecked) private var idCounter = 0
 
     init(_ edgesA: [RelateSegmentString], _ edgesB: [RelateSegmentString], _ env: Envelope?) {
         envelope = env

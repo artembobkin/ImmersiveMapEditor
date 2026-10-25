@@ -6,7 +6,7 @@
 public final class SnappingNoder: Noder {
     private let snapIndex: SnappingPointIndex
     private let snapTolerance: Double
-    private var nodedResult: [SegmentString] = []
+    @exclusivity(unchecked) private var nodedResult: [SegmentString] = []
 
     public init(_ snapTolerance: Double) {
         self.snapTolerance = snapTolerance

@@ -36,8 +36,8 @@ struct SpeedTests {
         func time(_ name: String, _ port: () -> Void, _ geos: () -> Void) {
             var t = timings[name] ?? Timing()
             t.calls += 1
-            t.geos += clock.measure(geos)
-            t.port += clock.measure(port)
+            if side != "port" { t.geos += clock.measure(geos) } else if name.hasSuffix(".init") { geos() }
+            if side != "geos" { t.port += clock.measure(port) } else if name.hasSuffix(".init") { port() }
             timings[name] = t
         }
         func unary(_ c: Recording.Call, _ mine: (Topology.Geometry) throws -> Topology.Geometry, _ theirs: (GEOSGeom) -> GEOSGeom?) {
@@ -55,7 +55,13 @@ struct SpeedTests {
             let p = c.geometries.map { inputs.port($0) }, g = c.geometries.map { inputs.geos($0) }
             time(c.name, { if (try? mine(p[0], p[1])) == true { sink &+= 1 } }, { if g[0].predicate(g[1], theirs) == true { sink &+= 1 } })
         }
-        for c in r.calls {
+        // `TOPOLOGY_SPEED_ONLY` times one function alone (for a profiler), `TOPOLOGY_SPEED_REPEAT` times.
+        let only = ProcessInfo.processInfo.environment["TOPOLOGY_SPEED_ONLY"]
+        let repeats = Int(ProcessInfo.processInfo.environment["TOPOLOGY_SPEED_REPEAT"] ?? "1") ?? 1
+        // `TOPOLOGY_SPEED_SIDE` (`port` or `geos`) runs one side only.
+        let side = ProcessInfo.processInfo.environment["TOPOLOGY_SPEED_SIDE"]
+        for _ in 0..<repeats {
+        for c in r.calls where only == nil || c.name == only || c.name.hasSuffix(".init") {
             let n = c.numbers
             switch c.name {
             case "intersects": predicate(c, { try $0.intersects($1) }, GEOSIntersects_r)
@@ -156,6 +162,7 @@ struct SpeedTests {
             default:
                 Issue.record("not timed: \(c.name)")
             }
+        }
         }
         var total = Timing()
         print("speed \(name): function, calls, port ms, GEOS ms, port / GEOS (sink \(sink))")

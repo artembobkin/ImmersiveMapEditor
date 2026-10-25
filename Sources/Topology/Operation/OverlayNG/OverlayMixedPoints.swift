@@ -9,9 +9,9 @@ final class OverlayMixedPoints {
     private let geomNonPointInput: Geometry
     private let factory: GeometryFactory
     private let isPointRHS: Bool
-    private var geomNonPoint: Geometry!
-    private var geomNonPointDim = 0
-    private var locator: PointOnGeometryLocator!
+    @exclusivity(unchecked) private var geomNonPoint: Geometry!
+    @exclusivity(unchecked) private var geomNonPointDim = 0
+    @exclusivity(unchecked) private var locator: PointOnGeometryLocator!
     private let resultDim: Int
 
     static func overlay(_ opCode: Int, _ geom0: Geometry, _ geom1: Geometry, _ pm: PrecisionModel?) throws -> Geometry {

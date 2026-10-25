@@ -2,16 +2,16 @@
 /// stopping as soon as what is asked is found: JTS's `SegmentIntersectionDetector`.
 public final class SegmentIntersectionDetector: SegmentIntersector {
     @exclusivity(unchecked) private var li = RobustLineIntersector()
-    public var findProper = false
-    public var findAllIntersectionTypes = false
-    public private(set) var hasIntersection = false
-    public private(set) var hasProperIntersection = false
-    public private(set) var hasNonProperIntersection = false
-    public private(set) var intersection: Coordinate?
+    @exclusivity(unchecked) public var findProper = false
+    @exclusivity(unchecked) public var findAllIntersectionTypes = false
+    @exclusivity(unchecked) public private(set) var hasIntersection = false
+    @exclusivity(unchecked) public private(set) var hasProperIntersection = false
+    @exclusivity(unchecked) public private(set) var hasNonProperIntersection = false
+    @exclusivity(unchecked) public private(set) var intersection: Coordinate?
 
-    public init() {}
+    override public init() {}
 
-    public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
         if e0 === e1 && segIndex0 == segIndex1 { return }
         li.computeIntersection(e0.getCoordinate(segIndex0), e0.getCoordinate(segIndex0 + 1),
                                e1.getCoordinate(segIndex1), e1.getCoordinate(segIndex1 + 1))
@@ -23,7 +23,7 @@ public final class SegmentIntersectionDetector: SegmentIntersector {
         }
     }
 
-    public func isDone() -> Bool {
+    override public func isDone() -> Bool {
         if findAllIntersectionTypes { return hasProperIntersection && hasNonProperIntersection }
         if findProper { return hasProperIntersection }
         return hasIntersection

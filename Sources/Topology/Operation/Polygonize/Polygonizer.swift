@@ -6,13 +6,13 @@
 /// and the disjoint shells of the polygonal mode are found by GEOS's
 /// recursive update.
 public final class Polygonizer {
-    var graph: Polygonize.PolygonizeGraph?
-    public private(set) var dangles: [LineString] = []
-    public private(set) var cutEdges: [LineString] = []
-    public private(set) var invalidRingLines: [LineString] = []
-    var holeList: [Polygonize.EdgeRing] = []
-    var shellList: [Polygonize.EdgeRing] = []
-    var polyList: [Polygon]?
+    @exclusivity(unchecked) var graph: Polygonize.PolygonizeGraph?
+    @exclusivity(unchecked) public private(set) var dangles: [LineString] = []
+    @exclusivity(unchecked) public private(set) var cutEdges: [LineString] = []
+    @exclusivity(unchecked) public private(set) var invalidRingLines: [LineString] = []
+    @exclusivity(unchecked) var holeList: [Polygonize.EdgeRing] = []
+    @exclusivity(unchecked) var shellList: [Polygonize.EdgeRing] = []
+    @exclusivity(unchecked) var polyList: [Polygon]?
     let extractOnlyPolygonal: Bool
 
     public init(_ extractOnlyPolygonal: Bool = false) {

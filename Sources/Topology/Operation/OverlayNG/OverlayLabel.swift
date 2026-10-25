@@ -11,16 +11,16 @@ public final class OverlayLabel {
     public static let dimCollapse = 3
     public static let locUnknown = Location.none
 
-    var aDim = OverlayLabel.dimNotPart
-    var aIsHole = false
-    var aLocLeft = OverlayLabel.locUnknown
-    var aLocRight = OverlayLabel.locUnknown
-    var aLocLine = OverlayLabel.locUnknown
-    var bDim = OverlayLabel.dimNotPart
-    var bIsHole = false
-    var bLocLeft = OverlayLabel.locUnknown
-    var bLocRight = OverlayLabel.locUnknown
-    var bLocLine = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var aDim = OverlayLabel.dimNotPart
+    @exclusivity(unchecked) var aIsHole = false
+    @exclusivity(unchecked) var aLocLeft = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var aLocRight = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var aLocLine = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var bDim = OverlayLabel.dimNotPart
+    @exclusivity(unchecked) var bIsHole = false
+    @exclusivity(unchecked) var bLocLeft = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var bLocRight = OverlayLabel.locUnknown
+    @exclusivity(unchecked) var bLocLine = OverlayLabel.locUnknown
 
     public init() {}
 

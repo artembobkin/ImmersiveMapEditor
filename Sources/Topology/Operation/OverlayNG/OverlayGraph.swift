@@ -7,10 +7,16 @@
 /// its ends (near-degenerate input), the node labelled last decides, so the
 /// order reaches the result (JTS keeps a hash map of its own order).
 public final class OverlayGraph {
-    public private(set) var edges: [OverlayEdge] = []
-    private var nodeMap = CxxUnorderedMap<Coordinate, OverlayEdge>(hash: { $0.geosHashCode }, equal: { $0.equals2D($1) })
+    @exclusivity(unchecked) public private(set) var edges: [OverlayEdge] = []
+    @exclusivity(unchecked) private var nodeMap = CxxUnorderedMap<Coordinate, OverlayEdge>(hash: { $0.geosHashCode }, equal: { $0.equals2D($1) })
 
     public init() {}
+
+    /// A graph with room for the edges of `edgeCount` noded edges.
+    public init(capacity edgeCount: Int) {
+        edges.reserveCapacity(2 * edgeCount)
+        nodeMap.reserveCapacity(2 * edgeCount)
+    }
 
     deinit {
         for e in edges { e.unlink() }
@@ -25,9 +31,9 @@ public final class OverlayGraph {
 
     @discardableResult
     public func addEdge(_ pts: [Coordinate], _ label: OverlayLabel) throws -> OverlayEdge {
-        let e = OverlayEdge.createEdgePair(pts, label)
+        let (e, eSym) = OverlayEdge.createEdgePair(pts, label)
         try insert(e)
-        try insert(e.symOE)
+        try insert(eSym)
         return e
     }
 

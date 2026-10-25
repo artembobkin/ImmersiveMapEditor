@@ -7,10 +7,10 @@
 public final class DistanceOp {
     private let geom: [Geometry]
     private let terminateDistance: Double
-    private var ptLocator = PointLocator()
-    private var minDistanceLocation: [GeometryLocation?] = [nil, nil]
-    private var minDistance = Double.greatestFiniteMagnitude
-    private var computed = false
+    @exclusivity(unchecked) private var ptLocator = PointLocator()
+    @exclusivity(unchecked) private var minDistanceLocation: [GeometryLocation?] = [nil, nil]
+    @exclusivity(unchecked) private var minDistance = Double.greatestFiniteMagnitude
+    @exclusivity(unchecked) private var computed = false
 
     public static func distance(_ g0: Geometry, _ g1: Geometry) -> Double { DistanceOp(g0, g1).distance() }
 

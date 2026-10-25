@@ -6,12 +6,12 @@ final class RelatePointLocator {
     private let geom: Geometry
     private let isPrepared: Bool
     private let boundaryRule: BoundaryNodeRule
-    private var adjEdgeLocator: AdjacentEdgeLocator?
-    private var points: Set<Coordinate>?
-    private var lines: [LineString]?
-    private var polygons: [Geometry]?
-    private var polyLocator: [PointOnGeometryLocator?] = []
-    private var lineBoundary: LinearBoundary?
+    @exclusivity(unchecked) private var adjEdgeLocator: AdjacentEdgeLocator?
+    @exclusivity(unchecked) private var points: Set<Coordinate>?
+    @exclusivity(unchecked) private var lines: [LineString]?
+    @exclusivity(unchecked) private var polygons: [Geometry]?
+    @exclusivity(unchecked) private var polyLocator: [PointOnGeometryLocator?] = []
+    @exclusivity(unchecked) private var lineBoundary: LinearBoundary?
     private let isEmpty: Bool
 
     init(_ geom: Geometry, _ isPrepared: Bool = false, _ bnRule: BoundaryNodeRule = .ogcSFS) {

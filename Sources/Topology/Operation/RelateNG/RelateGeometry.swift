@@ -8,15 +8,15 @@ final class RelateGeometry {
     let geom: Geometry
     let isPrepared: Bool
     let envelope: Envelope
-    private(set) var dimension: Int
-    private var uniquePoints: Set<Coordinate>?
+    @exclusivity(unchecked) private(set) var dimension: Int
+    @exclusivity(unchecked) private var uniquePoints: Set<Coordinate>?
     private let boundaryNodeRule: BoundaryNodeRule
-    private var locator: RelatePointLocator?
-    private var elementId = 0
-    private var hasPoints = false
-    private var hasLines = false
-    private var hasAreas = false
-    private var isLineZeroLen = false
+    @exclusivity(unchecked) private var locator: RelatePointLocator?
+    @exclusivity(unchecked) private var elementId = 0
+    @exclusivity(unchecked) private var hasPoints = false
+    @exclusivity(unchecked) private var hasLines = false
+    @exclusivity(unchecked) private var hasAreas = false
+    @exclusivity(unchecked) private var isLineZeroLen = false
     let isEmpty: Bool
 
     init(_ input: Geometry, _ isPrepared: Bool = false, _ bnRule: BoundaryNodeRule = .ogcSFS) {

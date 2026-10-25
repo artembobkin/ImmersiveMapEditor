@@ -73,9 +73,9 @@ public final class LineMerger {
 
     let graph = LineMergeGraph()
     let isDirected: Bool
-    var factory: GeometryFactory?
-    var edgeStrings: [EdgeString] = []
-    var mergedLineStrings: [LineString] = []
+    @exclusivity(unchecked) var factory: GeometryFactory?
+    @exclusivity(unchecked) var edgeStrings: [EdgeString] = []
+    @exclusivity(unchecked) var mergedLineStrings: [LineString] = []
 
     public init(_ directed: Bool = false) {
         isDirected = directed

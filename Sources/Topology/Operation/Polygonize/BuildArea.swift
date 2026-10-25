@@ -12,7 +12,7 @@ public enum BuildArea {
     final class Face {
         let poly: Polygon
         let envarea: Double
-        var parent: Face?
+        @exclusivity(unchecked) var parent: Face?
 
         init(_ poly: Polygon) {
             self.poly = poly

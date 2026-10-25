@@ -2,7 +2,7 @@
 /// adjacent (a multipolygon's parts sharing edges, which is valid): on
 /// their common boundary it is interior: JTS's `AdjacentEdgeLocator`.
 final class AdjacentEdgeLocator {
-    private var ringList: [[Coordinate]] = []
+    @exclusivity(unchecked) private var ringList: [[Coordinate]] = []
 
     init(_ geom: Geometry) {
         if geom.isEmpty() { return }

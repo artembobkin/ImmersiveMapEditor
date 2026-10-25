@@ -9,9 +9,9 @@
 /// precision model copies the result without its empty members.
 public final class GeometryPrecisionReducer {
     let targetPM: PrecisionModel
-    var removeCollapsed = true
-    var changePrecisionModel = false
-    var isPointwise = false
+    @exclusivity(unchecked) var removeCollapsed = true
+    @exclusivity(unchecked) var changePrecisionModel = false
+    @exclusivity(unchecked) var isPointwise = false
 
     public init(_ pm: PrecisionModel) { targetPM = pm }
 

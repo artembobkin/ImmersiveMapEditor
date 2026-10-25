@@ -59,12 +59,12 @@ struct PolygonHoleJoiner {
     /// Adds a node where two rings touch at a point inside a segment of
     /// one, and records the holes that touch (JTS's `PolygonNoder.NodeAdder`).
     final class NodeAdder: SegmentIntersector {
-        var li = RobustLineIntersector()
-        var isHoleTouching: [Bool]
+        @exclusivity(unchecked) var li = RobustLineIntersector()
+        @exclusivity(unchecked) var isHoleTouching: [Bool]
 
         init(_ holeCount: Int) { isHoleTouching = Array(repeating: false, count: holeCount) }
 
-        func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
+        override func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
             if ss0 === ss1 { return }
             let p00 = ss0.getCoordinate(segIndex0), p01 = ss0.getCoordinate(segIndex0 + 1)
             let p10 = ss1.getCoordinate(segIndex1), p11 = ss1.getCoordinate(segIndex1 + 1)
@@ -86,7 +86,7 @@ struct PolygonHoleJoiner {
             if holeIndex > 0 { isHoleTouching[holeIndex - 1] = true }
         }
 
-        func isDone() -> Bool { false }
+        override func isDone() -> Bool { false }
     }
 
     private mutating func joinHoles() throws {
@@ -233,10 +233,10 @@ struct PolygonHoleJoiner {
 
     /// Whether a segment meets the boundary other than at a common end point.
     final class InteriorIntersectionDetector: SegmentIntersector {
-        var li = RobustLineIntersector()
-        private(set) var hasIntersection = false
+        @exclusivity(unchecked) var li = RobustLineIntersector()
+        @exclusivity(unchecked) private(set) var hasIntersection = false
 
-        func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
+        override func processIntersections(_ ss0: SegmentString, _ segIndex0: Int, _ ss1: SegmentString, _ segIndex1: Int) {
             let p00 = ss0.getCoordinate(segIndex0), p01 = ss0.getCoordinate(segIndex0 + 1)
             let p10 = ss1.getCoordinate(segIndex1), p11 = ss1.getCoordinate(segIndex1 + 1)
             li.computeIntersection(p00, p01, p10, p11)
@@ -249,7 +249,7 @@ struct PolygonHoleJoiner {
             }
         }
 
-        func isDone() -> Bool { hasIntersection }
+        override func isDone() -> Bool { hasIntersection }
     }
 }
 

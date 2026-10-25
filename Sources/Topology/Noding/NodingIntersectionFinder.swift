@@ -2,15 +2,15 @@
 /// interior intersection, or a vertex of one on the interior of another):
 /// JTS's `NodingIntersectionFinder`.
 public final class NodingIntersectionFinder: SegmentIntersector {
-    public var findAllIntersections = false
-    public var isCheckEndSegmentsOnly = false
-    public var keepIntersections = true
-    public var isInteriorIntersectionsOnly = false
+    @exclusivity(unchecked) public var findAllIntersections = false
+    @exclusivity(unchecked) public var isCheckEndSegmentsOnly = false
+    @exclusivity(unchecked) public var keepIntersections = true
+    @exclusivity(unchecked) public var isInteriorIntersectionsOnly = false
     @exclusivity(unchecked) var li: RobustLineIntersector
-    public private(set) var interiorIntersection: Coordinate?
-    public private(set) var intSegments: [Coordinate]?
-    public private(set) var intersections: [Coordinate] = []
-    public private(set) var intersectionCount = 0
+    @exclusivity(unchecked) public private(set) var interiorIntersection: Coordinate?
+    @exclusivity(unchecked) public private(set) var intSegments: [Coordinate]?
+    @exclusivity(unchecked) public private(set) var intersections: [Coordinate] = []
+    @exclusivity(unchecked) public private(set) var intersectionCount = 0
 
     public init(_ li: RobustLineIntersector) { self.li = li }
 
@@ -49,7 +49,7 @@ public final class NodingIntersectionFinder: SegmentIntersector {
     public func count() -> Int { intersectionCount }
     public func hasIntersection() -> Bool { interiorIntersection != nil }
 
-    public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ e0: SegmentString, _ segIndex0: Int, _ e1: SegmentString, _ segIndex1: Int) {
         if !findAllIntersections && hasIntersection() { return }
         let isSameSegString = e0 === e1
         if isSameSegString && segIndex0 == segIndex1 { return }
@@ -93,7 +93,7 @@ public final class NodingIntersectionFinder: SegmentIntersector {
 
     static func isEndSegment(_ s: SegmentString, _ index: Int) -> Bool { index == 0 || index >= s.size() - 2 }
 
-    public func isDone() -> Bool {
+    override public func isDone() -> Bool {
         if findAllIntersections { return false }
         return interiorIntersection != nil
     }

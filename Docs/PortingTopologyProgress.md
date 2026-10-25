@@ -119,7 +119,7 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 
 ## Left
 
-- The port's speed: after a first pass, 1.6 to 3 times GEOS's time on the recorded calls (`Docs/PortingParity.md`, "Speed after the first optimization pass"); reference counting and allocation are what is left.
+- The port's speed: after the second pass, a whole tile's recorded calls take 1.48 times GEOS's time (`Docs/PortingParity.md`, "Speed after the second optimization pass"), within the goal's 1.5 but with little margin; the unary union (1.56) is most of it. Reference counting and allocation in the overlay are what is left.
 - Phase 8 and after: the swap of `Geometry` onto the port. Every GEOS call of `Geometry.swift` now has a port function (the table above).
 
 ## Decisions

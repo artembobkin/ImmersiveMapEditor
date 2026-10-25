@@ -86,8 +86,8 @@ final class PolygonTopologyAnalyzer {
 
     let isInvertedRingValid: Bool
     let intFinder: PolygonIntersectionAnalyzer
-    var polyRings: [PolygonRing] = []
-    var disconnectionPt: Coordinate?
+    @exclusivity(unchecked) var polyRings: [PolygonRing] = []
+    @exclusivity(unchecked) var disconnectionPt: Coordinate?
 
     init(_ geom: Geometry, _ isInvertedRingValid: Bool) {
         self.isInvertedRingValid = isInvertedRingValid

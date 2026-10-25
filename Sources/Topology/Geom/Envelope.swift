@@ -199,3 +199,12 @@ extension Envelope {
         return covers(o)
     }
 }
+
+extension Envelope {
+    /// `intersects` for two envelopes known not to be null (the entries of
+    /// a built tree): GEOS's comparisons alone, false with a NaN.
+    @inline(__always)
+    func intersectsNonNull(_ o: Envelope) -> Bool {
+        o.minX <= maxX && o.maxX >= minX && o.minY <= maxY && o.maxY >= minY
+    }
+}

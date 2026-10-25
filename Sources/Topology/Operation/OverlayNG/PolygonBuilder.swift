@@ -4,8 +4,8 @@
 /// `PolygonBuilder` of OverlayNG.
 final class PolygonBuilder {
     private let factory: GeometryFactory
-    private(set) var shellList: [OverlayEdgeRing] = []
-    private var freeHoleList: [OverlayEdgeRing] = []
+    @exclusivity(unchecked) private(set) var shellList: [OverlayEdgeRing] = []
+    @exclusivity(unchecked) private var freeHoleList: [OverlayEdgeRing] = []
     private let isEnforcePolygonal: Bool
 
     init(_ resultAreaEdges: [OverlayEdge], _ factory: GeometryFactory, isEnforcePolygonal: Bool = true) throws {

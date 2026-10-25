@@ -14,8 +14,8 @@ final class BufferCurveSetBuilder {
     private let inputGeom: Geometry
     private let distance: Double
     private let curveBuilder: OffsetCurveBuilder
-    private var curveList: [SegmentString] = []
-    var isInvertOrientation = false
+    @exclusivity(unchecked) private var curveList: [SegmentString] = []
+    @exclusivity(unchecked) var isInvertOrientation = false
 
     init(_ inputGeom: Geometry, _ distance: Double, _ precisionModel: PrecisionModel, _ bufParams: BufferParameters) {
         self.inputGeom = inputGeom

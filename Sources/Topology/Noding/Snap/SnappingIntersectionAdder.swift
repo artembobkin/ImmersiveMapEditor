@@ -11,7 +11,7 @@ public final class SnappingIntersectionAdder: SegmentIntersector {
         self.snapTolerance = snapTolerance
     }
 
-    public func processIntersections(_ seg0: SegmentString, _ segIndex0: Int, _ seg1: SegmentString, _ segIndex1: Int) {
+    override public func processIntersections(_ seg0: SegmentString, _ segIndex0: Int, _ seg1: SegmentString, _ segIndex1: Int) {
         if seg0 === seg1 && segIndex0 == segIndex1 { return }
         let p00 = seg0.getCoordinate(segIndex0), p01 = seg0.getCoordinate(segIndex0 + 1)
         let p10 = seg1.getCoordinate(segIndex1), p11 = seg1.getCoordinate(segIndex1 + 1)
@@ -53,5 +53,5 @@ public final class SnappingIntersectionAdder: SegmentIntersector {
         return false
     }
 
-    public func isDone() -> Bool { false }
+    override public func isDone() -> Bool { false }
 }

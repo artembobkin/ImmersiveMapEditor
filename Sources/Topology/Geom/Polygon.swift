@@ -1,7 +1,7 @@
 /// A polygon: an outer ring and holes, JTS's `Polygon`.
 public final class Polygon: Geometry {
-    public internal(set) var shell: LinearRing
-    public internal(set) var holes: [LinearRing]
+    @exclusivity(unchecked) public internal(set) var shell: LinearRing
+    @exclusivity(unchecked) public internal(set) var holes: [LinearRing]
 
     init(shell: LinearRing?, holes: [LinearRing], factory: GeometryFactory) {
         let s = shell ?? factory.createLinearRing()

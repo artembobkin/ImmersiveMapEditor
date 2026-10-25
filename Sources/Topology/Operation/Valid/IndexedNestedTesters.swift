@@ -3,7 +3,7 @@
 final class IndexedNestedHoleTester {
     let polygon: Polygon
     let index = STRtree<LinearRing>()
-    private(set) var nestedPt: Coordinate?
+    @exclusivity(unchecked) private(set) var nestedPt: Coordinate?
 
     init(_ poly: Polygon) {
         polygon = poly
@@ -34,8 +34,8 @@ final class IndexedNestedHoleTester {
 final class IndexedNestedPolygonTester {
     let multiPoly: MultiPolygon
     let index = STRtree<Int>()
-    var locators: [IndexedPointInAreaLocator?]
-    private(set) var nestedPt: Coordinate?
+    @exclusivity(unchecked) var locators: [IndexedPointInAreaLocator?]
+    @exclusivity(unchecked) private(set) var nestedPt: Coordinate?
 
     init(_ multiPoly: MultiPolygon) {
         self.multiPoly = multiPoly
