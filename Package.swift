@@ -6,7 +6,6 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "ImmersiveMapEditor", targets: ["ImmersiveMapEditor"]),
-        .executable(name: "tilepipeline", targets: ["TilePipelineCommand"]),
     ],
     dependencies: [
         // The ports, each its own repository: JTS 1.20.0 behaving as GEOS 3.13,
@@ -30,8 +29,6 @@ let package = Package(
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
-        // The command line over TileKit; the program is `tilepipeline`.
-        .executableTarget(name: "TilePipelineCommand", dependencies: ["TileKit", "Geometry", "GLTF"], path: "Sources/TilePipelineCommand"),
     ],
     swiftLanguageModes: [.v5]
 )

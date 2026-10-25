@@ -3,7 +3,7 @@ import Geometry
 
 /// The light of a tile and every step after it: the bake, the light map's
 /// shaping, the cut to the tile, TEXCOORD_1, stats.json and the export.
-/// The build runs it on the scene it made (Build), and `tilepipeline bake`
+/// The build runs it on the scene it made (Build), and `pipeline bake`
 /// runs it again on the scene a build left in bake/, with other settings,
 /// so a tile's light is tuned without building its geometry.
 ///

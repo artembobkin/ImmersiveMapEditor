@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The Light view's sections: the bake's settings and the bake of the
-/// working tile, again, without building their geometry (`tilepipeline bake`).
+/// working tile, again, without building their geometry (`pipeline bake`).
 struct LightSections: View {
     @Environment(Session.self) private var session
 

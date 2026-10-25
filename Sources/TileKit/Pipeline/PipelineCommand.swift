@@ -1,27 +1,27 @@
 import Foundation
 
-/// The pipeline's commands, as `tilepipeline` (and the editor) takes them:
+/// The pipeline's commands, as the editor takes them (`ImmersiveMapEditor
+/// pipeline COMMAND ...`, from the terminal or run by the editor itself):
 /// map tiles into 3D models for the ImmersiveMap engine. They work on the
 /// app's data folder (tiles/<z>/<x>/<y>/ with osm/, roads/ and build/, then
 /// landmarks/ and config/; WorkspacePaths): the current folder, or --root.
 ///
-///   tilepipeline build 15 19808 10243                 one tile
-///   tilepipeline build 15 19808 10242 19809 10243     a range of tiles
-///   tilepipeline build 15 --tiles 19810/10243 ...     any set of tiles
+///   pipeline build 15 19808 10243                 one tile
+///   pipeline build 15 19808 10242 19809 10243     a range of tiles
+///   pipeline build 15 --tiles 19810/10243 ...     any set of tiles
 ///       [--refetch] [--samples 256]
-///   tilepipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
+///   pipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
 ///       [--samples 128] [--roads roads/....json]
-///   tilepipeline fetch 15 19808 10243 [--force]
-///   tilepipeline seed 15 19808 10243 [--force]           a tile's road document
-///   tilepipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
-///   tilepipeline bake 15 --tiles 19808/10243 ...      the light of built tiles again
+///   pipeline fetch 15 19808 10243 [--force]
+///   pipeline seed 15 19808 10243 [--force]           a tile's road document
+///   pipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
+///   pipeline bake 15 --tiles 19808/10243 ...      the light of built tiles again
 ///       [--size 1024] [--samples 256] [--bounces 3] [--gamma 1.6] [--lit R G B] [--shade R G B]
-///   tilepipeline validate tiles/15/19808/10243/build
-///   tilepipeline fit detsky-mir
+///   pipeline validate tiles/15/19808/10243/build
+///   pipeline fit detsky-mir
 ///
-/// The commands live here, in TileKit, so the editor runs the very same
-/// ones (`ImmersiveMapEditor pipeline ...`) as the `tilepipeline` program:
-/// one build of the code, never a pipeline older than the editor.
+/// One app, one binary: the editor runs these in a process of itself, so the
+/// pipeline is never another build than the editor.
 public enum PipelineCommand {
     /// Runs one command and ends the process with its status.
     public static func run(_ arguments: [String]) -> Never {
@@ -102,7 +102,7 @@ public enum PipelineCommand {
                 usage()
             }
         } catch {
-            FileHandle.standardError.write("tilepipeline: \(error)\n".data(using: .utf8)!)
+            FileHandle.standardError.write("pipeline: \(error)\n".data(using: .utf8)!)
             exit(1)
         }
         exit(0)
@@ -110,14 +110,14 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: tilepipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N]
-               tilepipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
-               tilepipeline fetch Z X Y [--force]
-               tilepipeline seed Z X Y [--force]
-               tilepipeline migrate OLD_WORKSPACE
-               tilepipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
-               tilepipeline validate FOLDER
-               tilepipeline fit ID
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N]
+               ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
+               ImmersiveMapEditor pipeline fetch Z X Y [--force]
+               ImmersiveMapEditor pipeline seed Z X Y [--force]
+               ImmersiveMapEditor pipeline migrate OLD_WORKSPACE
+               ImmersiveMapEditor pipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
+               ImmersiveMapEditor pipeline validate FOLDER
+               ImmersiveMapEditor pipeline fit ID
 
         """.data(using: .utf8)!)
         exit(2)

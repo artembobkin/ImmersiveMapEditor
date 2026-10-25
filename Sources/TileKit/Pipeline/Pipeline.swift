@@ -11,7 +11,7 @@ import Foundation
 /// 3. build: the whole tile (Build): the roads of the document, buildings,
 ///    landmarks, construction sites, bus shelters, the light map, cut to the
 ///    tile's edges, written as GLB, placement.json and metadata.json, and the
-///    scene of its light in bake/, so `tilepipeline bake` can bake it again;
+///    scene of its light in bake/, so `pipeline bake` can bake it again;
 /// 4. validate: Validate, against the rules of TilePipeline's CLAUDE.md.
 ///
 /// Writes out/tiles/<z>/<x>/<y>/ per tile and out/tiles/index.json, the list

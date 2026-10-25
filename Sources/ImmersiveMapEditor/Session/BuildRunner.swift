@@ -51,7 +51,7 @@ final class BuildRunner {
     /// One command, its output into the log as it comes, its progress lines
     /// into `stage`.
     private func run(root: URL, _ arguments: [String]) async -> Bool {
-        log += "$ tilepipeline \(arguments.joined(separator: " "))\n"
+        log += "$ pipeline \(arguments.joined(separator: " "))\n"
         // The editor itself, as the pipeline: one build of both.
         let tool = Bundle.main.executableURL!
         let process = Process()

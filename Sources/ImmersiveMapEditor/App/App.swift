@@ -7,7 +7,7 @@ import TileKit
 /// hand, and the built tiles shown together in 3D.
 ///
 ///   ImmersiveMapEditor [DATA FOLDER]
-///   ImmersiveMapEditor pipeline COMMAND ...                   the pipeline's commands, as tilepipeline takes them
+///   ImmersiveMapEditor pipeline COMMAND ...                   the pipeline's commands (TileKit's PipelineCommand)
 ///   ImmersiveMapEditor --resave IN OUT                        a document read and written, no window
 ///   ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y       a tile in 3D to a PNG, no window
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window

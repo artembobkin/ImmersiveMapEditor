@@ -76,34 +76,6 @@
                ReferencedContainer = "container:">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "tilepipeline"
-               BuildableName = "tilepipeline"
-               BlueprintName = "tilepipeline"
-               ReferencedContainer = "container:">
-            </BuildableReference>
-         </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "tilepipeline"
-               BuildableName = "tilepipeline"
-               BlueprintName = "tilepipeline"
-               ReferencedContainer = "container:">
-            </BuildableReference>
-         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -159,9 +131,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "tilepipeline"
-            BuildableName = "tilepipeline"
-            BlueprintName = "tilepipeline"
+            BlueprintIdentifier = "ImmersiveMapEditor"
+            BuildableName = "ImmersiveMapEditor"
+            BlueprintName = "ImmersiveMapEditor"
             ReferencedContainer = "container:">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -185,9 +157,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "tilepipeline"
-            BuildableName = "tilepipeline"
-            BlueprintName = "tilepipeline"
+            BlueprintIdentifier = "ImmersiveMapEditor"
+            BuildableName = "ImmersiveMapEditor"
+            BlueprintName = "ImmersiveMapEditor"
             ReferencedContainer = "container:">
          </BuildableReference>
       </BuildableProductRunnable>
