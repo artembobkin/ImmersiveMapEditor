@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(CameraController.invertTurningKey) private var invertTurning = true
     @AppStorage(CameraController.invertTiltingKey) private var invertTilting = false
     @AppStorage(ClaudeSettings.executableKey) private var claudePath = ""
+    @AppStorage(ClaudeSettings.modelKey) private var claudeModel = ""
     /// The proxy, edited here and kept in the keychain (never shown in full).
     @State private var proxy = ClaudeSettings.proxy
     @State private var noProxy = ClaudeSettings.noProxy
@@ -33,6 +34,7 @@ struct SettingsView: View {
             }
             Section("Claude") {
                 TextField("claude", text: $claudePath, prompt: Text(ClaudeSettings.executable?.path ?? "~/.local/bin/claude"))
+                TextField("Model", text: $claudeModel, prompt: Text("Claude Code's default (opus, sonnet…)"))
                 SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
                     .onSubmit { ClaudeSettings.proxy = proxy }
                     .onChange(of: proxy) { ClaudeSettings.proxy = proxy }

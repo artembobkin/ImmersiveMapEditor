@@ -57,8 +57,8 @@ final class LandmarkView: MTKView {
     private var size: SIMD2<Double> { SIMD2(Double(bounds.width), Double(bounds.height)) }
 
     /// Shows a model or boxes: made off the main thread, then framed.
-    func show(_ next: Source?) {
-        guard next != source else { return }
+    func show(_ next: Source?, again: Bool = false) {
+        guard again || next != source else { return }
         source = next
         mesh = nil
         guard let next else { return }

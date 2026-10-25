@@ -10,6 +10,9 @@ import Security
 /// the user's ~/bin/claude launcher does.
 enum ClaudeSettings {
     static let executableKey = "claude.executable"
+    /// The model the agents ask for (an alias such as opus), else Claude
+    /// Code's own default.
+    static let modelKey = "claude.model"
 
     /// The `claude` to run: the one picked, else the first installed.
     static var executable: URL? {

@@ -21,6 +21,28 @@ final class BuildRunner {
     /// Which command of a run this is, and how many there are.
     private(set) var step = (index: 0, count: 0)
 
+    /// Another job writing into the same log (the landmarks' agent): taken
+    /// when nothing runs, its lines added as they come, then ended.
+    func begin(_ title: String, stage name: String) -> Bool {
+        guard !running else {
+            log += "A build is running already.\n"
+            return false
+        }
+        log = title + "\n"
+        running = true
+        stage = Stage(name: name)
+        step = (0, 0)
+        return true
+    }
+
+    func append(_ text: String) { log += text.hasSuffix("\n") ? text : text + "\n" }
+
+    func end(_ ok: Bool) {
+        stage = nil
+        log += "\n" + (ok ? "Done." : "Stopped.") + "\n"
+        running = false
+    }
+
     func run(root: URL, arguments: [String], done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         run(root: root, steps: [arguments], done: done)
     }

@@ -5,6 +5,8 @@ import SwiftUI
 /// see its model, its buildings and its folder.
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
+    @Environment(BuildRunner.self) private var runner
+    @State private var request = ""
 
     var body: some View {
         @Bindable var session = session
@@ -27,9 +29,38 @@ struct LandmarksSections: View {
             }
         }
         if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
+            Section("Model with Claude") {
+                if session.agent.running {
+                    Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
+                } else {
+                    Button("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
+                        .disabled(runner.running)
+                        .help("Claude Code looks for freely licensed photos, writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
+                }
+                if LandmarkAgent.hasConversation(landmark.folder) {
+                    HStack {
+                        TextField("Ask Claude to change it…", text: $request, axis: .vertical)
+                            .lineLimit(1...4)
+                            .onSubmit(send)
+                        Button("Send", systemImage: "paperplane", action: send)
+                            .labelStyle(.iconOnly)
+                            .disabled(request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || runner.running)
+                    }
+                }
+            }
             Section {
+                Button("Build from Its Recipe", systemImage: "hammer") { session.buildLandmark() }
+                    .disabled(runner.running)
+                    .help("Builds model.glb from recipe.json (a starter recipe from OSM's tags when there is none).")
                 Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
             }
         }
+    }
+
+    private func send() {
+        let text = request.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !runner.running else { return }
+        request = ""
+        session.modelLandmark(request: text)
     }
 }

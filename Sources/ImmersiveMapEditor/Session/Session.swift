@@ -29,6 +29,8 @@ final class Session {
     let lightSettings = LightSettings()
     /// The open tile's buildings of OSM, for the Buildings view.
     let buildings = OsmBuildings()
+    /// Claude modelling a landmark.
+    let agent = LandmarkAgent()
     /// The open tile's landmarks (its landmarks/ folder), the one picked in
     /// the Landmarks view, and the OSM elements they are made of.
     private(set) var candidates: [TileLandmark] = []
@@ -55,6 +57,7 @@ final class Session {
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
+        agent.modelChanged = { [weak self] in self?.showLandmark(again: true) }
     }
 
     /// Another data folder instead of the current one, back to choosing a
@@ -129,14 +132,29 @@ final class Session {
     }
 
     /// The Landmarks view, made when first shown, showing the model picked.
-    func showLandmark() {
+    /// The picked landmark's model built from its recipe (a starter recipe
+    /// from OSM's tags first when it has none), then shown.
+    func buildLandmark() {
+        guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return }
+        build.run(root: workspace.root, arguments: ["landmark", landmark.folder.path]) { [weak self] _ in
+            self?.readCandidates()
+            self?.showLandmark(again: true)
+        }
+    }
+
+    func modelLandmark(request: String? = nil) {
+        guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return }
+        agent.start(folder: landmark.folder, name: landmark.name, request: request, console: build)
+    }
+
+    func showLandmark(again: Bool = false) {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
             landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
         }
         // Its model, or its OSM buildings as boxes while it has none.
         guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return landmarkView?.show(nil) ?? () }
-        landmarkView?.show(landmark.model.map { .model($0) } ?? .boxes(id: landmark.id, landmark.boxes))
+        landmarkView?.show(landmark.model.map { .model($0) } ?? .boxes(id: landmark.id, landmark.boxes), again: again)
     }
 
     /// The tile open is what every view works on, alone: entering the Roads
