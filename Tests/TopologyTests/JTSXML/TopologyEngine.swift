@@ -35,7 +35,7 @@ struct TopologyEngine: JTSTestEngine {
         actual.norm().equalsExact(expected.norm(), tolerance: tolerance)
     }
 
-    /// JTS's `BufferResultMatcher` as `GEOSEngine` ran it: the area of the
+    /// JTS's `BufferResultMatcher` as GEOS's engine ran it: the area of the
     /// symmetric difference, then the Hausdorff distance of the boundaries
     /// (`DiscreteHausdorffDistance`, densified by a quarter), both ways (GEOS
     /// had no oriented one, so the runner took the symmetric distance, the
@@ -157,7 +157,7 @@ struct TopologyEngine: JTSTestEngine {
         }
     }
 
-    /// JTS's `TestCaseGeometryFunctions.overlayAreaTest`, as `GEOSEngine` runs it.
+    /// JTS's `TestCaseGeometryFunctions.overlayAreaTest`, as GEOS's engine ran it.
     func overlayAreaTest(_ a: Topology.Geometry, _ b: Topology.Geometry) throws -> Bool {
         let areaA = a.getArea(), areaB = b.getArea()
         if areaA == 0 || areaB == 0 { return true }

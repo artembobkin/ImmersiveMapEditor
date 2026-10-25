@@ -1,5 +1,5 @@
-/// What GEOS 3.13 does on the JTS 1.20.0 XML suites, as `JTSXMLGEOSTests`
-/// found it (written by it with `WRITE_GEOS_BASELINE=1`): the count per
+/// What GEOS 3.13 did on the JTS 1.20.0 XML suites, as its run of the runner
+/// found it before phase 12 (written by that test, removed with GEOS): the count per
 /// suite and every test GEOS does not pass, with why.
 enum GEOSBaseline {
     static let summary = [

@@ -236,27 +236,14 @@ enum TapeStore {
         let variant = base(name, TapeStore.configuration)
         return FileManager.default.fileExists(atPath: variant.path) ? variant : base(name, "")
     }
-
-    /// The tape the live mode writes: its build configuration's.
-    func writeURL(_ name: String) -> URL { base(name, TapeStore.configuration) }
 }
 
-/// Makes the oracle of a test: the stored answers, or with
-/// `TOPOLOGY_FREEZE=1` (only while GEOS was still in the package) GEOS
-/// itself, its answers written to the tape. `writes: false` reads another
-/// test's tape (a test that asks the same questions) and never writes it.
+/// Makes the oracle of a test: GEOS's answers as stored. They were written
+/// at commit 18f264d, the last with GEOS in the package, by the same tests
+/// asking GEOS itself (`TOPOLOGY_FREEZE=1`, its live oracle), and cannot be
+/// made again. A test that asks another test's questions reads its tape.
 enum Oracles {
-    static var freezing: Bool { ProcessInfo.processInfo.environment["TOPOLOGY_FREEZE"] == "1" }
-
-    static func make(_ name: String, _ store: TapeStore = .fixtures, writes: Bool = true) -> StoredOracle {
-        if freezing { return liveOracle(name, store, writes) }
-        return FrozenOracle(name, store)
-    }
-
-    /// Whether a recording's expectations are on disk.
-    static func available(_ recording: String, _ name: String) -> Bool {
-        freezing || FileManager.default.fileExists(atPath: TapeStore.recording(recording).url(name).path)
-    }
+    static func make(_ name: String, _ store: TapeStore = .fixtures) -> StoredOracle { FrozenOracle(name, store) }
 }
 
 /// One question to GEOS, as the alignment digest takes it: an operation's

@@ -10,10 +10,10 @@ import Topology
 
     /// Compares a geometry the port makes with the one GEOS made, for each
     /// random geometry. `raw`: compared as they come, not normalized.
-    static func compare(_ name: String, tape: String, seed: UInt64, count: Int = count, raw: Bool = false, writes: Bool = true,
+    static func compare(_ name: String, tape: String, seed: UInt64, count: Int = count, raw: Bool = false,
                         skip: (Shape) -> Bool = { _ in false },
                         _ mine: (Topology.Geometry) -> Topology.Geometry, _ op: GeometryOp) -> ParityTally {
-        let o = Oracles.make("CoreParityTests.\(tape)", writes: writes)
+        let o = Oracles.make("CoreParityTests.\(tape)")
         defer { o.finish() }
         var tally = ParityTally(name)
         var r = RandomGeometries(seed: seed)
@@ -100,7 +100,7 @@ import Topology
     /// inputs as `minimumRotatedRectangle`, so the same stored answers.
     @Test func minimumDiameterIsNotGEOSs() {
         let t = CoreParityTests.compare("minimum rotated rectangle (MinimumDiameter, expected to differ)", tape: "minimumRotatedRectangle",
-                                        seed: 18, writes: false, { MinimumDiameter.getMinimumRectangle($0) }, .minimumRotatedRectangle)
+                                        seed: 18, { MinimumDiameter.getMinimumRectangle($0) }, .minimumRotatedRectangle)
         print("parity \(t.name): compared \(t.compared), equal \(t.compared - t.differences)")
         #expect(t.differences > 0)
     }

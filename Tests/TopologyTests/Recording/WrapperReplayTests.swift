@@ -4,8 +4,8 @@ import Testing
 
 /// Phase 8's proof that the swap changes nothing, frozen: every recorded
 /// call of `Geometry` replayed through the new `Geometry` (on `Topology`)
-/// and compared with what the old one on GEOS (`GEOSWrapper`, the wrapper as
-/// it stood) gave, stored beside the recordings: results as they come, bit
+/// and compared with what the old one on GEOS (the wrapper as it stood at
+/// commit 50caf95, removed with GEOS) gave, stored beside the recordings: results as they come, bit
 /// for bit, geometries by their kind, their WKB (every coordinate's bits,
 /// the sign of zeros included) and the grid of the precision model each
 /// part carries; numbers by their bits; answers, indices and text exactly.
@@ -139,10 +139,8 @@ struct WrapperReplayTests {
         }
     }
 
-    /// The replay on the new `Geometry`, or while the answers are stored on
-    /// the old wrapper.
+    /// The replay on the new `Geometry`.
     static func run(_ r: Recording, fixed: Bool, limit: Int? = nil, _ x: ReplayObserver) {
-        if Oracles.freezing { return liveReplay(r, fixed: fixed, limit: limit, x) }
         replay(Geometry.self, r, fixed: fixed, limit: limit, x)
     }
 

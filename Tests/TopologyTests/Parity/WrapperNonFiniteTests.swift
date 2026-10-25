@@ -164,7 +164,7 @@ extension WrapperReplayTests {
     @Test func nonFinite() {
         let t = WrapperTallies("wrapper, non-finite coordinates")
         let x = Observers.make("WrapperReplayTests.nonFinite", .fixtures, t)
-        if Oracles.freezing { liveNonFinite(x) } else { WrapperReplayTests.nonFiniteWalk(Geometry.self, x) }
+        WrapperReplayTests.nonFiniteWalk(Geometry.self, x)
         x.finish(sourceLocation: #_sourceLocation)
         t.report()
     }

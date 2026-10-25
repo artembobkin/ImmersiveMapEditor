@@ -119,12 +119,12 @@ enum WrapperResult {
 
 /// What the wrapper replay observes along its walk, in order: geometry
 /// results and plain values, each under the name it is tallied by, and the
-/// values of the old side that steer the walk. The live observer records
-/// the old wrapper's (GEOS's), the frozen one compares the new `Geometry`
-/// with them.
+/// values of the old side that steer the walk. The live observer recorded
+/// the old wrapper's (GEOS's) before phase 12, the frozen one compares the
+/// new `Geometry` with them.
 protocol ReplayObserver: AnyObject {
-    /// A geometry result; `make` is run again by the live observer to see
-    /// whether GEOS varies (its snap rounding shuffles at random).
+    /// A geometry result (the live observer ran `make` again to see whether
+    /// GEOS varied: its snap rounding shuffles at random).
     func geometry<G: WrapperGeometry>(_ name: String, _ what: @autoclosure () -> String, _ make: () -> G)
     func same<T: ObservedValue>(_ name: String, _ what: @autoclosure () -> String, _ value: T)
     /// A value of the old side that the walk goes on with (a parameter, a
@@ -244,17 +244,11 @@ final class FrozenObserver: ReplayObserver {
     }
 }
 
-/// Makes the observer of a replay: frozen, or live while GEOS was in the
-/// package (`TOPOLOGY_FREEZE=1`).
+/// Makes the observer of a replay: the old wrapper's results as stored at
+/// commit 18f264d (written by the same walk on the old wrapper on GEOS,
+/// `TOPOLOGY_FREEZE=1`).
 enum Observers {
-    static func make(_ name: String, _ store: TapeStore, _ tallies: WrapperTallies, partial: Bool = false, writes: Bool = true) -> ReplayObserver & Finishing {
-        if Oracles.freezing { return liveObserver(name, store, writes && !partial) }
-        return FrozenObserver(name, store, tallies, partial: partial)
+    static func make(_ name: String, _ store: TapeStore, _ tallies: WrapperTallies, partial: Bool = false) -> FrozenObserver {
+        FrozenObserver(name, store, tallies, partial: partial)
     }
 }
-
-protocol Finishing {
-    func finish(sourceLocation: SourceLocation)
-}
-
-extension FrozenObserver: Finishing {}

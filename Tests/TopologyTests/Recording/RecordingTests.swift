@@ -18,7 +18,7 @@ struct RecordingTests {
                 counts[c.name, default: 0] += 1
                 for id in c.geometries { #expect(r.geometries[id] != nil, "\(r.name): \(c.name) refers to geometry \(id)") }
             }
-            let o = Oracles.make("ReplayTests.wkbReading", .recording(r.name), writes: false)
+            let o = Oracles.make("ReplayTests.wkbReading", .recording(r.name))
             var unreadable = 0
             for id in r.geometries.keys.sorted() {
                 if case .failure = o.read(r.input(id)) { unreadable += 1 }

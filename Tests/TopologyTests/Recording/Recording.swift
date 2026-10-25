@@ -90,10 +90,8 @@ struct Recording {
 
 extension Recording {
     /// Whether GEOS's stored answers of the recorded calls are there too
-    /// (`expected/` beside the recordings, outside git), or being written.
-    static var stored: Bool {
-        available && (Oracles.freezing || FileManager.default.fileExists(atPath: TestPaths.expected.path))
-    }
+    /// (`expected/` beside the recordings, outside git).
+    static var stored: Bool { available && FileManager.default.fileExists(atPath: TestPaths.expected.path) }
 
     /// Whether to replay the long recorded runs against the stored answers.
     static var longStored: Bool { stored && longReplay }
@@ -102,10 +100,10 @@ extension Recording {
     func input(_ id: UInt32) -> OracleInput { .recorded(id, geometries[id]!) }
 
     /// Runs `body` on every recording with the stored answers of the test
-    /// `tape` for it, then checks (or writes) the tape.
-    static func replay(_ tape: String, writes: Bool = true, _ body: (Recording, StoredOracle) -> Void) {
+    /// `tape` for it, then checks the tape.
+    static func replay(_ tape: String, _ body: (Recording, StoredOracle) -> Void) {
         for r in (try? load()) ?? [] {
-            let o = Oracles.make(tape, .recording(r.name), writes: writes)
+            let o = Oracles.make(tape, .recording(r.name))
             body(r, o)
             o.finish()
         }
