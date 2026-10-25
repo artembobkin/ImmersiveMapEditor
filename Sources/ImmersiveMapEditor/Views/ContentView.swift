@@ -1,56 +1,26 @@
 import SwiftUI
 
-/// The window: its one layout (WindowLayout: the view's content, the console
-/// under it, the status line at the foot, the inspector on the right), the
-/// same whatever the view. The view chosen at the top fills the regions,
-/// never changes them. The views in the toolbar.
+/// The window, one layout whatever is shown: the tile's files on the left
+/// (FilesSidebar), the main region with the console and the status line
+/// under it (WindowLayout), the inspector on the right. Its content follows
+/// the session's phase: the map while a tile is chosen and prepared, the
+/// view picked at the top (shown only then) while it is worked on.
 struct ContentView: View {
     @Environment(Session.self) private var session
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var phase
     @State private var inspector = true
+    @State private var files = NavigationSplitViewVisibility.all
 
     var body: some View {
-        @Bindable var workspace = session.workspace
+        let workspace = session.workspace
         let importing = session.importing
-        WindowLayout(consoleShown: session.build.shown) {
-            mode
-        } console: {
-            BottomPanel().environment(session.build)
-        } status: {
-            StatusLine()
+        NavigationSplitView(columnVisibility: $files) {
+            FilesSidebar()
+                .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
+        } detail: {
+            detail
         }
-        .frame(minWidth: 600, minHeight: 400)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $workspace.viewMode) {
-                    ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            ToolbarItem {
-                // The view's own action on the working tile.
-                if let action = workspace.viewMode.action {
-                    Button(action.title, systemImage: action.systemImage) { session.perform(action) }
-                        .disabled(!session.can(action))
-                        .help(action.help)
-                }
-            }
-            ToolbarItem {
-                Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
-                    .help("Show or hide the build's log (⌘L)")
-            }
-            ToolbarItem {
-                Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
-                    .help("Show or hide the panel")
-            }
-        }
-        .inspector(isPresented: $inspector) {
-            Inspector()
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
-        }
-        // No title: the working tile is named in the inspector.
-        .navigationTitle("")
         .onChange(of: workspace.viewMode) { session.follow(workspace.viewMode) }
         .onChange(of: undoManager, initial: true) { session.model?.undo = undoManager }
         .onChange(of: session.model.map { ObjectIdentifier($0) }) { session.model?.undo = undoManager }
@@ -73,22 +43,85 @@ struct ContentView: View {
         }
     }
 
-    /// The view of the mode.
+    /// The main region with the console and the status line, the inspector
+    /// on its right, the toolbar over it.
+    private var detail: some View {
+        @Bindable var workspace = session.workspace
+        let working = session.phase == .working
+        return WindowLayout(consoleShown: session.build.shown) {
+            main
+        } console: {
+            BottomPanel().environment(session.build)
+        } status: {
+            StatusLine()
+        }
+        .frame(minWidth: 600, minHeight: 400)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                // The views exist once a tile is open.
+                if working {
+                    Picker("View", selection: $workspace.viewMode) {
+                        ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+            ToolbarItem(placement: .navigation) {
+                if working, let tile = workspace.tile {
+                    Button(tile.name, systemImage: "square.grid.3x3") { session.chooseAnotherTile() }
+                        .labelStyle(.titleAndIcon)
+                        .help("Choose another tile (⌘0)")
+                }
+            }
+            ToolbarItem {
+                // The view's own action on the tile open.
+                if working, let action = workspace.viewMode.action {
+                    Button(action.title, systemImage: action.systemImage) { session.perform(action) }
+                        .disabled(!session.can(action))
+                        .help(action.help)
+                }
+            }
+            ToolbarItem {
+                Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
+                    .help("Show or hide the build's log (⌘L)")
+            }
+            ToolbarItem {
+                Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
+                    .help("Show or hide the panel")
+            }
+        }
+        .inspector(isPresented: $inspector) {
+            Inspector()
+                .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+        }
+        // No title: the tile is named in the toolbar and the inspector.
+        .navigationTitle("")
+    }
+
+    /// The main region: the map while a tile is chosen and prepared, else
+    /// the view picked at the top.
+    @ViewBuilder private var main: some View {
+        if session.phase == .working {
+            mode
+        } else {
+            MapPicker()
+        }
+    }
+
+    /// The view picked, over the tile open.
     @ViewBuilder private var mode: some View {
         switch session.workspace.viewMode {
-        case .map:
-            MapPicker()
         case .roads:
             if let roads = session.roads {
                 MetalHost(view: roads)
             } else {
                 ContentUnavailableView("No road document", systemImage: "road.lanes",
-                                       description: Text("Pick a tile with roads on the Map, then Edit Roads."))
+                                       description: Text("No road document holds the tile: Seed the Roads makes one."))
             }
         case .tiles:
             if session.workspace.shown.isEmpty {
-                ContentUnavailableView("No built tile picked", systemImage: "cube",
-                                       description: Text("Pick built tiles on the Map: they show here in 3D."))
+                ContentUnavailableView("The tile is not built", systemImage: "cube",
+                                       description: Text("Build the Tile makes its model."))
             } else if let tiles = session.tiles {
                 MetalHost(view: tiles)
             }

@@ -2,12 +2,23 @@ import Foundation
 import TileKit
 import Observation
 
-/// What the window shows: the workspace, the views of its modes, the road
-/// document open in the Roads view, the build.
+/// The app's global state: the workspace, the tile open and where the work
+/// on it stands, the views over it, the road document open in the Roads
+/// view, the build.
+///
+/// A session starts by choosing a tile on the map (`choosing`). Opening it
+/// fetches its OSM and seeds its roads when they are missing (`preparing`),
+/// then the views over it are there (`working`) until another is chosen.
 @Observable
 @MainActor
 final class Session {
+    enum Phase { case choosing, preparing, working }
+
     private(set) var workspace: Workspace
+    private(set) var phase = Phase.choosing
+    /// The tile picked on the map while choosing: the one opened next. It
+    /// starts as the tile open last.
+    var candidate: TileKey?
     let camera = MapCamera()
     let raster = RasterTiles()
     let build = BuildRunner()
@@ -35,6 +46,7 @@ final class Session {
 
     init(root: URL) {
         workspace = Workspace(root: root)
+        candidate = workspace.tile
         tiles = TileView(model: workspace)
         camera.frame(workspace)
         UserDefaults.standard.set(root.path, forKey: "workspace")
@@ -47,10 +59,54 @@ final class Session {
         model = nil
         roads = nil
         workspace = Workspace(root: root)
+        candidate = workspace.tile
+        phase = .choosing
         tiles = TileView(model: workspace)
         camera.frame(workspace)
         UserDefaults.standard.set(root.path, forKey: "workspace")
         scanLandmarks()
+    }
+
+    // MARK: The tile open
+
+    /// The tile the files and the map's panel show: the one open, or the one
+    /// picked while choosing.
+    var shownTile: TileKey? { phase == .choosing ? candidate : workspace.tile }
+
+    /// Opens a tile to work on: its OSM fetched and its roads seeded first
+    /// when they are missing, then its views.
+    func open(tile: TileKey) {
+        guard !build.running else { return }
+        closeRoads()
+        candidate = tile
+        workspace.tile = tile
+        var steps: [[String]] = []
+        if !workspace.fetched.contains(tile) { steps.append(["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
+        if workspace.document(holding: tile) == nil {
+            steps.append(["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)", "\(tile.x)", "\(tile.y)"])
+        }
+        guard !steps.isEmpty else { return startWork() }
+        phase = .preparing
+        run(steps) { ok in
+            if ok {
+                self.startWork()
+            } else {
+                self.phase = .choosing
+                self.problem = "\(tile.name) could not be prepared: the console says why."
+            }
+        }
+    }
+
+    /// Back to choosing a tile, the road document open saved.
+    func chooseAnotherTile() {
+        closeRoads()
+        candidate = workspace.tile
+        phase = .choosing
+    }
+
+    private func startWork() {
+        phase = .working
+        follow(workspace.viewMode)
     }
 
     /// Opens a road document in the Roads view.
@@ -62,7 +118,6 @@ final class Session {
             view.model = model
             self.model = model
             roads = view
-            workspace.viewMode = .roads
             Task { @MainActor in view.frameAll() }
         } catch {
             problem = "Cannot open \(url.lastPathComponent): \(error.localizedDescription)"
@@ -83,11 +138,11 @@ final class Session {
         landmarkView?.show(landmarks.selected?.glb)
     }
 
-    /// The tile picked on the map is what every other view works on, alone:
-    /// entering the Roads view opens the road document holding it and frames
-    /// it, or closes the document open when none holds it.
+    /// The tile open is what every view works on, alone: entering the Roads
+    /// view opens the road document holding it and frames it, or closes the
+    /// document open when none holds it.
     func follow(_ mode: ViewMode) {
-        guard mode == .roads, let tile = workspace.tile else { return }
+        guard phase == .working, mode == .roads, let tile = workspace.tile else { return }
         guard let url = workspace.document(holding: tile) else {
             closeRoads()
             return
@@ -118,9 +173,9 @@ final class Session {
 
     /// Whether `action` can run on the working tile now.
     func can(_ action: TileAction) -> Bool {
-        guard let tile = workspace.tile, !build.running else { return false }
+        guard phase == .working, let tile = workspace.tile, !build.running else { return false }
         switch action {
-        case .everything, .roads: return true
+        case .roads: return true
         case .tile: return workspace.fetched.contains(tile)
         case .light: return workspace.built.contains(tile)
         }
@@ -131,7 +186,7 @@ final class Session {
     func perform(_ action: TileAction) {
         guard let tile = workspace.tile, can(action) else { return }
         switch action {
-        case .everything, .tile:
+        case .tile:
             run([buildStep(tile)])
         case .light:
             // A tile built before builds kept what a bake needs builds once first.

@@ -6,6 +6,8 @@ struct MapCanvas: View {
     let workspace: Workspace
     let camera: MapCamera
     let raster: RasterTiles
+    /// The tile picked, outlined.
+    var picked: TileKey?
 
     var body: some View {
         // Read here, so the map is drawn again as OpenStreetMap's tiles come.
@@ -43,7 +45,7 @@ struct MapCanvas: View {
                 } else if workspace.fetched.contains(t) {
                     ctx.fill(Path(r), with: .color(.yellow.opacity(0.3)))
                 }
-                let picked = workspace.tile == t
+                let picked = self.picked == t
                 if picked { ctx.fill(Path(r), with: .color(.blue.opacity(0.3))) }
                 ctx.stroke(Path(r), with: .color(.black.opacity(0.25)), lineWidth: 1)
                 if workspace.document(holding: t) != nil {

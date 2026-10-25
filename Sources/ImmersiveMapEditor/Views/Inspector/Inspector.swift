@@ -9,13 +9,28 @@ struct Inspector: View {
 
     var body: some View {
         let mode = session.workspace.viewMode
+        let working = session.phase == .working
         VStack(spacing: 0) {
-            PanelHeader(title: mode.rawValue, systemImage: mode.systemImage)
+            if working {
+                PanelHeader(title: mode.rawValue, systemImage: mode.systemImage)
+            } else {
+                PanelHeader(title: "Choose a Tile", systemImage: "map")
+            }
             Form {
                 WorkingTile()
-                if let action = mode.action { ActionSection(action: action) }
+                if !working {
+                    MapSections()
+                } else {
+                    if let action = mode.action { ActionSection(action: action) }
+                    modeSections(mode)
+                }
+            }
+            .formStyle(.grouped)
+        }
+    }
+
+    @ViewBuilder private func modeSections(_ mode: ViewMode) -> some View {
                 switch mode {
-                case .map: MapSections()
                 case .roads:
                     if let model = session.model, let roads = session.roads {
                         RoadsSections(model: model, map: roads)
@@ -26,9 +41,6 @@ struct Inspector: View {
                 case .light: LightSections()
                 case .landmarks: LandmarksSections()
                 }
-            }
-            .formStyle(.grouped)
-        }
     }
 }
 
@@ -58,15 +70,15 @@ extension PanelHeader where Trailing == EmptyView {
     }
 }
 
-/// The working tile, picked on the map, at the top of the inspector in
-/// every view: its name and what the workspace has of it.
+/// The tile shown (open, or picked while choosing), at the top of the
+/// inspector: its name and what the workspace has of it.
 struct WorkingTile: View {
     @Environment(Session.self) private var session
 
     var body: some View {
         let workspace = session.workspace
         Section("Tile") {
-            if let t = workspace.tile {
+            if let t = session.shownTile {
                 Text(verbatim: t.name).font(.body.monospaced())
                 Text([workspace.fetched.contains(t) ? "OSM fetched" : "not fetched",
                       workspace.built.contains(t) ? "built" : "not built",
@@ -97,7 +109,6 @@ struct ActionSection: View {
 extension ViewMode {
     var systemImage: String {
         switch self {
-        case .map: "map"
         case .roads: "road.lanes"
         case .tiles: "cube"
         case .light: "sun.max"

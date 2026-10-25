@@ -9,8 +9,8 @@ struct TileKey: Hashable, Codable, Comparable {
     static func < (a: TileKey, b: TileKey) -> Bool { (a.y, a.x) < (b.y, b.x) }
 }
 
+/// The views over the open tile, the tabs at the top once a tile is open.
 enum ViewMode: String, CaseIterable, Identifiable {
-    case map = "Map"
     case roads = "Roads"
     case tiles = "Tiles 3D"
     case light = "Light"
@@ -27,11 +27,11 @@ final class Workspace {
     static let zoom = 15
 
     let root: URL
-    var viewMode: ViewMode = .map
+    var viewMode: ViewMode = .roads
     private(set) var fetched: Set<TileKey> = []
     private(set) var built: Set<TileKey> = []
     private(set) var documents: [(url: URL, tiles: RoadPlan.Tiles)] = []
-    /// The tile picked on the map, the one every other view works on.
+    /// The tile open, the one every view works on (Session opens it).
     var tile: TileKey? {
         didSet {
             remember()

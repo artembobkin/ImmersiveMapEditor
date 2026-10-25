@@ -14,24 +14,35 @@ struct EditorCommands: Commands {
                 .disabled(session.model == nil)
         }
         CommandGroup(after: .pasteboard) {
-            Button("Select None") {
-                if session.workspace.viewMode == .map { session.workspace.tile = nil } else { session.model?.selection = [] }
-            }
-            .keyboardShortcut("d")
+            Button("Select None") { session.model?.selection = [] }
+                .keyboardShortcut("d")
+                .disabled(session.model == nil)
         }
         CommandGroup(before: .toolbar) {
-            Button("Map") { session.workspace.viewMode = .map }.keyboardShortcut("1")
-            Button("Roads") { session.workspace.viewMode = .roads }.keyboardShortcut("2")
-            Button("Tiles 3D") { session.workspace.viewMode = .tiles }.keyboardShortcut("3")
-            Button("Light") { session.workspace.viewMode = .light }.keyboardShortcut("4")
-            Button("Landmarks") { session.workspace.viewMode = .landmarks }.keyboardShortcut("5")
+            // The views over the open tile, there once one is open.
+            ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { i, mode in
+                Button(mode.rawValue) { session.workspace.viewMode = mode }
+                    .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
+                    .disabled(session.phase != .working)
+            }
             Divider()
         }
-        CommandMenu("Tiles") {
-            let action = session.workspace.viewMode.action ?? .everything
-            Button(action.title) { session.perform(action) }
-            .keyboardShortcut("b")
-            .disabled(!session.can(action))
+        CommandMenu("Tile") {
+            if session.phase == .choosing {
+                Button("Open the Tile Picked") { if let t = session.candidate { session.open(tile: t) } }
+                    .keyboardShortcut(.return)
+                    .disabled(session.candidate == nil || session.build.running)
+            } else {
+                Button("Choose Another Tile") { session.chooseAnotherTile() }
+                    .keyboardShortcut("0")
+                    .disabled(session.phase != .working)
+            }
+            Divider()
+            if let action = session.workspace.viewMode.action, session.phase == .working {
+                Button(action.title) { session.perform(action) }
+                    .keyboardShortcut("b")
+                    .disabled(!session.can(action))
+            }
             Button(session.build.shown ? "Hide Build Log" : "Show Build Log") { session.build.shown.toggle() }.keyboardShortcut("l")
         }
     }
