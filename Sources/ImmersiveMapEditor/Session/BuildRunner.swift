@@ -9,13 +9,19 @@ import Observation
 final class BuildRunner {
     private(set) var log = ""
     private(set) var running = false
+    /// What the pipeline is doing now, from its `@progress` lines (TileKit's
+    /// `Progress`): the stage, how far it is when that is known, a detail.
+    struct Stage: Equatable {
+        var name: String
+        var fraction: Double?
+        var detail: String?
+    }
+    private(set) var stage: Stage?
+    /// Which command of a run this is, and how many there are.
+    private(set) var step = (index: 0, count: 0)
+
     /// Whether the log is open at the foot of the window: a build opens it.
     var shown = false
-
-    /// The last line the pipeline wrote, for the status line.
-    var lastLine: String {
-        log.split(separator: "\n").last.map(String.init) ?? ""
-    }
 
     func run(root: URL, arguments: [String], done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         run(root: root, steps: [arguments], done: done)
@@ -31,19 +37,23 @@ final class BuildRunner {
         running = true
         shown = true
         log = ""
+        stage = nil
         Task {
             var ok = true
-            for arguments in steps where ok {
-                ok = await step(root: root, arguments)
+            for (i, arguments) in steps.enumerated() where ok {
+                step = (i + 1, steps.count)
+                ok = await run(root: root, arguments)
             }
+            stage = nil
             log += "\n" + (ok ? "Done." : "Stopped.") + "\n"
             running = false
             done(ok)
         }
     }
 
-    /// One command, its output into the log as it comes.
-    private func step(root: URL, _ arguments: [String]) async -> Bool {
+    /// One command, its output into the log as it comes, its progress lines
+    /// into `stage`.
+    private func run(root: URL, _ arguments: [String]) async -> Bool {
         log += "$ tilepipeline \(arguments.joined(separator: " "))\n"
         // Built with the editor, in the same folder (or the app's MacOS folder).
         let tool = Bundle.main.executableURL!.deletingLastPathComponent().appendingPathComponent("tilepipeline")
@@ -56,7 +66,11 @@ final class BuildRunner {
         do {
             try process.run()
             for try await line in pipe.fileHandleForReading.bytes.lines {
-                log += line + "\n"
+                if line.hasPrefix("@progress "), let s = Self.stage(line.dropFirst(10)) {
+                    stage = s
+                } else {
+                    log += line + "\n"
+                }
             }
             process.waitUntilExit()
             if process.terminationStatus != 0 { log += "Failed (\(process.terminationStatus)).\n" }
@@ -65,5 +79,11 @@ final class BuildRunner {
             log += "Cannot start \(tool.path): \(error.localizedDescription)\n"
             return false
         }
+    }
+
+    private static func stage(_ json: Substring) -> Stage? {
+        guard let o = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
+              let name = o["stage"] as? String else { return nil }
+        return Stage(name: name, fraction: (o["fraction"] as? NSNumber)?.doubleValue, detail: o["detail"] as? String)
     }
 }

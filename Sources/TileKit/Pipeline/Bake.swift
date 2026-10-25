@@ -34,6 +34,7 @@ public enum Bake {
         let light = Lighting.shape(irradiance, settings)
         try PNG.write(out.appendingPathComponent("lightmap.png"), light, width: size, height: size, channels: 3)
 
+        Progress.report("Cutting the tile and exporting")
         let m = cut(scene.mesh, scene.region)
         let uv1 = Lighting.lightUVs(m, bounds: lit, size: size)
         cutDone(m.count)
@@ -93,6 +94,7 @@ public enum Bake {
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
                 print("[bake] size \(settings.size), \(settings.samples) samples, \(settings.bounces) bounces, gamma \(settings.gamma)")
                 try light(scene, settings, tile: tile, out: out, export: true, started: started, log: "bake")
+                Progress.report("Validating")
                 let result = try Validate.tile(out)
                 for c in result.checks where !c.ok { print("[bake]   FAIL \(c.name) \(c.detail)") }
                 print(String(format: "[bake] %@ %@ in %.1f s", name, result.ok ? "ok" : "FAILED at validate",

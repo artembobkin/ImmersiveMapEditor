@@ -63,6 +63,7 @@ public enum Pipeline {
                 try Fetch.tile(paths, z: z, x: x, y: y, force: options.refetch)
             }
         }
+        Progress.report("Seeding the roads where no document holds them")
         print("roads from roads/" + (try ensureRoads(paths, z: z, tiles: tiles)).joined(separator: ", roads/"))
         let indexURL = out.appendingPathComponent("index.json")
         var index: [String: [String: Any]] = [:]
@@ -90,6 +91,7 @@ public enum Pipeline {
                 try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
+                Progress.report("Validating")
                 let result = try Validate.tile(folder)
                 print("  validate  \(result.ok ? "ok" : "FAILED")")
                 for c in result.checks where !c.ok { print("    FAIL \(c.name) \(c.detail)") }

@@ -25,7 +25,9 @@ public enum Build {
         let (cx, cy, half) = whole ? (0.0, 0.0, tile.size / 2) : (square ?? (-30, -130, 160))
         let region = Geometry.box(cx - half, cy - half, cx + half, cy + half)
         let work = region.buffer(margin, join: .mitre)
+        Progress.report("Reading OSM")
         let osm = try Osm(tile)
+        Progress.report("Placing the landmarks")
         // The landmark models first: their colours join the palette.
         let (models, replaced, covered) = Imported.load(tile, work, paths)
         let palette = PaletteTexture()
@@ -41,7 +43,9 @@ public enum Build {
         var plainKeys = Set<String>()
         for bd in buildings where bd.landmark == nil && !typical(bd.tags) { plainKeys.insert(bd.tags["_key"] ?? bd.id) }
         for bd in buildings where plainKeys.contains(bd.tags["_key"] ?? bd.id) { bd.tags["_plain"] = "1" }
-        for bd in buildings {
+        for (i, bd) in buildings.enumerated() {
+            Progress.report("Building the houses", fraction: Double(i + 1) / Double(buildings.count),
+                            detail: "\(i + 1) of \(buildings.count)")
             if let landmark = bd.landmark {
                 // A landmark is never generated: until its model is made by
                 // hand, its place stays empty and is listed as pending.
@@ -54,11 +58,14 @@ public enum Build {
                 b.whole = .cut
             }
         }
+        Progress.report("Laying the roads")
         let (asphalt, kerb, shelters) = try Ground.build(b, osm, tile, work: work, footprint: footprint, paths: paths, roads: roads)
+        Progress.report("Construction sites and bus shelters")
         buildSites(b, osm: osm, work: work, earth: Ground.constructionEarth(osm, work: work, footprint: footprint,
                                                                             asphalt: asphalt, kerb: kerb),
                    footprint: footprint, asphalt: asphalt)
         let furniture = buildFurniture(b, shelters: shelters)
+        Progress.report("Cleaning the mesh")
         let m = clean(b.tris)
 
         // The light map covers the work area and every building this tile owns

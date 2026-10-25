@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The window's content: the view of the mode, its panel in the inspector,
-/// the mode in the toolbar, the build's log below it while open, hints and
-/// state along the bottom.
+/// The window: its one layout (WindowLayout: the view's content, the console
+/// under it, the inspector on the right), the same whatever the view. The
+/// view chosen at the top fills the regions, never changes them. Hints and
+/// state along the bottom, the views in the toolbar.
 struct ContentView: View {
     @Environment(Session.self) private var session
     @Environment(\.undoManager) private var undoManager
@@ -12,14 +13,10 @@ struct ContentView: View {
     var body: some View {
         @Bindable var workspace = session.workspace
         let importing = session.importing
-        VSplitView {
+        WindowLayout(consoleShown: session.build.shown) {
             mode
-                .frame(minWidth: 600, minHeight: 300)
-            if session.build.shown {
-                BottomPanel()
-                    .environment(session.build)
-                    .frame(minHeight: 120, idealHeight: 220)
-            }
+        } console: {
+            BottomPanel().environment(session.build)
         }
         .frame(minWidth: 600, minHeight: 400)
         .safeAreaInset(edge: .bottom, spacing: 0) {

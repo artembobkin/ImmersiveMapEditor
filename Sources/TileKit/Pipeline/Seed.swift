@@ -32,17 +32,22 @@ public enum Seed {
             throw PipelineError("roads/\(region.name).json exists and may hold hand edits: seed it again only when forced")
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        Progress.report("Seeding the roads", fraction: 0, detail: "merging the tiles' OSM")
         let elements = try merge(region, folder, paths)
+        Progress.report("Seeding the roads", fraction: 0.2, detail: "osm2streets")
         let streets = try streets(region, elements, folder)
         let osm = try Osm(region)
         let work = region.bounds.buffer(margin, join: .mitre)
+        Progress.report("Seeding the roads", fraction: 0.7, detail: "roadway, markings and shelters")
         let doc = Roads.document(try Roads.seed(osm, streets: streets, work: work), region: region)
         try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
         try doc.write(path)
         var kinds: [String: Int] = [:]
         for m in doc.markings { kinds[m.kind, default: 0] += 1 }
         print("roads/\(region.name).json: \(doc.areas.count) areas, markings \(kinds), \(doc.shelters.count) shelters")
+        Progress.report("Seeding the roads", fraction: 0.9, detail: "the editor's underlay")
         try context(osm, region, work, folder)
+        Progress.report("Seeding the roads", fraction: 1)
         return path
     }
 

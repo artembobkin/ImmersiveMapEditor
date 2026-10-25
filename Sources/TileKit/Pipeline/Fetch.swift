@@ -59,15 +59,12 @@ public enum Fetch {
             var allowed = CharacterSet.alphanumerics
             allowed.insert(charactersIn: "-._~")
             request.httpBody = Data(("data=" + query.addingPercentEncoding(withAllowedCharacters: allowed)!).utf8)
-            let done = DispatchSemaphore(value: 0)
-            var result: (Data?, URLResponse?, Error?)
-            URLSession.shared.dataTask(with: request) { result = ($0, $1, $2); done.signal() }.resume()
-            done.wait()
-            if let data = result.0, (result.1 as? HTTPURLResponse)?.statusCode == 200,
+            let result = Receiver.fetch(request, host: URL(string: server)!.host ?? server)
+            if let data = result.data, (result.response as? HTTPURLResponse)?.statusCode == 200,
                (try? JSONSerialization.jsonObject(with: data)) != nil {
                 return (server, data)
             }
-            last = result.2?.localizedDescription ?? "HTTP \((result.1 as? HTTPURLResponse)?.statusCode ?? 0)"
+            last = result.error?.localizedDescription ?? "HTTP \((result.response as? HTTPURLResponse)?.statusCode ?? 0)"
             print("[osm] failed: \(last)")
         }
         throw PipelineError("Overpass failed: \(last)")
@@ -128,3 +125,59 @@ public enum Fetch {
         print("[osm] \(summary["elements"] ?? [:])")
     }
 }
+
+/// A download that reports its progress (`Progress`) while it runs: first
+/// the wait while Overpass prepares the answer, then the bytes as they come,
+/// their speed, and the fraction when the server says how many there are.
+private final class Receiver: NSObject, URLSessionDataDelegate {
+    private let lock = NSLock()
+    private var data = Data()
+    private var response: URLResponse?
+    private var error: Error?
+    private let done = DispatchSemaphore(value: 0)
+
+    static func fetch(_ request: URLRequest, host: String) -> (data: Data?, response: URLResponse?, error: Error?) {
+        let receiver = Receiver()
+        let session = URLSession(configuration: .default, delegate: receiver, delegateQueue: nil)
+        session.dataTask(with: request).resume()
+        let started = Date()
+        var firstByte: Date?
+        while receiver.done.wait(timeout: .now() + 0.25) == .timedOut {
+            let (count, expected) = receiver.locked { (receiver.data.count, receiver.response?.expectedContentLength ?? -1) }
+            let elapsed = Date().timeIntervalSince(started)
+            if count == 0 {
+                Progress.report("Fetching OSM", detail: String(format: "%@ is preparing the data, %.0f s", host, elapsed))
+            } else {
+                if firstByte == nil { firstByte = Date() }
+                let speed = Double(count) / max(0.25, Date().timeIntervalSince(firstByte!))
+                Progress.report("Fetching OSM", fraction: expected > 0 ? Double(count) / Double(expected) : nil,
+                                detail: Progress.bytes(count) + (expected > 0 ? " of " + Progress.bytes(Int(expected)) : "")
+                                    + ", " + Progress.bytes(Int(speed)) + "/s")
+            }
+        }
+        session.finishTasksAndInvalidate()
+        return receiver.locked { (receiver.error == nil ? receiver.data : nil, receiver.response, receiver.error) }
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        locked { self.response = response }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        locked { self.data.append(data) }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        locked { self.error = error }
+        done.signal()
+    }
+}
+

@@ -41,10 +41,7 @@ struct StatusLine: View {
             // A build going on is shown here too, the log open or not.
             if session.build.running {
                 Divider().frame(height: 12)
-                ProgressView().controlSize(.mini)
-                Text(session.build.lastLine).lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: 360, alignment: .leading)
+                BuildProgress().environment(session.build).frame(maxWidth: 520, alignment: .leading)
             }
         }
     }

@@ -57,8 +57,10 @@ public enum Lighting {
     public static func bake(_ tris: [Double], bounds: (Double, Double, Double, Double), size: Int,
                             samples: Int, bounces: Int) throws -> [Float] {
         let started = Date()
+        let detail = "\(size) px, \(samples) samples, \(bounces) bounces"
+        Progress.report("Baking the light", fraction: 0, detail: detail)
         let light = try LightBaker.bake(triangles: tris.map(Float.init), bounds: bounds, size: size, samples: samples,
-                                        bounces: bounces)
+                                        bounces: bounces) { Progress.report("Baking the light", fraction: $0, detail: detail) }
         print(String(format: "[bake] %d triangles, %d px, %d samples, %d bounces in %.1f s", tris.count / 9, size,
                      samples, bounces, Date().timeIntervalSince(started)))
         return light

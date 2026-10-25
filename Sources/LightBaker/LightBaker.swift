@@ -102,8 +102,9 @@ public enum LightBaker {
         var top: Float
     }
 
+    /// `progress` hears the fraction of rows done after each band.
     public static func bake(triangles: [Float], bounds: (Double, Double, Double, Double), size: Int,
-                            samples: Int = 256, bounces: Int = 3) throws -> [Float] {
+                            samples: Int = 256, bounces: Int = 3, progress: (Double) -> Void = { _ in }) throws -> [Float] {
         func fail(_ s: String) -> Failure { Failure(description: "light bake: \(s)") }
         guard let device = MTLCreateSystemDefaultDevice(), device.supportsRaytracing, let queue = device.makeCommandQueue()
         else { throw fail("no Metal device with ray tracing") }
@@ -161,6 +162,7 @@ public enum LightBaker {
             cmd.waitUntilCompleted()
             if let e = cmd.error { throw fail("\(e)") }
             row += rows
+            progress(Double(row) / Double(size))
         }
         let floats = out.contents().bindMemory(to: Float.self, capacity: size * size)
         return Array(UnsafeBufferPointer(start: floats, count: size * size))

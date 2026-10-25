@@ -9,10 +9,7 @@ struct BottomPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Build", systemImage: "terminal") {
-                if runner.running {
-                    ProgressView().controlSize(.small)
-                    Text("Running").foregroundStyle(.secondary)
-                }
+                if runner.running { BuildProgress() }
                 Button("Hide", systemImage: "xmark") { runner.shown = false }
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
