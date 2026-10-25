@@ -86,12 +86,15 @@ extension StreetNetwork {
         for (from, via, to) in complicated { roads.modify(from) { $0.complicatedTurnRestrictions.append((via, to)) } }
 
         // Traffic signals tagged on incoming ways, not at intersections.
-        for (pt, dir) in input.trafficSignals.entries {
+        let signals = hashMapOrder.map { $0.order(input.trafficSignals.entries, last: $0.signalsLast) }
+            ?? input.trafficSignals.entries
+        for (pt, dir) in signals {
             guard let r = ptToRoad[pt], var road = roads[r] else { continue }
             guard let d = dir ?? road.onewayForDriving() else { continue }
             let i = d == .forward ? road.dstI : road.srcI
             if !intersections[i]!.isMapEdge() { intersections.modify(i) { $0.control = .signalled } }
             if let (dist, _) = road.referenceLine.distAlongOfPoint(pt.toPt2D()) {
+                hashMapOrder?.record("signals", r, atEnd: d == .forward, pt)
                 if d == .forward {
                     road.stopLineEnd.vehicleDistance = dist
                     road.stopLineEnd.interruption = .signal
@@ -119,16 +122,20 @@ extension StreetNetwork {
             roads[r] = road
         }
 
-        for (pt, crossing) in input.crossings.entries {
+        let crossings = hashMapOrder.map { $0.order(input.crossings.entries, last: $0.crossingsLast) }
+            ?? input.crossings.entries
+        for (pt, crossing) in crossings {
             if let i = ptToIntersectionID[pt] { intersections.modify(i) { $0.crossing = crossing } }
             if let r = ptToRoad[pt], var road = roads[r] {
                 if let (dist, _) = road.referenceLine.distAlongOfPoint(pt.toPt2D()) {
                     // Snap to the start or end within 30% of the length.
                     let pct = dist / road.referenceLine.length
                     if pct < 0.3 {
+                        hashMapOrder?.record("crossings", r, atEnd: false, pt)
                         road.stopLineStart.vehicleDistance = dist
                         road.stopLineStart.interruption = .signal
                     } else if pct > 0.7 {
+                        hashMapOrder?.record("crossings", r, atEnd: true, pt)
                         road.stopLineEnd.vehicleDistance = dist
                         road.stopLineEnd.interruption = .signal
                     }

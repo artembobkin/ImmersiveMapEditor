@@ -70,6 +70,9 @@ public struct StreetNetwork {
     /// Where the lanes of a new road come from (osm2lanes's `get_lane_specs_ltr`).
     public var laneSpecs: LaneSpecSource
 
+    /// Tests only: the order of the Rust's `HashMap`s (`HashMapOrder`).
+    var hashMapOrder: HashMapOrder?
+
     var intersectionIDCounter = 0
     var roadIDCounter = 0
 
