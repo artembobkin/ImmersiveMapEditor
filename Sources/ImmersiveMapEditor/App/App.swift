@@ -9,6 +9,7 @@ import SwiftUI
 ///   ImmersiveMapEditor --resave IN OUT                        a document read and written, no window
 ///   ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y...    tiles in 3D to a PNG, no window
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
+///   ImmersiveMapEditor --landmark-snapshot MODEL.glb OUT.png  a landmark model to a PNG, no window
 ///
 /// With no argument it opens the workspace opened last, else
 /// ~/Desktop/TilePipeline.

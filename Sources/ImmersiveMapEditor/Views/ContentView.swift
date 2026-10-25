@@ -55,6 +55,7 @@ struct ContentView: View {
                     if let model = session.model, let roads = session.roads { RoadsPanel(model: model, map: roads) }
                 case .tiles: TilesPanel()
                 case .light: LightPanel()
+                case .landmarks: LandmarksPanel()
                 }
             }
             .inspectorColumnWidth(min: 260, ideal: 290, max: 400)
@@ -98,6 +99,16 @@ struct ContentView: View {
             }
         case .light:
             LightView()
+        case .landmarks:
+            Group {
+                if session.landmarks.selected == nil {
+                    ContentUnavailableView("No landmark picked", systemImage: "building.columns",
+                                           description: Text("Pick a model in the list on the right."))
+                } else if let view = session.landmarkView {
+                    MetalHost(view: view)
+                }
+            }
+            .onChange(of: session.landmarks.picked, initial: true) { session.showLandmark() }
         }
     }
 }

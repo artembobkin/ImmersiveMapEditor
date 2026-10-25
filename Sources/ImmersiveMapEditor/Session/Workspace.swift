@@ -14,6 +14,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case roads = "Roads"
     case tiles = "Tiles 3D"
     case light = "Light"
+    case landmarks = "Landmarks"
     var id: String { rawValue }
 }
 

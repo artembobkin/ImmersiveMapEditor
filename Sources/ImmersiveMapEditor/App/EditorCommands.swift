@@ -24,6 +24,7 @@ struct EditorCommands: Commands {
             Button("Roads") { session.workspace.viewMode = .roads }.keyboardShortcut("2")
             Button("Tiles 3D") { session.workspace.viewMode = .tiles }.keyboardShortcut("3")
             Button("Light") { session.workspace.viewMode = .light }.keyboardShortcut("4")
+            Button("Landmarks") { session.workspace.viewMode = .landmarks }.keyboardShortcut("5")
             Divider()
         }
         CommandMenu("Tiles") {

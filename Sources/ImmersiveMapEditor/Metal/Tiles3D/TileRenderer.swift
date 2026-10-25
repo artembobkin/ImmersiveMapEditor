@@ -127,6 +127,15 @@ final class TileRenderer {
     /// The tiles drawn offscreen to a PNG, `width` by `height`.
     func snapshot(_ library: TileLibrary, viewProjection: simd_float4x4, lightMap: Bool, to url: URL,
                   width: Int, height: Int) throws {
+        try Self.renderPNG(device: device, queue: queue, to: url, width: width, height: height) { enc in
+            encode(enc, tiles: library, viewProjection: viewProjection, lightMap: lightMap)
+        }
+    }
+
+    /// One frame drawn by `encode` without a window, into a PNG: the 3D views'
+    /// formats, multisampled and resolved.
+    static func renderPNG(device: MTLDevice, queue: MTLCommandQueue, to url: URL, width: Int, height: Int,
+                          encode: (MTLRenderCommandEncoder) -> Void) throws {
         guard let buffer = queue.makeCommandBuffer() else { return }
         func texture(_ format: MTLPixelFormat, samples: Int) -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: width, height: height, mipmapped: false)
@@ -147,7 +156,7 @@ final class TileRenderer {
         pass.depthAttachment.clearDepth = 1
         pass.depthAttachment.storeAction = .dontCare
         guard let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
-        encode(enc, tiles: library, viewProjection: viewProjection, lightMap: lightMap)
+        encode(enc)
         enc.endEncoding()
         buffer.commit()
         buffer.waitUntilCompleted()

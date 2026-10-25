@@ -9,7 +9,7 @@ import SwiftUI
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -38,6 +38,17 @@ enum Headless {
             do {
                 try view.snapshot(to: URL(fileURLWithPath: arguments[i + 2]), width: 1600, height: 1000)
                 print(workspace.tileStatus)
+                return 0
+            } catch {
+                return fail(error.localizedDescription)
+            }
+        }
+        if let i = arguments.firstIndex(of: "--landmark-snapshot"), arguments.count > i + 2 {
+            // One landmark model as the Landmarks view shows it.
+            guard let view = LandmarkView.make() else { return fail("no Metal device") }
+            do {
+                try view.snapshot(URL(fileURLWithPath: arguments[i + 1]), to: URL(fileURLWithPath: arguments[i + 2]),
+                                  width: 1200, height: 900)
                 return 0
             } catch {
                 return fail(error.localizedDescription)

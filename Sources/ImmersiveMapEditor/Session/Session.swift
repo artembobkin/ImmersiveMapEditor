@@ -1,4 +1,5 @@
 import Foundation
+import TileKit
 import Observation
 
 /// What the window shows: the workspace, the views of its modes, the road
@@ -12,6 +13,10 @@ final class Session {
     let build = BuildRunner()
     let lights = LightMaps()
     let lightSettings = LightSettings()
+    let landmarks = LandmarkCatalog()
+    private(set) var landmarkView: LandmarkView?
+    /// What the Landmarks view shows: the model's size, or what went wrong.
+    var landmarkStatus = ""
     private(set) var tiles: TileView?
     private(set) var model: RoadEditor?
     private(set) var roads: RoadsView?
@@ -27,6 +32,7 @@ final class Session {
         tiles = TileView(model: workspace)
         camera.frame(workspace)
         UserDefaults.standard.set(root.path, forKey: "workspace")
+        scanLandmarks()
     }
 
     /// A TilePipeline folder instead of the current one.
@@ -38,6 +44,7 @@ final class Session {
         tiles = TileView(model: workspace)
         camera.frame(workspace)
         UserDefaults.standard.set(root.path, forKey: "workspace")
+        scanLandmarks()
     }
 
     /// Opens a road document in the Roads view.
@@ -70,6 +77,20 @@ final class Session {
         }
     }
 
+    /// The landmark models read again from Modeling and the workspace.
+    func scanLandmarks() {
+        landmarks.scan(WorkspacePaths(root: workspace.root))
+    }
+
+    /// The Landmarks view, made when first shown, showing the model picked.
+    func showLandmark() {
+        if landmarkView == nil {
+            landmarkView = LandmarkView.make()
+            landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
+        }
+        landmarkView?.show(landmarks.selected?.glb)
+    }
+
     /// Bakes the light of built tiles again with the Light view's settings,
     /// their geometry as built, then shows the new light maps.
     func bake(_ tiles: [TileKey]) {
@@ -91,7 +112,7 @@ final class Session {
         let picked = workspace.selection.sorted()
         guard !picked.isEmpty else { return }
         switch mode {
-        case .map, .light, .tiles:
+        case .map, .light, .tiles, .landmarks:
             // The 3D view shows the tiles picked that are built, always
             // (Workspace.shown); the Light view reads them itself.
             break
