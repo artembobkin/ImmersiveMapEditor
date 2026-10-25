@@ -14,10 +14,19 @@ final class RoadsView: MTKView {
         }
     }
     private(set) var transform = ViewTransform2D()
-    /// The working tile: the satellite imagery covers it alone.
+    /// The working tile: the view shows it alone, and only what lies in it
+    /// is picked and edited.
     var focus: TileKey? {
         didSet { needsDisplay = true }
     }
+    /// The working tile in the document's metres, when the document holds it.
+    var focusRect: (Vec2, Vec2)? {
+        guard let model, let focus, (model.doc.tiles.x0...model.doc.tiles.x1).contains(focus.x),
+              (model.doc.tiles.y0...model.doc.tiles.y1).contains(focus.y) else { return nil }
+        return model.doc.projection.tileRect(x: focus.x, y: focus.y)
+    }
+    /// Whether the press the drag and release belong to began in the tile.
+    private var editing = false
     private var renderer: RoadsRenderer?
     private var tool: RoadToolHandler = SelectTool()
     private var toolKind = Tool.select
@@ -93,7 +102,8 @@ final class RoadsView: MTKView {
 
     private func hits(_ model: RoadEditor) -> RoadHitTest {
         RoadHitTest(doc: model.doc, selection: model.selection, tolerance: 7 / transform.scale,
-                    handlesShown: model.layers.handles && transform.scale >= handleScale, markingsShown: model.layers.markings)
+                    handlesShown: model.layers.handles && transform.scale >= handleScale, markingsShown: model.layers.markings,
+                    limit: focusRect)
     }
 
     private func pointer(_ event: NSEvent) -> Pointer {
@@ -118,13 +128,17 @@ final class RoadsView: MTKView {
             return
         }
         guard let ctx = context() else { return }
-        currentTool().down(pointer(event), ctx)
+        // A press outside the working tile edits nothing.
+        let p = pointer(event)
+        editing = ctx.hits.within(p.at)
+        guard editing else { return }
+        currentTool().down(p, ctx)
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
         if pan(event) { return }
-        guard let ctx = context() else { return }
+        guard editing, let ctx = context() else { return }
         currentTool().drag(pointer(event), ctx)
         needsDisplay = true
     }
@@ -134,7 +148,8 @@ final class RoadsView: MTKView {
             panning = nil
             return
         }
-        guard let ctx = context() else { return }
+        guard editing, let ctx = context() else { return }
+        editing = false
         currentTool().up(pointer(event), ctx)
         needsDisplay = true
     }

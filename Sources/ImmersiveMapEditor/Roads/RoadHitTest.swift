@@ -3,13 +3,21 @@ import Foundation
 /// What lies under a point of the Roads view: the points, markings,
 /// shelters, edges and areas of the document, within `tolerance` metres.
 /// Points are pickable on every ring and line when handles show, else only
-/// on what is selected.
+/// on what is selected, and only those in `limit` (the working tile): a
+/// view works on its one tile.
 struct RoadHitTest {
     let doc: RoadPlan
     let selection: Set<Item>
     let tolerance: Double
     let handlesShown: Bool
     let markingsShown: Bool
+    var limit: (Vec2, Vec2)?
+
+    /// Whether a point lies in the tile worked on.
+    func within(_ p: Vec2) -> Bool {
+        guard let (lo, hi) = limit else { return true }
+        return p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y
+    }
 
     /// The rings and lines whose points can be picked.
     func pickable() -> [(Owner, Int, [Vec2])] {
@@ -34,7 +42,7 @@ struct RoadHitTest {
     func vertex(_ p: Vec2) -> Item? {
         var best: (Double, Item)?
         for (owner, ring, pts) in pickable() {
-            for (i, q) in pts.enumerated() {
+            for (i, q) in pts.enumerated() where within(q) {
                 let d = (q - p).length
                 if d < tolerance && d < (best?.0 ?? .infinity) { best = (d, .vertex(owner, ring: ring, index: i)) }
             }
@@ -90,7 +98,7 @@ struct RoadHitTest {
     /// Everything with its point in the box a..b.
     func box(_ a: Vec2, _ b: Vec2) -> Set<Item> {
         let lo = simd_min(a, b), hi = simd_max(a, b)
-        func inside(_ p: Vec2) -> Bool { p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y }
+        func inside(_ p: Vec2) -> Bool { p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y && within(p) }
         var picked: Set<Item> = []
         for (owner, ring, pts) in pickable() {
             for (i, q) in pts.enumerated() where inside(q) { picked.insert(.vertex(owner, ring: ring, index: i)) }

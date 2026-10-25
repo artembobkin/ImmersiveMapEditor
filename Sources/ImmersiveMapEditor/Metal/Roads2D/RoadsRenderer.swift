@@ -167,6 +167,21 @@ final class RoadsRenderer: NSObject, MTKViewDelegate {
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: s.cover.v.count)
         }
 
+        // The working tile alone: everything is cut to its square (a pixel
+        // or two over, so its edge line shows whole).
+        if let (lo, hi) = view.focusRect {
+            let k = mtkView.drawableSize.width / max(1, size.width)
+            func screen(_ p: Vec2) -> CGPoint {
+                CGPoint(x: ((p.x - t.centre.x) * t.scale + size.width / 2) * k,
+                        y: (size.height / 2 - (p.y - t.centre.y) * t.scale) * k)
+            }
+            let a = screen(lo), b = screen(hi)
+            let w = Double(mtkView.drawableSize.width), h = Double(mtkView.drawableSize.height)
+            let x0 = max(0, min(w, min(a.x, b.x) - 2)), x1 = max(0, min(w, max(a.x, b.x) + 2))
+            let y0 = max(0, min(h, min(a.y, b.y) - 2)), y1 = max(0, min(h, max(a.y, b.y) + 2))
+            enc.setScissorRect(MTLScissorRect(x: Int(x0), y: Int(y0), width: max(1, Int(x1 - x0)), height: max(1, Int(y1 - y0))))
+        }
+
         let imagery = model.layers.satellite
         if imagery {
             opacity(Float(model.layers.satelliteOpacity))
