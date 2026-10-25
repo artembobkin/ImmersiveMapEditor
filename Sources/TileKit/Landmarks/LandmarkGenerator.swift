@@ -35,6 +35,7 @@ public enum LandmarkGenerator {
     }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
     public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
+    public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft"]
     /// How deep a window is cut into its wall.
     static let windowDepth = 0.25
 
@@ -58,6 +59,35 @@ public enum LandmarkGenerator {
             colour(m.cornice?.colour, at + ".cornice")
             colour(m.windows?.colour, at + ".windows")
             if let w = m.windows, w.storeys < 1 || w.spacing <= 0 { out.append("\(at).windows: storeys and spacing must be positive") }
+        }
+        for (i, s) in r.shapes.enumerated() {
+            let at = "shapes[\(i)] (\(s.kind))"
+            colour(s.colour, at)
+            let ring = (s.polygon?.count ?? 0) >= 3 || (s.outline.map { source.ring($0) != nil } ?? false)
+            if let o = s.outline, source.ring(o) == nil { out.append("\(at): outline \(o) is not one of the landmark's buildings") }
+            switch s.kind {
+            case "box":
+                if s.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
+                if s.size?.count != 3 || s.size!.contains(where: { $0 <= 0 }) { out.append("\(at): needs size, [along, across, up], positive") }
+            case "cylinder", "cone":
+                if s.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
+                if (s.radius ?? 0) <= 0 || (s.height ?? 0) <= 0 { out.append("\(at): needs a radius and a height") }
+            case "sphere", "dome":
+                if s.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
+                if (s.radius ?? 0) <= 0 { out.append("\(at): needs a radius") }
+            case "prism":
+                if !ring { out.append("\(at): needs a polygon of 3 points at least, or an outline") }
+                if (s.top ?? 0) <= (s.base ?? 0) { out.append("\(at): top must be above base") }
+            case "loft":
+                if !ring && (s.radius ?? 0) <= 0 { out.append("\(at): needs a polygon, an outline or a radius") }
+                if (s.radius ?? 0) > 0 && s.at?.count != 2 && !ring { out.append("\(at): a round loft needs at, [x, y]") }
+                if (s.profile?.count ?? 0) < 2 || s.profile!.contains(where: { $0.count != 2 || $0[0] < 0 }) { out.append("\(at): needs a profile of 2 [scale, rise] pairs at least") }
+            default:
+                out.append("\(at): kind is not one of \(shapeKinds.joined(separator: ", "))")
+            }
+            if (s.base ?? 0) < 0 { out.append("\(at): base below the ground") }
+            if let r = s.repeat, r.count < 1 || r.step.count != 3 { out.append("\(at).repeat: needs a count and a step [east, north, up]") }
+            if let a = s.around, a.count < 1 || a.centre.count != 2 { out.append("\(at).around: needs a count and a centre [x, y]") }
         }
         for (i, f) in r.features.enumerated() {
             let at = "features[\(i)] (\(f.kind))"
@@ -88,6 +118,7 @@ public enum LandmarkGenerator {
             m.mass(ccw(ring), mass)
         }
         for f in r.features { m.feature(f) }
+        for s in r.shapes { m.shape(s, source) }
         return m
     }
 
@@ -424,6 +455,120 @@ public enum LandmarkGenerator {
                     tri(v(t[0], 0), v(t[1], 0), v(t[2], 0), V3(-d.x, -d.y, 0), colour)
                     tri(v(t[0], len), v(t[1], len), v(t[2], len), V3(d.x, d.y, 0), colour)
                 }
+            default:
+                break
+            }
+        }
+
+        // MARK: Shapes
+
+        /// A shape's local frame: its origin at its place on its base, U
+        /// along its heading, V to the left, W up, tipped by its pitch.
+        struct Frame {
+            let o, U, V, W: V3
+            func p(_ a: Double, _ b: Double, _ c: Double) -> V3 { o + U * a + V * b + W * c }
+            func dir(_ a: Double, _ b: Double, _ c: Double) -> V3 { U * a + V * b + W * c }
+        }
+
+        func frame(_ at: P2, _ base: Double, _ heading: Double, _ pitch: Double) -> Frame {
+            let h = heading * .pi / 180, p = pitch * .pi / 180
+            let u = V3(sin(h), cos(h), 0), v = V3(-cos(h), sin(h), 0), w = V3(0, 0, 1)
+            return Frame(o: V3(at.x, at.y, base), U: u * cos(p) + w * sin(p), V: v, W: w * cos(p) - u * sin(p))
+        }
+
+        /// A shape, with its copies in a row or around a point.
+        func shape(_ s: LandmarkRecipe.Shape, _ source: LandmarkSource) {
+            let at = s.at.flatMap { $0.count == 2 ? P2($0[0], $0[1]) : nil } ?? .zero
+            var places: [(P2, Double, Double)] = [(at, s.heading ?? 0, 0)]
+            if let a = s.around, a.count >= 1, a.centre.count == 2 {
+                let c = P2(a.centre[0], a.centre[1])
+                places = (0..<a.count).map { k in
+                    let turn = 2 * .pi * Double(k) / Double(a.count), d = at - c
+                    let q = c + P2(d.x * cos(turn) + d.y * sin(turn), -d.x * sin(turn) + d.y * cos(turn))
+                    return (q, (s.heading ?? 0) + turn * 180 / .pi, 0)
+                }
+            }
+            if let r = s.repeat, r.count >= 1, r.step.count == 3 {
+                places = places.flatMap { place in (0..<r.count).map { k in
+                    (place.0 + P2(r.step[0], r.step[1]) * Double(k), place.1, place.2 + r.step[2] * Double(k)) } }
+            }
+            for (p, heading, rise) in places { one(s, source, at: p, heading: heading, base: (s.base ?? 0) + rise) }
+        }
+
+        func one(_ s: LandmarkRecipe.Shape, _ source: LandmarkSource, at: P2, heading: Double, base: Double) {
+            let colour = s.colour ?? "lm_stone", n = max(3, min(64, s.segments ?? 16))
+            let f = frame(at, base, heading, s.pitch ?? 0)
+            let tipped = abs(s.pitch ?? 0) > 1e-6
+            func circle(_ r: Double) -> [P2] { (0..<n).map { k in let t = 2 * .pi * Double(k) / Double(n); return P2(r * cos(t), r * sin(t)) } }
+            // A ring in plan, moved by the shape's place when it is its own.
+            func ring() -> [P2]? {
+                if let o = s.outline, let r = source.ring(o) { return ccw(r) }
+                if let poly = s.polygon?.filter({ $0.count == 2 }).map({ P2($0[0], $0[1]) }), poly.count >= 3 { return ccw(poly) }
+                return nil
+            }
+            switch s.kind {
+            case "box":
+                guard let size = s.size, size.count == 3 else { return }
+                let (a, b, c) = (size[0] / 2, size[1] / 2, size[2])
+                let corners = [(-a, -b), (a, -b), (a, b), (-a, b)]
+                face(corners.map { f.p($0.0, $0.1, 0) }, f.dir(0, 0, -1), colour)
+                face(corners.map { f.p($0.0, $0.1, c) }, f.dir(0, 0, 1), colour)
+                for k in 0..<4 {
+                    let (p0, p1) = (corners[k], corners[(k + 1) % 4])
+                    let mid = ((p0.0 + p1.0) / 2, (p0.1 + p1.1) / 2)
+                    face([f.p(p0.0, p0.1, 0), f.p(p1.0, p1.1, 0), f.p(p1.0, p1.1, c), f.p(p0.0, p0.1, c)], f.dir(mid.0, mid.1, 0), colour)
+                }
+            case "cylinder", "cone":
+                guard let r = s.radius, let h = s.height else { return }
+                let rt = s.kind == "cone" ? (s.radius_top ?? 0) : (s.radius_top ?? r)
+                let lo = circle(r), hi = circle(rt)
+                for k in 0..<n {
+                    let (p0, p1) = (lo[k], lo[(k + 1) % n]), (q0, q1) = (hi[k], hi[(k + 1) % n])
+                    let mid = (p0 + p1) / 2
+                    let quad = [f.p(p0.x, p0.y, 0), f.p(p1.x, p1.y, 0), f.p(q1.x, q1.y, h), f.p(q0.x, q0.y, h)]
+                    face(quad.reduce(into: [V3]()) { out, p in if out.last.map({ simd_length($0 - p) > 1e-9 }) ?? true { out.append(p) } },
+                         f.dir(mid.x, mid.y, (r - rt) / max(h, 1e-9) * r), colour)
+                }
+                if base > 0.01 || tipped { face(lo.reversed().map { f.p($0.x, $0.y, 0) }, f.dir(0, 0, -1), colour) }
+                if rt > 1e-6 { face(hi.map { f.p($0.x, $0.y, h) }, f.dir(0, 0, 1), colour) }
+            case "sphere", "dome":
+                guard let r = s.radius else { return }
+                let bands = max(2, n / 2), whole = s.kind == "sphere"
+                let centre = f.p(0, 0, whole ? r : 0)
+                func at(_ i: Int, _ j: Int) -> V3 {
+                    let phi = whole ? -.pi / 2 + .pi * Double(i) / Double(bands) : .pi / 2 * Double(i) / Double(bands)
+                    let theta = 2 * .pi * Double(j) / Double(n)
+                    return f.p(r * cos(phi) * cos(theta), r * cos(phi) * sin(theta), (whole ? r : 0) + r * sin(phi))
+                }
+                for i in 0..<bands {
+                    for j in 0..<n {
+                        let quad = [at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j)]
+                        let pts = quad.reduce(into: [V3]()) { out, p in if out.allSatisfy({ simd_length($0 - p) > 1e-9 }) { out.append(p) } }
+                        guard pts.count >= 3 else { continue }
+                        face(pts, pts.reduce(V3.zero, +) / Double(pts.count) - centre, colour)
+                    }
+                }
+                if !whole, base > 0.01 || tipped { face((0..<n).reversed().map { at(0, $0) }, f.dir(0, 0, -1), colour) }
+            case "prism":
+                guard let outer = ring(), let top = s.top, top > base else { return }
+                let holes = (s.holes ?? []).map { ccw($0.filter { $0.count == 2 }.map { P2($0[0], $0[1]) }) }.filter { $0.count >= 3 }
+                walls(outer, base, top, colour)
+                for hole in holes { walls(hole.reversed(), base, top, colour) }
+                cap(outer, holes: holes, top, up: true, colour)
+                if base > 0.01 { cap(outer, holes: holes, base, up: false, colour) }
+            case "loft":
+                guard let profile = s.profile?.filter({ $0.count == 2 }), profile.count >= 2 else { return }
+                let rr: [P2]
+                let c: P2
+                if let own = ring() {
+                    rr = own
+                    c = Geometry.polygon(own + [own[0]]).centroid.xy
+                } else if let r = s.radius, r > 0 {
+                    rr = circle(r).map { at + $0 }
+                    c = at
+                } else { return }
+                loft(rr, c, base, profile.map { ($0[0], $0[1]) }, colour)
+                if base > 0.01, profile[0][0] > 1e-6 { cap(rr.map { c + ($0 - c) * profile[0][0] }, base + profile[0][1], up: false, colour) }
             default:
                 break
             }

@@ -177,8 +177,9 @@ enum LandmarkMCP {
             func lines(_ r: LandmarkRecipe) throws -> String {
                 let masses = try r.masses.map { String(data: try e.encode($0), encoding: .utf8)! }
                 let features = try r.features.map { String(data: try e.encode($0), encoding: .utf8)! }
+                let shapes = try r.shapes.map { String(data: try e.encode($0), encoding: .utf8)! }
                 return "{\"version\": 1,\n \"masses\": [\n" + masses.joined(separator: ",\n") + "],\n \"features\": [\n"
-                    + features.joined(separator: ",\n") + "]}"
+                    + features.joined(separator: ",\n") + "],\n \"shapes\": [\n" + shapes.joined(separator: ",\n") + "]}"
             }
             if let recipe = try? LandmarkRecipe.read(recipeURL) { return try lines(recipe) }
             let starter = try LandmarkSource(folder.appendingPathComponent("landmark.json")).starterRecipe()

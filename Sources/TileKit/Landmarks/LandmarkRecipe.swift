@@ -32,7 +32,15 @@ import Geometry
 ///                 {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2,
 ///                  "colour": "lm_stone"},
 ///                 {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4,
-///                  "height": 1.5, "count": 5, "colour": "lm_stone"}]}
+///                  "height": 1.5, "count": 5, "colour": "lm_stone"}],
+///    "shapes": [{"kind": "box" | "cylinder" | "cone" | "sphere" | "dome" | "prism" | "loft", ...}]}
+///
+/// Shapes are free modelling (see `guide`): a box of a size, a cylinder or
+/// cone of a radius and height, a sphere or dome of a radius, a prism of a
+/// polygon with holes, a loft (a ring drawn toward its centre along a
+/// profile of scale and rise), each at a place on a base, turned to a
+/// heading and tipped by a pitch, and copied in a row (`repeat`) or around
+/// a point (`around`).
 ///
 /// A mass's outline is an OSM element of the landmark (its outer ring) or a
 /// polygon of its own; a pediment and a colonnade stand along the line from
@@ -42,6 +50,44 @@ public struct LandmarkRecipe: Codable {
     public var version = 1
     public var masses: [Mass] = []
     public var features: [Feature] = []
+    /// Free modelling: solids of simple shapes, where the words above do not
+    /// describe the building.
+    public var shapes: [Shape] = []
+
+    public struct Shape: Codable {
+        public var kind: String
+        public var at: [Double]?
+        public var base: Double?
+        public var top: Double?
+        /// A box: along its heading, across it, up.
+        public var size: [Double]?
+        public var radius: Double?
+        public var radius_top: Double?
+        public var height: Double?
+        public var segments: Int?
+        public var polygon: [[Double]]?
+        public var outline: String?
+        public var holes: [[[Double]]]?
+        /// A loft's rings: scale toward the centre and rise, from the base up.
+        public var profile: [[Double]]?
+        /// A compass bearing the shape is turned to, and its tip forward.
+        public var heading: Double?
+        public var pitch: Double?
+        public var colour: String?
+        public var `repeat`: Repeat?
+        public var around: Around?
+    }
+
+    public struct Repeat: Codable {
+        public var count: Int
+        /// Metres east, north and up between copies.
+        public var step: [Double]
+    }
+
+    public struct Around: Codable {
+        public var count: Int
+        public var centre: [Double]
+    }
 
     public struct Mass: Codable {
         public var id: String?
@@ -135,6 +181,22 @@ public struct LandmarkRecipe: Codable {
     `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
     under it) with an optional `pedestal`, `height` tall and about `width` wide. Use it for the sculpture that makes the \
     building recognisable, nothing else.
+    - Where these words do not describe the building, model it yourself from shapes, as many as it takes:
+      "shapes": [
+       {"kind": "box", "at": [x, y], "base": 0, "size": [along, across, up], "heading": 0, "pitch": 0, "colour": "lm_stone"},
+       {"kind": "cylinder", "at": [x, y], "base": 0, "radius": 1, "radius_top": 1, "height": 10, "segments": 16, "colour": "lm_white"},
+       {"kind": "cone", "at": [x, y], "base": 30, "radius": 3, "height": 6, "segments": 8, "colour": "lm_green"},
+       {"kind": "sphere", "at": [x, y], "base": 30, "radius": 2, "segments": 12, "colour": "lm_gold"},
+       {"kind": "dome", "at": [x, y], "base": 30, "radius": 6, "segments": 16, "colour": "lm_green"},
+       {"kind": "prism", "polygon": [[x, y], ...] or "outline": "way/123", "holes": [[[x, y], ...]], "base": 0, "top": 5, "colour": "lm_cream"},
+       {"kind": "loft", "radius": 4, "segments": 16, or "polygon"/"outline", "base": 30, "profile": [[1, 0], [1.2, 0.5], [0.8, 3], [0, 5]], "colour": "lm_green"}]
+      A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
+    forward (a cylinder with pitch 90 lies along its heading: a beam). A sphere stands on its base; a dome is a half \
+    sphere, flat side down. A loft draws its ring toward its centre ring by ring, [scale, rise] from the base up: a drum \
+    with a moulding, a vase, an onion, a tapering tower. `"repeat": {"count": 6, "step": [3.5, 0, 0]}` makes copies along \
+    a step (metres east, north, up); `"around": {"count": 8, "centre": [x, y]}` makes copies turned around a point. Shapes \
+    are solids: let them overlap, or sink one a little into what it stands on, rather than share a face exactly. Nothing \
+    cuts a hole: an opening is a prism with holes, or a loft. Few large shapes before many small ones, and 8 to 16 segments.
     - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
     outside on the right. Steps rise from the ground at `depth` to the right of the line up to `height` at the line.
