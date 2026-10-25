@@ -57,8 +57,11 @@ final class LandmarkView: MTKView {
     private var size: SIMD2<Double> { SIMD2(Double(bounds.width), Double(bounds.height)) }
 
     /// Shows a model or boxes: made off the main thread, then framed.
+    /// With `again`, the same landmark read again (its model rebuilt by the
+    /// agent): the camera stays where the user put it.
     func show(_ next: Source?, again: Bool = false) {
         guard again || next != source else { return }
+        let keepCamera = again && next == source && mesh != nil
         source = next
         mesh = nil
         guard let next else { return }
@@ -81,7 +84,7 @@ final class LandmarkView: MTKView {
                 switch result {
                 case .success(let model):
                     self.mesh = model
-                    self.frameModel()
+                    if !keepCamera { self.frameModel() }
                     let s = model.size
                     self.status(String(format: "%@: %dk triangles, %.0f × %.0f m, %.0f m high",
                                        name, model.triangles / 1000, s.x, s.z, s.y))
