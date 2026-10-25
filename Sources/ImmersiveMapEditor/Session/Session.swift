@@ -92,10 +92,32 @@ final class Session {
     }
 
     /// Bakes the light of built tiles again with the Light view's settings,
-    /// their geometry as built, then shows the new light maps.
+    /// their geometry as built, then shows the new light maps. A tile built
+    /// before builds kept what a bake needs (its bake/scene.bin) is built
+    /// once first.
     func bake(_ tiles: [TileKey]) {
         guard let z = tiles.first?.z else { return }
         let workspace = self.workspace, s = lightSettings
+        let unready = tiles.filter {
+            !FileManager.default.fileExists(atPath: TileModel.folder(root: workspace.root, z: $0.z, x: $0.x, y: $0.y)
+                .appendingPathComponent("bake/scene.bin").path)
+        }
+        if !unready.isEmpty {
+            model?.saveIfNeeded()
+            workspace.building = true
+            build.run(root: workspace.root, arguments: ["build", "\(z)", "--tiles"] + unready.map { "\($0.x)/\($0.y)" }) {
+                workspace.building = false
+                workspace.scan()
+                // Then the bake, unless the build failed and left a tile unready.
+                if unready.allSatisfy({ FileManager.default.fileExists(atPath: TileModel.folder(root: workspace.root, z: $0.z,
+                    x: $0.x, y: $0.y).appendingPathComponent("bake/scene.bin").path) }) {
+                    self.bake(tiles)
+                } else {
+                    workspace.tilesRevision += 1
+                }
+            }
+            return
+        }
         workspace.building = true
         build.run(root: workspace.root, arguments: ["bake", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }
                   + ["--size", "\(s.size)", "--samples", "\(s.samples)", "--bounces", "\(s.bounces)"]) {
