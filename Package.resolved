@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/artembobkin/SwiftStreets.git",
       "state" : {
-        "revision" : "bcd3572fcbe7d3f216f2266396596f9f34c1fe54",
+        "revision" : "dbd7bd2b1578e9d39099ffc7f0a6e5b881687be2",
         "version" : "0.1.0"
       }
     },
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/artembobkin/SwiftTopology.git",
       "state" : {
-        "revision" : "e15ea27ba8fd6fc71ba1d226ec3b0846e6ebd1a3",
+        "revision" : "0ab24a87e099136ddffe4790c49a00259215276d",
         "version" : "0.1.0"
       }
     }
