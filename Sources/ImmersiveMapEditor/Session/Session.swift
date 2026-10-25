@@ -66,8 +66,7 @@ final class Session {
         build.run(root: workspace.root, arguments: ["build", "\(z)", "--tiles"] + tiles.map { "\($0.x)/\($0.y)" }) {
             workspace.building = false
             workspace.scan()
-            let built = tiles.filter { workspace.built.contains($0) }
-            if !built.isEmpty { workspace.shown = built } else { workspace.tilesRevision += 1 }
+            workspace.tilesRevision += 1
         }
     }
 
@@ -87,22 +86,20 @@ final class Session {
 
     /// The tiles picked on the map are what every view works on: entering a
     /// view, the Roads view opens the road document holding them and frames
-    /// them, the 3D view shows those built. Nothing picked, a view keeps what
-    /// it had.
+    /// them. Nothing picked, it keeps what it had.
     func follow(_ mode: ViewMode) {
         let picked = workspace.selection.sorted()
         guard !picked.isEmpty else { return }
         switch mode {
-        case .map, .light:
+        case .map, .light, .tiles:
+            // The 3D view shows the tiles picked that are built, always
+            // (Workspace.shown); the Light view reads them itself.
             break
         case .roads:
             guard let url = picked.lazy.compactMap({ self.workspace.document(holding: $0) }).first else { return }
             if model?.url != url { open(roads: url) }
             let inside = picked.filter { workspace.document(holding: $0) == url }
             Task { @MainActor in self.roads?.frame(tiles: inside) }
-        case .tiles:
-            let built = picked.filter { workspace.built.contains($0) }
-            if !built.isEmpty && built != workspace.shown { workspace.shown = built }
         }
     }
 

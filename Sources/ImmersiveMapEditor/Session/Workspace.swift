@@ -19,8 +19,8 @@ enum ViewMode: String, CaseIterable, Identifiable {
 
 /// What TilePipeline (the folder `root`) has of every tile: fetched OSM
 /// (data/<z>_<x>_<y>/osm.json), a built model (out/tiles/<z>/<x>/<y>/), the
-/// road document holding it (roads/). And the tiles picked on the map and
-/// shown together in 3D.
+/// road document holding it (roads/). And the tiles picked on the map,
+/// which every view works on.
 @Observable
 final class Workspace {
     static let zoom = 15
@@ -30,13 +30,16 @@ final class Workspace {
     private(set) var fetched: Set<TileKey> = []
     private(set) var built: Set<TileKey> = []
     private(set) var documents: [(url: URL, tiles: RoadPlan.Tiles)] = []
-    /// The tiles picked on the map.
+    /// The tiles picked on the map: what every view works on.
     var selection: Set<TileKey> = [] {
-        didSet { remember() }
+        didSet {
+            remember()
+            follow()
+        }
     }
-    /// The tiles the 3D view shows, together.
-    var shown: [TileKey] = [] {
-        didSet { remember(); tilesRevision += 1 }
+    /// The tiles the 3D view shows together: those picked that are built.
+    private(set) var shown: [TileKey] = [] {
+        didSet { tilesRevision += 1 }
     }
     var flying = false
     var showLightMap = true
@@ -46,26 +49,30 @@ final class Workspace {
     var tilesRevision = 0
     var building = false
 
-    init(root: URL) {
+    /// Whether the tiles picked are kept for the next run: not for a run
+    /// without a window.
+    private let remembers: Bool
+
+    init(root: URL, remembers: Bool = true) {
         self.root = root
+        self.remembers = remembers
         let d = UserDefaults.standard
-        if let data = d.data(forKey: "selection"), let s = try? JSONDecoder().decode(Set<TileKey>.self, from: data) {
+        if remembers, let data = d.data(forKey: "selection"), let s = try? JSONDecoder().decode(Set<TileKey>.self, from: data) {
             selection = s
         }
-        if let data = d.data(forKey: "shown"), let s = try? JSONDecoder().decode([TileKey].self, from: data) {
-            shown = s
-        }
         scan()
-        if shown.isEmpty, let first = documents.first {
-            let t = first.tiles
-            shown = (t.y0...t.y1).flatMap { y in (t.x0...t.x1).map { TileKey(z: t.z, x: $0, y: y) } }
-        }
     }
 
     private func remember() {
+        guard remembers else { return }
         let d = UserDefaults.standard
         d.set(try? JSONEncoder().encode(selection), forKey: "selection")
-        d.set(try? JSONEncoder().encode(shown), forKey: "shown")
+    }
+
+    /// The tiles shown, from the tiles picked and those built.
+    private func follow() {
+        let next = selection.filter { built.contains($0) }.sorted()
+        if next != shown { shown = next }
     }
 
     /// Reads again what is on disk.
@@ -103,6 +110,7 @@ final class Workspace {
         fetched = f
         built = b
         documents = docs
+        follow()
     }
 
     /// The road document holding a tile.

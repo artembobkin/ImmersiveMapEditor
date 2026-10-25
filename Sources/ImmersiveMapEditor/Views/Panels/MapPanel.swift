@@ -20,10 +20,7 @@ struct MapPanel: View {
                     Text(picked.map(\.name).joined(separator: "  "))
                         .font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(6)
                 }
-                Button("Show in 3D (\(built.count) built)") {
-                    workspace.shown = built
-                    workspace.viewMode = .tiles
-                }
+                Button("Show in 3D (\(built.count) built)") { workspace.viewMode = .tiles }
                 .disabled(built.isEmpty)
                 Button(documents.count > 1 ? "Edit Roads (first of \(documents.count) documents)" : "Edit Roads") {
                     if let url = picked.compactMap({ workspace.document(holding: $0) }).first { session.open(roads: url) }

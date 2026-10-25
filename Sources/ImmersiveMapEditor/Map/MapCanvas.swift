@@ -40,7 +40,6 @@ struct MapCanvas: View {
         let x0 = Int((lo.x * n).rounded(.down)), x1 = Int((hi.x * n).rounded(.down))
         let y0 = Int((lo.y * n).rounded(.down)), y1 = Int((hi.y * n).rounded(.down))
         guard x1 >= x0, y1 >= y0, (x1 - x0 + 1) * (y1 - y0 + 1) < 5000 else { return }
-        let shown = Set(workspace.shown)
         for y in y0...y1 {
             for x in x0...x1 {
                 let t = TileKey(z: z, x: x, y: y)
@@ -57,10 +56,6 @@ struct MapCanvas: View {
                     ctx.stroke(Path(r.insetBy(dx: 2, dy: 2)), with: .color(.purple.opacity(0.8)), lineWidth: 1.5)
                 }
                 if picked { ctx.stroke(Path(r.insetBy(dx: 1, dy: 1)), with: .color(.blue), lineWidth: 2.5) }
-                if shown.contains(t) {
-                    ctx.stroke(Path(r.insetBy(dx: 4, dy: 4)), with: .color(.orange),
-                               style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                }
                 if r.width > 90 {
                     ctx.draw(Text(verbatim: t.name).font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.black.opacity(0.85)),

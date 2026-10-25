@@ -29,11 +29,11 @@ enum Headless {
         }
         if let i = arguments.firstIndex(of: "--snapshot"), arguments.count > i + 3 {
             // Built tiles rendered together in 3D from above at a slant.
-            let workspace = Workspace(root: URL(fileURLWithPath: arguments[i + 1]))
-            workspace.shown = arguments[(i + 3)...].compactMap { t in
+            let workspace = Workspace(root: URL(fileURLWithPath: arguments[i + 1]), remembers: false)
+            workspace.selection = Set(arguments[(i + 3)...].compactMap { t in
                 let p = t.split(separator: "/").compactMap { Int($0) }
                 return p.count == 2 ? TileKey(z: Workspace.zoom, x: p[0], y: p[1]) : nil
-            }
+            })
             guard let view = TileView(model: workspace) else { return fail("no Metal device") }
             do {
                 try view.snapshot(to: URL(fileURLWithPath: arguments[i + 2]), width: 1600, height: 1000)
@@ -45,7 +45,7 @@ enum Headless {
         }
         if let i = arguments.firstIndex(of: "--map-snapshot"), arguments.count > i + 2 {
             // The map as it opens, once OpenStreetMap's tiles in view are here.
-            let workspace = Workspace(root: URL(fileURLWithPath: arguments[i + 1]))
+            let workspace = Workspace(root: URL(fileURLWithPath: arguments[i + 1]), remembers: false)
             let camera = MapCamera(), raster = RasterTiles()
             let size = CGSize(width: 1400, height: 900)
             camera.frame(workspace)

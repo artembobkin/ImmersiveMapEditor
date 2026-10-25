@@ -90,7 +90,12 @@ struct ContentView: View {
                                        description: Text("Pick a tile with roads on the Map, then Edit Roads."))
             }
         case .tiles:
-            if let tiles = session.tiles { MetalHost(view: tiles) }
+            if session.workspace.shown.isEmpty {
+                ContentUnavailableView("No built tile picked", systemImage: "cube",
+                                       description: Text("Pick built tiles on the Map: they show here in 3D."))
+            } else if let tiles = session.tiles {
+                MetalHost(view: tiles)
+            }
         case .light:
             LightView()
         }

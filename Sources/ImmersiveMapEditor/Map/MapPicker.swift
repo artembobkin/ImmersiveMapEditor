@@ -20,7 +20,7 @@ struct MapPicker: View {
             .onTapGesture(count: 2, coordinateSpace: .local) { p in
                 let t = camera.tile(at: p, in: size)
                 if workspace.built.contains(t) {
-                    workspace.shown = [t]
+                    workspace.selection = [t]
                     workspace.viewMode = .tiles
                 }
             }
