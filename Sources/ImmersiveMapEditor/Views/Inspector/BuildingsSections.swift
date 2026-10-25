@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The Buildings view's sections: the buildings picked with all their OSM
-/// tags, making them a landmark candidate (a folder of what a detailed model
-/// can be made from), and the tile's candidates.
+/// The Buildings view's sections: making the buildings picked a landmark
+/// candidate (a folder of what a detailed model can be made from), the
+/// buildings picked with all their OSM tags, and the tile's candidates.
 struct BuildingsSections: View {
     @Environment(Session.self) private var session
     @State private var name = ""
@@ -10,6 +10,16 @@ struct BuildingsSections: View {
     var body: some View {
         let catalog = session.buildings
         let picked = catalog.selected
+        Section("Make a landmark") {
+            TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
+            Button("Make a Landmark of \(picked.count) Buildings", systemImage: "building.columns") {
+                session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name)
+                name = ""
+            }
+            .disabled(picked.isEmpty)
+            Text("Writes a folder of the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
         Section("Picked: \(picked.count)") {
             if picked.isEmpty {
                 Text("Click a building, shift-click for more. \(catalog.status)").foregroundStyle(.secondary)
@@ -29,16 +39,6 @@ struct BuildingsSections: View {
                     }
                 }
             }
-        }
-        Section("Make a landmark") {
-            TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
-            Button("Make a Landmark of \(picked.count) Buildings", systemImage: "building.columns") {
-                session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name)
-                name = ""
-            }
-            .disabled(picked.isEmpty)
-            Text("Writes a folder of the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
-                .font(.callout).foregroundStyle(.secondary)
         }
         Section("Landmark candidates") {
             let list = session.candidates
