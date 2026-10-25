@@ -61,6 +61,7 @@ struct TopologyEngine: JTSTestEngine {
         "intersectionsr", "unionsr", "differencesr", "symdifferencesr", "unionarea", "unionlength", "overlayareatest",
         "intersects", "contains", "within", "covers", "coveredby", "touches", "crosses", "overlaps", "disjoint",
         "equalstopo", "relate", "containsproperly", "distance", "iswithindistance", "buffer", "buffermitredjoin",
+        "isvalid", "polygonize", "simplifytp",
     ]
 
     func evaluate(_ t: JTSTestFile.Test, target g: Topology.Geometry, a: Topology.Geometry?, b: Topology.Geometry?,
@@ -91,6 +92,9 @@ struct TopologyEngine: JTSTestEngine {
         }
         switch t.operation.lowercased() {
         case "getcentroid": return .geometry(g.getCentroid())
+        case "isvalid": return .boolean(try g.isValid())
+        case "polygonize": return .geometry(try Topology.Geometry.polygonize([g]))
+        case "simplifytp": return .geometry(try g.topologyPreserveSimplify(try number(0)))
         case "getinteriorpoint": return .geometry(g.getInteriorPoint())
         case "convexhull": return .geometry(g.convexHull())
         case "getboundary":

@@ -20,11 +20,11 @@ public enum OverlayNGRobust {
 
     public static func overlay(_ geom0: Geometry, _ geom1: Geometry, _ opCode: Int) throws -> Geometry {
         if !geom0.precisionModel.isFloating {
-            return try OverlayNG.overlay(geom0, geom1, opCode, geom0.precisionModel)
+            return try NonFinite.scope { try OverlayNG.overlay(geom0, geom1, opCode, geom0.precisionModel) }
         }
         let exOriginal: Error
         do {
-            let r = try OverlayNG.overlay(geom0, geom1, opCode, PrecisionModel.floating)
+            let r = try NonFinite.scope { try OverlayNG.overlay(geom0, geom1, opCode, PrecisionModel.floating) }
             trace?("floating")
             return r
         } catch {
@@ -62,7 +62,7 @@ public enum OverlayNGRobust {
 
     private static func overlaySnapping(_ geom0: Geometry, _ geom1: Geometry, _ opCode: Int, _ snapTol: Double) throws -> Geometry? {
         do {
-            return try overlaySnapTol(geom0, geom1, opCode, snapTol)
+            return try NonFinite.scope { try overlaySnapTol(geom0, geom1, opCode, snapTol) }
         } catch is TopologyException {
             return nil
         }
@@ -70,9 +70,11 @@ public enum OverlayNGRobust {
 
     private static func overlaySnapBoth(_ geom0: Geometry, _ geom1: Geometry, _ opCode: Int, _ snapTol: Double) throws -> Geometry? {
         do {
-            let snap0 = try snapSelf(geom0, snapTol)
-            let snap1 = try snapSelf(geom1, snapTol)
-            return try overlaySnapTol(snap0, snap1, opCode, snapTol)
+            return try NonFinite.scope {
+                let snap0 = try snapSelf(geom0, snapTol)
+                let snap1 = try snapSelf(geom1, snapTol)
+                return try overlaySnapTol(snap0, snap1, opCode, snapTol)
+            }
         } catch is TopologyException {
             return nil
         }
@@ -108,7 +110,7 @@ public enum OverlayNGRobust {
     private static func overlaySR(_ geom0: Geometry, _ geom1: Geometry, _ opCode: Int) throws -> Geometry? {
         do {
             let scaleSafe = PrecisionUtil.safeScale(geom0, geom1)
-            return try OverlayNG.overlay(geom0, geom1, opCode, PrecisionModel(scale: scaleSafe))
+            return try NonFinite.scope { try OverlayNG.overlay(geom0, geom1, opCode, PrecisionModel(scale: scaleSafe)) }
         } catch is TopologyException {
             return nil
         }

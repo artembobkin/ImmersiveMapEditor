@@ -24,7 +24,7 @@ final class OverlayEdgeRing {
         } while edge !== start
         pts.closeRing()
         ringPts = pts.points
-        ring = factory.createLinearRing(ringPts)
+        ring = try factory.createLinearRingChecked(ringPts)
         isHole = Orientation.isCCW(ring.points)
     }
 

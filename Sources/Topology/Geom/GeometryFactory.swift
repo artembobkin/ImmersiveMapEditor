@@ -93,3 +93,21 @@ public final class GeometryFactory: Sendable {
         }
     }
 }
+
+extension GeometryFactory {
+    /// A ring, or GEOS's error where its constructor refuses the points
+    /// (not closed, or too few): JTS's `createLinearRing` traps there, but
+    /// rings an operation builds can fail this way on non-finite input,
+    /// where GEOS throws.
+    public func createLinearRingChecked(_ points: [Coordinate]) throws -> LinearRing {
+        if !points.isEmpty {
+            if !points[0].equals2D(points[points.count - 1]) {
+                throw IllegalArgumentException("Points of LinearRing do not form a closed linestring")
+            }
+            if points.count < LinearRing.minimumValidRingSize {
+                throw IllegalArgumentException("Invalid number of points in LinearRing found \(points.count) - must be 0 or >= 3")
+            }
+        }
+        return createLinearRing(points)
+    }
+}

@@ -85,9 +85,9 @@ extension Geometry {
 extension Geometry {
     /// The overlays as `Geometry`'s methods in JTS, run as GEOS 3.13 runs
     /// them (`GeometryOverlay`). They throw where GEOS fails.
-    public func intersection(_ other: Geometry) throws -> Geometry { try GeometryOverlay.intersection(self, other) }
-    public func union(_ other: Geometry) throws -> Geometry { try GeometryOverlay.union(self, other) }
-    public func difference(_ other: Geometry) throws -> Geometry { try GeometryOverlay.difference(self, other) }
-    public func symDifference(_ other: Geometry) throws -> Geometry { try GeometryOverlay.symDifference(self, other) }
-    public func union() throws -> Geometry { try GeometryOverlay.union(self) }
+    public func intersection(_ other: Geometry) throws -> Geometry { try NonFinite.scope { try GeometryOverlay.intersection(self, other) } }
+    public func union(_ other: Geometry) throws -> Geometry { try NonFinite.scope { try GeometryOverlay.union(self, other) } }
+    public func difference(_ other: Geometry) throws -> Geometry { try NonFinite.scope { try GeometryOverlay.difference(self, other) } }
+    public func symDifference(_ other: Geometry) throws -> Geometry { try NonFinite.scope { try GeometryOverlay.symDifference(self, other) } }
+    public func union() throws -> Geometry { try NonFinite.scope { try GeometryOverlay.union(self) } }
 }

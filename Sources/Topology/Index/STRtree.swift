@@ -228,13 +228,16 @@ public final class STRtree<Item> {
     /// packed order, the items after it in that order that the tree finds
     /// for its envelope, in the tree's depth-first order. This is the order
     /// GEOS 3.13's STR tree reports pairs in (JTS queries the tree for each
-    /// item in insertion order instead). The visit returns false to stop.
+    /// item in insertion order instead). The visit returns false to stop the
+    /// search of the current item's pairs only: as in GEOS, the search goes
+    /// on with the next item, so a noder whose intersector is done still
+    /// sees the first pair of each later item.
     public func queryPairs(_ visit: (Item, Item) -> Bool) {
         build()
         guard leaves.count >= 2 else { return }
         flat.withUnsafeBufferPointer { f in
             leaves.withUnsafeBufferPointer { l in
-                for i in l.indices where !STRtree.queryPairsFlat(f, l, i, l[i].0, 0, visit) { return }
+                for i in l.indices { _ = STRtree.queryPairsFlat(f, l, i, l[i].0, 0, visit) }
             }
         }
     }
