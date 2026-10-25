@@ -1,9 +1,9 @@
 IN PROGRESS
 
-Phase: 6 to 7 (Topology: make valid, precision, simplify, validity, triangulation, polygonize, line merge, linear referencing) and a speed pass. Streets: phases 9 to 11 done.
-Last green commit: 0e8e40d on main (phases 1 to 5 and 9 to 11 merged, 425 tests passing). Seeding of the 2x2 block checked by the main session: road document identical but the date, streets GeoJSON byte-identical, 16.6 s against 15.0 s.
+Phase: 8 (Geometry onto Topology, the pipeline end to end). Phases 1 to 7 and 9 to 11 done.
+Last green commit: 50caf95 on main (phases 1 to 7 and 9 to 11 merged, 449 tests passing). Seeding of the 2x2 block checked by the main session: road document identical but the date, streets GeoJSON byte-identical, 16.6 s against 15.0 s.
 Branches: port/topology in .worktrees/topology, port/streets in .worktrees/streets, merged into main by the main session when green
-Next step: merge phases 6 and 7, then phase 8 (Geometry onto Topology, the pipeline end to end), then 12 (remove GEOS)
+Next step: merge phase 8, then 12 (remove GEOS)
 Decisions taken on the user's behalf:
 - All port targets are declared once in Package.swift up front, so the parallel branches never edit it.
 - The branches live in local git worktrees under .worktrees/ (ignored), never pushed.
@@ -15,4 +15,5 @@ Decisions taken on the user's behalf:
 - MuvLanes holds translations of rustc-hash, hashbrown and opening-hours-syntax (MIT or Apache) inside its MPL files, their notices in its LICENSE, to reproduce Muv's hash order.
 - The editor's entry is synchronous (dispatchMain in the AppKit bridge), because an async @main broke optimised test builds.
 - The Rust osm2streets is nondeterministic (hash-map order of crossings at a shared road end). The tests enumerate every order the port can take there and require each Rust run to equal one of them (6 results on 15/19809/10242, the same 6 as 200 Rust runs).
-- Risk: the Topology port is 2 to 3 times slower than GEOS per call so far. The goal allows 1.5 times on a whole tile.
+- Speed: after two passes the geometry calls of a whole tile take 1.48 times GEOS's time (12.4 s against 8.4 s), the goal's bar being 1.5 times the whole tile build.
+- makeValid (GEOS's linework method) has no JTS original: GEOS's comes from LGPL code. It is written anew from the algorithm, on the port's own operations, not translated from GEOS, and equals GEOS on 32,248 recorded and 12,000 random calls. To review by the user.
