@@ -25,8 +25,14 @@ enum ClaudeSettings {
     }
 
     /// The proxy every request of `claude` goes through, and what bypasses it.
+    /// While none is set, the one of the user's ~/bin/claude launcher is
+    /// taken (into the keychain) the first time it is asked for.
     static var proxy: String {
-        get { Keychain.read("claude.proxy") ?? "" }
+        get {
+            if let p = Keychain.read("claude.proxy"), !p.isEmpty { return p }
+            takeProxy(fromLauncher: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/claude"))
+            return Keychain.read("claude.proxy") ?? ""
+        }
         set { Keychain.write("claude.proxy", newValue) }
     }
     static var noProxy: String {
