@@ -1,6 +1,6 @@
 /// muv-osm's one-way reading (`lanes/highway/oneway.rs`): `oneway=*` per
 /// mode and condition, what it implies (motorways, roundabouts), and how
-/// it masks a direction's access; and `Placement` (`placement.rs`), where
+/// it masks a direction's access. Also `Placement` (`placement.rs`), where
 /// the OSM line runs across the lanes.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public

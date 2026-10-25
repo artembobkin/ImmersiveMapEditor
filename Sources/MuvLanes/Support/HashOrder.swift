@@ -10,7 +10,7 @@
 /// index order. Only insertion is modelled: Muv never removes a subtag.
 ///
 /// rustc-hash and hashbrown are MIT or Apache-2.0 (see this folder's
-/// LICENSE); this translation is part of this MPL-2.0 file.
+/// LICENSE). This translation is part of this MPL-2.0 file.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public
 /// License, v. 2.0. If a copy of the MPL was not distributed with this

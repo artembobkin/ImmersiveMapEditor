@@ -108,5 +108,6 @@ The Swift osm2streets (`Streets` on `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OS
 | The same | the five Moscow tiles, unclipped | identical, two tiles' lane markings equal to one of the Rust's own results (see below) |
 | `to_geojson`, `MapConfig::default()`, invariants checked | the committed `geometry.json` of the 29 cases | 29 of 29 identical |
 | The four outputs | synthetic ways: 280 hand-written and 400 random tag sets in each of 10 countries | 20 of 20 identical (one random way left out in FR: the Rust panics on it) |
+| Seeding, `tilepipeline seed 15 19808 10242 19809 10243`, before (Rust binary) and after (in process) | the four Moscow tiles, temporary roots | the road document identical but its `"seeded"` date, the four `streets/` outputs byte-identical |
 
 Accepted difference, none in the port: the Rust is not deterministic where two crossings or traffic signals set the same road end (streets_reader iterates a `HashMap`, random per process). When the first Rust run differs, the Rust runs 16 times, and the port's four files must equal one run's four files byte for byte: 15/19809/10242 (5 Rust results in 16 runs) and 15/19808/10243 (2 in 16) pass this way.

@@ -1,6 +1,6 @@
 /// muv-osm's reading of one direction of a road (`lanes/travel.rs`):
 /// `ParseDirectionLanes`, either one lane repeated (with its count, and
-/// whether anything was set on it) or each lane on its own; `AllParser`,
+/// whether anything was set on it) or each lane on its own. `AllParser`,
 /// what applies to every lane of the direction (`maxspeed:forward`), and
 /// `IndividualParser`, what is given per lane (`turn:lanes:forward`), which
 /// splits the repeated lane into lanes when the counts agree.
@@ -34,7 +34,7 @@ enum ParseDirectionLanes {
         }
     }
 
-    /// `ParseDirectionLanes::extend_vec`: appended, up to `MAX_LANES` in all; how many.
+    /// `ParseDirectionLanes::extend_vec`: appended, up to `MAX_LANES` in all, and how many.
     func extendVec(_ vec: inout [Lane]) -> UInt8 {
         let limit = UInt8(max(0, Int(maxLanes) - vec.count))
         switch self {

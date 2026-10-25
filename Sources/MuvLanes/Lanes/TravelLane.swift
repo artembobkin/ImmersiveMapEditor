@@ -1,6 +1,6 @@
 /// muv-osm's travel lanes (`lanes/travel.rs`): a lane used for moving, its
 /// forward and backward direction each with access, turns, lane changes,
-/// overtaking, priority, speeds and the size limits per mode; `Turn`, the
+/// overtaking, priority, speeds and the size limits per mode. `Turn`, the
 /// arrows on the pavement (a bit set serde writes as the names of its flags).
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public

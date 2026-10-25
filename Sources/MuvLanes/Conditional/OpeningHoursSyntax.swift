@@ -6,8 +6,8 @@
 /// `i64`, a week step beyond `u8`, a year step beyond `u16`, and a day
 /// number after Easter. Times are not evaluated: osm2lanes only reads them.
 ///
-/// opening-hours-syntax is MIT or Apache-2.0 (see this folder's LICENSE);
-/// this translation is part of this MPL-2.0 file.
+/// opening-hours-syntax is MIT or Apache-2.0 (see this folder's LICENSE).
+/// This translation is part of this MPL-2.0 file.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public
 /// License, v. 2.0. If a copy of the MPL was not distributed with this

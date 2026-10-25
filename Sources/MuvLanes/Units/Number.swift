@@ -141,7 +141,7 @@ private func powi10(_ e: Int32) -> Double {
 }
 
 /// Rust's `{:.N}` for a float: the exact decimal value rounded half to
-/// even, as the C library's `%.*f` also writes it; `inf` for infinity.
+/// even, as the C library's `%.*f` also writes it, and `inf` for infinity.
 func rustFormatFixed(_ x: Double, decimals: Int) -> String {
     if x.isInfinite { return x < 0 ? "-inf" : "inf" }
     // At most 309 digits before the point and 255 after it.

@@ -1,7 +1,7 @@
 /// muv-osm's `parse_direction` (`lanes/highway/direction.rs`): the lanes of
 /// one direction (forward, backward or both ways) from the keys that apply
 /// to it (`direction` picks `maxspeed:forward` out of `maxspeed`), first as
-/// one lane for the whole direction, then per lane; and how overtaking is
+/// one lane for the whole direction, then per lane. Also how overtaking is
 /// read, from `overtaking=*` and the German no-overtaking sign.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public
@@ -111,7 +111,7 @@ func parseDirection<T: Taglike>(_ laneIn: Lane, _ laneCount: UInt8, _ tags: T, _
     return individual.lanes
 }
 
-/// `parse_overtaking`: `yes` and `caution` for everyone; anything else
+/// `parse_overtaking`: `yes` and `caution` for everyone. Anything else
 /// forbids overtaking double-tracked vehicles, but allows a mode it names
 /// (`only_motorcycle`).
 func parseOvertaking(_ s: String) -> TModes<Conditional<Overtaking>>? {

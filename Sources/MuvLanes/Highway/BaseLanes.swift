@@ -3,7 +3,7 @@
 /// access of its class, the legal speeds, then the lanes of each direction
 /// by `lanes`, `lanes:forward`, `lanes:both_ways` and the per-lane keys,
 /// glued into one list from left to right with the centre line and the OSM
-/// line's placement; a segregated foot lane, and widths shared out.
+/// line's placement, a segregated foot lane, and widths shared out.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public
 /// License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -24,7 +24,7 @@ struct BaseLanes<T: Taglike> {
     let buswayForward: UInt8
     let buswayBackward: UInt8
 
-    /// `BaseLanes::add`: appends the lanes; (centre line, centre) relative to the start.
+    /// `BaseLanes::add`: appends the lanes and returns (centre line, centre) relative to the start.
     func add(_ lanes: inout [Lane]) -> (UInt8, UInt8) {
         var access = cls.map { c in c.defaultAccess(regions, tags, tags.getValue("motorroad") == "yes") }
             ?? HighwayAccess.highway()

@@ -1,6 +1,6 @@
 /// muv-osm's lanes of what is not a highway (`lanes/railway/railway.rs`,
 /// `lanes/waterway.rs`, `lanes/aeroway.rs`): one lane for a railway track,
-/// a river with access keys, a runway or taxiway; and `lanes`, the entry
+/// a river with access keys, a runway or taxiway. And `lanes`, the entry
 /// point that tries a highway, then those.
 ///
 /// This Source Code Form is subject to the terms of the Mozilla Public

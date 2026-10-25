@@ -40,7 +40,7 @@ let package = Package(
         // The light map's bake on the GPU: Metal ray tracing.
         .target(name: "LightBaker", path: "Sources/LightBaker"),
         // The tile pipeline: OSM to one 3D model per map tile.
-        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker"], path: "Sources/TileKit"),
+        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", "Streets"], path: "Sources/TileKit"),
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),

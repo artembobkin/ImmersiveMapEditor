@@ -144,7 +144,7 @@ func highwayLanes(_ tags: Tag, _ regions: [String]) -> Lanes? {
     return lanes
 }
 
-/// `carriageway_width`: `carriageway` (when there is a `width` node; Muv reads
+/// `carriageway_width`: `carriageway` (when there is a `width` node, Muv reads
 /// the root key, not `width:carriageway`), else `width`, else `est_width`.
 private func carriagewayWidth(_ tags: Tag) -> Quantity<Distance>? {
     if let width = tags.get("width") {

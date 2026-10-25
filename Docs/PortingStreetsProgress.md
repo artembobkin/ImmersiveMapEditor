@@ -6,13 +6,13 @@ Phases 9 to 11 of `Docs/PortingGoal.md`, on the branch `port/streets`. This file
 
 - Phase 9 (foundations): done. `Earcut`, `GeoAlgorithms`, `StreetGeom`, `OSMReader`, `CountryBoundaries` with the driving side, each with its tests.
 - Phase 10 (Streets): done. Muv's lane reading is ported as `MuvLanes` (MPL-2.0, decided 2026-10-25), and osm2lanes reads every lane through it. With no help from the Rust, the four outputs are byte-identical to the Rust on all 29 XML cases of osm2streets, on the Moscow region and on the five tiles (the parity table below), and `toGeoJSON` equals the committed `geometry.json` of all 29 cases.
-- Phase 11 (`Seed` onto `Streets`): see "Phase 11" below.
+- Phase 11 (`Seed` onto `Streets`): done, the road documents seeded identically (below).
 
 ## MuvLanes
 
 `Sources/MuvLanes/`, the parts of muv-osm (rev `2404d40`) that `lanes()` reaches, every file under the MPL-2.0 with its notice:
 
-- `Tags/`: `Tag` (the tag tree) and `DoubleTag`, `Parse` (the derived `FromOsmStr`: whole-string, ASCII-case-insensitive names; serde's variant names).
+- `Tags/`: `Tag` (the tag tree) and `DoubleTag`, `Parse` (the derived `FromOsmStr`: whole-string, ASCII-case-insensitive names, and serde's variant names).
 - `Support/`: `RustStr` (Rust's `split`, `trim`, integer and `f32` parsing), `HashOrder` (see below).
 - `Modes/`: `TMode` with its hierarchy and the reading of modes from subtags, `TModes`, `AccessLevel`, `Lifecycle`.
 - `Units/`: `Number` (an `f32` with its significant figures, written as `Display` writes it), `Quantity`, the units the lanes use.
@@ -23,7 +23,7 @@ Phases 9 to 11 of `Docs/PortingGoal.md`, on the branch `port/streets`. This file
 
 Decisions:
 
-- **The order of tag maps.** A `Tag`'s subtags are a Rust `HashMap` with rustc-hash's `FxBuildHasher`, and Muv iterates them where two keys mean the same thing (`Bus` and `bus`, `tricycle` and `auto_rickshaw`, a `bus:lanes` and an `hgv:lanes` of other lane counts: the first read splits the lanes, the other is ignored; two lifecycle prefixes). `HashOrder` reproduces it: rustc-hash 2.1's `FxHasher` over a `str` and hashbrown's bucket layout (8-byte control groups on aarch64, triangular probing, growth), iterated in bucket order. rustc-hash, hashbrown and opening-hours-syntax are MIT or Apache-2.0: their translations sit inside two MPL files, their MIT notices in the folder's `LICENSE` (no new target: `Package.swift` was not to change).
+- **The order of tag maps.** A `Tag`'s subtags are a Rust `HashMap` with rustc-hash's `FxBuildHasher`, and Muv iterates them where two keys mean the same thing (`Bus` and `bus`, `tricycle` and `auto_rickshaw`, a `bus:lanes` and an `hgv:lanes` of other lane counts: the first read splits the lanes and the other is ignored, two lifecycle prefixes). `HashOrder` reproduces it: rustc-hash 2.1's `FxHasher` over a `str` and hashbrown's bucket layout (8-byte control groups on aarch64, triangular probing, growth), iterated in bucket order. rustc-hash, hashbrown and opening-hours-syntax are MIT or Apache-2.0: their translations sit inside two MPL files, their MIT notices in the folder's `LICENSE` (no new target: `Package.swift` was not to change).
 - **Release arithmetic.** The Rust oracle is a release build, where `u8` overflows wrap: the port wraps there too (`&+`, `&*`).
 - **Conditions are not evaluated.** osm2lanes evaluates them only for a `date_time`, which the pipeline's configuration (and the Swift `MapConfig`) never has. `DateTimeRange` keeps the text and only checks that the opening-hours crate would parse it.
 - **Equality.** `LaneSpec` now holds the Muv `Lane` itself, compared with Muv's `PartialEq` (`Number` by value and figures, `Quantity` through conversion), as the Rust compares lanes in `CollapseDegenerateIntersections`.
@@ -54,6 +54,18 @@ MuvLanes against the Rust on synthetic ways (`Tests/StreetsTests/MuvLanes/`): on
 
 The Rust is not deterministic where two crossings (or traffic signals) on one road both fall within 30% of the same end: streets_reader iterates them in `HashMap` order, random per process, and the last one sets the stop line. The parity test runs the Rust 16 times when the first run differs, and passes only when the port's four files equal one run's four files, byte for byte. Measured before: `roosevelt_cycletrack` 2 results in 12 runs, 15/19809/10242 5 in 16, 15/19808/10243 2 in 16.
 
+## Phase 11
+
+`Seed` (`Sources/TileKit/Pipeline/Seed.swift`) no longer runs the Rust binary: it calls `Streets` in process (`StreetNetwork.fromOSM` with inferred sidewalks and kerbs, the transformations for clipped areas) on the same merged OSM XML and the same clip, read back from `clip.geojson` as the Rust read it, and writes the four GeoJSON outputs into `streets/` as before. `TileKit` depends on `Streets` (the one `Package.swift` change). `WorkspacePaths.osm2streets` is gone. `tools/osm2streets_cli` stays in the workspace as the oracle of the parity tests only. Whether to delete it is the user's decision.
+
+Seeding parity, `tilepipeline seed 15 19808 10242 19809 10243` into temporary roots (`data/` holding links to the four tile folders of the workspace, `roads/` empty), before (this branch at `a38bf4d`, the Rust binary) and after:
+
+- the road document `roads/15_19808_10242_19809_10243.json`: identical but the `"seeded"` date line (42 areas, markings line 698, zebra 186, letter 111, zigzag 32, 29 shelters);
+- `streets/plain.geojson`, `lanes.geojson`, `lane_markings.geojson`, `intersection_markings.geojson`: byte-identical;
+- `osm.json`, `clip.geojson`, `context.json`: the same content, their key order differs, as it does between two runs of the old binary (`JSONSerialization` of Swift dictionaries).
+
+Time of the whole seed, release builds: before 14.36 and 14.50 s, after 15.80 and 15.88 s (1.10 times, the goal 1.5).
+
 ## Speed
 
 Release builds, this machine (Apple silicon), see "Phase 11" for the seeding as a whole.
@@ -63,6 +75,8 @@ Release builds, this machine (Apple silicon), see "Phase 11" for the seeding as 
 | Moscow region, the four outputs | 0.8 s | 2.17 s |
 | One tile, unclipped | | 0.71 to 1.11 s |
 
+The seeding of the 2x2 block stays within the goal (1.10 times), so nothing was optimised. The speed table is one text decoded at first use, not dictionary literals: those cost the optimised build of `MuvLanes` 40 s (65 s against 25 s).
+
 ## The release test hang
 
 An earlier `swift test -c release` sat at 0% CPU for 40 minutes. Found: the test process ran the editor's SwiftUI app, not the tests (its sample: `App.main` in `NSApplicationMain`, waiting for events). The executable's async `@main` emits its entry thunk under the same name as the test runner's (`async_Main`, with a shared specialised reabstraction thunk), and in an optimised build the linker keeps the executable's copy, so the runner's `main` started the app. Fixed by a synchronous entry (`Platform.runMain`, commit `b9f82e2`). Release tests also need `-Xswiftc -enable-testing` (the test targets use `@testable import`).
@@ -70,7 +84,7 @@ An earlier `swift test -c release` sat at 0% CPU for 40 minutes. Found: the test
 ## Commits
 
 - `5935bdb` Earcut. `3130717` CountryBoundaries. `7ddc315`, `cc93bb6` OSMReader. `7217ddf` GeoAlgorithms. `1aec73d` StreetGeom. `1cf1ea7` Streets with the parity tests. `b48762f` the remaining transformations.
-- `b9f82e2` the synchronous entry point (the release test hang).
+- `b9f82e2` the synchronous entry point (the release test hang). `45ffd45` MuvLanes and osm2lanes reading through it. Then phase 11, `Seed` onto `Streets`.
 
 ## Left
 
