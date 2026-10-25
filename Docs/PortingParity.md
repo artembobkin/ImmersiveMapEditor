@@ -1,12 +1,42 @@
 # Porting parity
 
-What was compared, on what data, what matched, and every difference with its reason (Docs/PortingGoal.md, "Parity").
+What was compared, on what data, what matched, and every difference with its reason (Docs/PortingGoal.md, "Parity"). The final record of the port of GEOS and osm2streets to Swift, 2026-10-25: the summary first, then the record of each phase.
+
+## Summary
+
+Two ports replace the two non-Swift dependencies of the package, and each was compared with the code it replaces, on its behaviour today:
+
+- **`Topology`** (JTS 1.20.0 in Swift, changed where GEOS 3.13 differs) against **GEOS 3.13.0** (its C API, built by the `GEOSwift/geos` 9.0.0 package on this machine), and **`Geometry` on `Topology`** against `Geometry` on GEOS (the wrapper as it stood). GEOS left the package in phase 12: its answers to every comparison below are stored, and the tests compare the port with them.
+- **`Streets`** (osm2streets, streets_reader and osm2lanes, rev `fc119c4`, with `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OSMReader`, `CountryBoundaries` and `MuvLanes`) against the Rust binary of the pipeline (`osm2streets-cli`, the same revision), which stays in the workspace as the oracle.
+
+The bar was one to one: geometries in GEOS's normal form and as they came, every coordinate bit for bit (the sign of zeros included), numbers by their bits, answers, indices and text exactly, and where GEOS failed the port must fail. No tolerance was used anywhere.
+
+| Compared | On | Result |
+|---|---|---|
+| Every `Topology` function the package calls and the machinery under them (orientation and DD, segment intersection, noding, overlay, predicates, distance, buffer, offset curve, validity, make valid, precision, simplify, triangulation, polygonize, line merge, linear referencing, the STR tree, WKT) against GEOS | seeded random and near-degenerate inputs, 2,000 to 200,000 per function (phases 2 to 7) | all equal |
+| The JTS 1.20.0 XML suites | 10,398 tests (general 2,477, validate 5,326, robust 2,091, misc 504) | the port passes exactly the tests GEOS passes (and `TestCentroid` 10, which GEOS cannot read), its 10,297 results of the operations it has are GEOS's, and it reads all 7,359 inputs as GEOS |
+| Every recorded call of `Geometry`, on `Topology` against GEOS's functions and through both wrappers, as recorded and on the grid of 0.01 | 2,216,536 calls of five tiles (`15/19808/10242`, `15/19809/10242`, `15/19808/10243`, `15/19809/10243`, `15/19810/10243`) and a seeding of the 2x2 block, 757,210 geometries | all equal |
+| Non-finite coordinates through both wrappers | 2,000 seeded random pairs, about 60 operations each | all equal |
+| `Streets` against the Rust | osm2streets's 29 XML cases, the Moscow 2x2 region, the five tiles, 6,800 synthetic tag sets in 10 countries, the committed `geometry.json` of the 29 cases | byte-identical GeoJSON |
+| The pipeline, before and after | the five tiles built whole, the 2x2 block seeded, the editor's resave and snapshots | identical but the accepted differences below |
+| Speed | a whole tile and the seeding, release builds | a tile in 1.06 to 1.29 times GEOS's build time, seeding 1.17 times (the goal: 1.5) |
+| Phase 12: the frozen tests against the GEOS-backed ones, on one commit | debug, and release with the long replays | the same cases and the same counts (below) |
+
+Accepted differences, each with its reason:
+
+- **Where GEOS 3.13 differs from JTS 1.20, the port follows GEOS** (each listed in its phase below: fused multiply-add as clang compiles GEOS, libc++'s orders of sorts, heaps and hash tables, RelateNG for every predicate, GEOS's retries and fast paths). On the JTS XML suites the port therefore fails exactly the 74 tests GEOS does not pass (`GEOSBaseline`), where GEOS gives other results than JTS's tests expect.
+- **The sign of a zero after snap rounding is GEOS's own randomness.** GEOS shuffles the vertices it snap-rounds with `std::random_device`, so at a fixed precision its own results change the sign of a zero from run to run. A result equal to GEOS's but for that sign is accepted and counted apart where GEOS itself varied (22 random overlays at a fixed precision and 5 random set-precisions in phases 4 and 6, counts that change from run to run, and none of the recorded calls).
+- **Make valid is written from its algorithm**, not translated: JTS has no equivalent of GEOS's linework method, and GEOS's code is LGPL. It gives GEOS's results on every comparison (a decision for the user to confirm, phases 6 and 7).
+- **Inputs not compared** where GEOS crashes or reads past its arrays: `GEOSNode` of a collection with an empty member, the triangulation of invalid polygons, the polygonizer and the minimum rectangle of non-finite input.
+- **The light map** differs from run to run by the bake's own noise (0 to 58 pixels, at most 8/255, the same range between two runs of the old binary). The seeded road document differs only in its `"seeded"` date line, the derived JSON files of seeding in their key order (`JSONSerialization` of dictionaries, from run to run of either binary).
+- **The Rust osm2streets is not deterministic** where two crossings set one road end (a `HashMap` iterated in a random order per process): the port computes every order, and every Rust run equals one of them.
+- **Phase 12**: GEOS's answers are stored per build configuration where an optimized build differs from a debug build (arcs from the system's `sin` and `cos`, on both sides alike), and a result equal to GEOS's as it came counts as equal in GEOS's normal form (GEOS normalized both before). See phase 12.
 
 ## Topology
 
 ### The oracle on the JTS XML suites
 
-GEOS 3.13.0 (the `GEOSwift/geos` 9.0.0 package) run on the JTS 1.20.0 XML suites by `JTSXMLGEOSTests`, to check the runner before it checks the port. Every file parses. The tests GEOS does not pass are listed one by one, with GEOS's result, in `Tests/TopologyTests/JTSXML/GEOSBaseline.swift`, and the test fails if that set changes.
+GEOS 3.13.0 (the `GEOSwift/geos` 9.0.0 package) run on the JTS 1.20.0 XML suites by `JTSXMLGEOSTests` (until phase 12), to check the runner before it checks the port. Every file parses. The tests GEOS does not pass are listed one by one, with GEOS's result, in `Tests/TopologyTests/JTSXML/GEOSBaseline.swift`, and the test fails if that set changes.
 
 | Suite | Tests | GEOS passes | Fails | Errors |
 |---|---:|---:|---:|---:|
@@ -229,7 +259,7 @@ The JTS XML suites, the predicates and distance: the port passes exactly the tes
 - **Prepared polygons**: the point locator is the simple one the first time and the indexed one afterwards (JTS: always indexed); on invalid polygons they locate some points differently (14 of 16,000 random prepared predicates differed before). `contains` and `covers` decide first on the outermost location of the test components (JTS: whether all are in), as GEOS's `OutermostLocationFilter` has it.
 - **Distance**: the second geometry's polygons are tried first for containment (JTS: the first's), segment envelopes are compared by their squared distance with the minimum's square, envelope distance is the root of GEOS's `distanceSquared` (JTS: `hypot` of the gaps), and `isWithinDistance` of an empty geometry is false. These were read in GEOS's sources; the random and recorded inputs give the same results with JTS's forms, so they are not observed differences, but they are GEOS's arithmetic.
 
-## Phase 5: buffer and offset curve against GEOS
+### Phase 5: buffer and offset curve against GEOS
 
 The buffer is compared with `GEOSBufferWithStyle`, the offset curve with `GEOSOffsetCurve`: results in GEOS's normal form bit for bit, and as they come; where GEOS fails, the port must throw. The random inputs are those of the overlays (polygons with holes, lines with repeated points and closed lines, points, multi-geometries, collections, empties, some on a grid), with distances of 0.001, 0.05, 0.3, 1 and 3 times their size (times 0.5 to 1.5), a third of them negative and one in twenty zero, segments a quadrant 1, 2, 3, 4, 8, 16, 0 and -1, every cap and join style, mitre limits 0.5 to 10.
 
@@ -260,7 +290,7 @@ The JTS XML suites: `buffer` 151 tests, all passed as on GEOS; `bufferMitredJoin
 - **Offset curve**: a buffer segment matches a raw segment when both its ends are within the match distance of it (JTS tests the shorter segment's ends against the longer), sections are sorted by `std::sort`, only polygons count for the buffer's largest.
 - **The union by buffer is out of reach for floating inputs.** GEOS's `ClassicUnionStrategy` falls back to the buffer by zero of two areas when their overlay throws a `TopologyException`, but robust OverlayNG keeps its first failure in a `std::runtime_error` (sliced) and throws that when every strategy fails, which the fallback does not catch. The port throws that failure as a `RuntimeError` likewise. Found when the buffer arrived: with the fallback reaching the buffer, 446 of 2,000 random unary unions gave a result where GEOS fails.
 
-## Speed after the first optimization pass
+### Speed after the first optimization pass
 
 Optimized, on every recorded call (the port's objects of `swift build -c release`, GEOS at its release flags; each side's call alone). The pass changed no result: the full suite with the long replays was green before and after.
 
@@ -279,7 +309,7 @@ Optimized, on every recorded call (the port's objects of `swift build -c release
 
 What changed: the stable merge sort behind JTS's sorts (`javaSorted`) merges in one scratch buffer instead of allocating arrays at every level (the same order, the same comparisons); the STR tree is queried from one flat array of its nodes; the line intersector keeps its points inline instead of in arrays; the segment envelope test uses GEOS's `std::min` and `std::max`; the intersectors held by noders skip the dynamic exclusivity checks. The rest is reference counting and allocation, for a later pass. Run to run the times vary by about 10%.
 
-## Speed after the second optimization pass: one whole tile
+### Speed after the second optimization pass: one whole tile
 
 Every recorded call of the tile `15/19808/10243` (545,244 calls), each timed alone on each side, its result made and freed inside the measure, in an optimized build (`TOPOLOGY_SPEED=1 swift test -c release -Xswiftc -enable-testing --filter SpeedTests`, `Recording/SpeedTests`; GEOS at the release flags of the same build). The goal's bar (Docs/PortingGoal.md, "Performance") is a tile in at most 1.5 times GEOS's time.
 
@@ -319,7 +349,7 @@ What changed (the profile was taken with Instruments' Time Profiler, `xctrace`, 
 
 Tried and dropped: `unowned(unsafe)` local variables for the graph traversals (slower: 9.8 s to 10.2 s for the unary union).
 
-## Phases 6 and 7: validity, make valid, precision, simplify, triangulation, polygonize, line merge, linear referencing against GEOS
+### Phases 6 and 7: validity, make valid, precision, simplify, triangulation, polygonize, line merge, linear referencing against GEOS
 
 Every comparison is exact: geometries in GEOS's normal form bit for bit and as they come (not normalized), numbers by their bits, the validity with its reason and its location bit for bit (`GEOSisValidDetail`); where GEOS fails, the port must throw. The random inputs are phase 2's (`RandomGeometries`) and new often invalid ones (`InvalidGeometries`: rings of shuffled grid points, bow-ties and figure eights, spikes and gores, holes inside, crossing, touching or outside their shell, nested and repeated holes, holes touching each other and the shell in a cycle, a hole touching its shell twice, inverted rings, overlapping, touching and nested parts of multipolygons, rings and lines of too few distinct points, NaN and infinite ordinates, collections of these). The linework of the polygonizer and the line merger is pieces of random walks on grids (shared ends, reversed pieces, loops, repeats), the noded boundaries of random geometries (GEOS's unary union of them), polygons and raw crossing lines.
 
@@ -361,7 +391,7 @@ Every recorded call (`Recording/ValidityReplayTests`, `LinesReplayTests`, `Shape
 
 The JTS XML suites: `isValid` 922 tests, `polygonize` 6 and `simplifyTP` 18, all passed as on GEOS, and every result of the operations the port has (10,297 now) is GEOS's.
 
-### Where GEOS 3.13 differs from JTS 1.20 in phases 6 and 7, and the port follows GEOS
+#### Where GEOS 3.13 differs from JTS 1.20 in phases 6 and 7, and the port follows GEOS
 
 Some were found by a parity test (the pairs of the STR tree, the validity message, the simplifier's non-finite segments, the non-finite coordinates, the triangulator's collapsed rings), then understood from GEOS's sources (read, never translated); the others were read in GEOS's sources while porting (orders of containers and sorts JTS takes from hash maps or stable sorts). All are confirmed by the parity tests, which pass with them.
 
@@ -378,15 +408,15 @@ Some were found by a parity test (the pairs of the STR tree, the validity messag
 - **Non-finite coordinates**: GEOS's orientation test throws on a NaN or infinite point (`CGAlgorithmsDD::orientationIndex`, `signOfDet2x2`), JTS computes on; GEOS's envelopes are null when `maxX` is NaN and do not intersect anything with a NaN ordinate; GEOS's ordered sets and maps (red-black trees) take a NaN coordinate as equivalent to any. The port follows all three (`NonFinite`, `Envelope`, `CxxTree`). Before this, 245 of the 8,000 often invalid make-valid inputs differed (GEOS failing, the port giving a result), then 57 (the port failing where GEOS's envelopes skip the NaN segment), then 19 and 2 (collapsed NaN points kept); now none.
 - **Undefined behaviour of GEOS, reproduced by its outcome**: the triangulator on a ring collapsed to one point (all its points repeated) reads past the ring; GEOS gives no triangles for such a shell and fails ("Unable to find shell join index") for such a hole, and so does the port.
 
-### Make valid: written from the algorithm, not translated
+#### Make valid: written from the algorithm, not translated
 
 GEOS 3.13's default `GEOSMakeValid` (the "linework" method) is GEOS's `MakeValid` and `BuildArea`, ported to GEOS from rttopo and PostGIS (LGPL): JTS 1.20 has no equivalent (only the structural `GeometryFixer`). The port's `MakeValid` and `BuildArea` are written for this port from the algorithm as GEOS documents and runs it (node the boundary by a union with its first point, keep the points that collapse, build areas from the cut edges by polygonizing, keeping faces with an even number of parents and dissolving them by a cascaded union, add each area by symmetric difference and remove its boundary from the cut edges until no area can be built), in GEOS's order of operations and with GEOS's containers, on the port's own JTS operations. They are not a translation of GEOS's code. This is a decision taken on the user's behalf (the conservative alternative, BLOCKED, would leave `GEOSMakeValid` without a port); it is listed in `Docs/PortingTopologyProgress.md`, Decisions, for the user to confirm.
 
-## Phase 8: `Geometry` on `Topology`
+### Phase 8: `Geometry` on `Topology`
 
 `Geometry` now runs every operation on the port (Docs/PortingTopologyProgress.md, phase 8). Measured 2026-10-25: before, a release build of main at 50caf95 (GEOS) built from a scratch copy, `/private/tmp/claude-501/phase8/main-src` (main's own `.build/release/tilepipeline` was older than that commit); after, this branch's release build. Both have the same Swift osm2streets.
 
-### Every recorded call through both wrappers
+#### Every recorded call through both wrappers
 
 The old wrapper on GEOS (`Tests/TopologyTests/Oracle/GEOSWrapper.swift`, `Geometry.swift` at 50caf95) is the oracle: every call of the six recordings is replayed through it and through the new `Geometry`, and the results compared as they come, bit for bit: geometries by kind, WKB (every coordinate's bits, signs of zeros included) and the grid of the precision model each part carries; numbers by bits; answers, indices, text exactly (`Recording/WrapperReplayTests`, `TOPOLOGY_LONG_REPLAY=1`, release). Each input geometry is also read through the whole reading API and rebuilt through the constructors and the Swift transforms on both sides. The replay runs twice: inputs as recorded (floating, as WKB keeps no precision model), and every input first put on the grid of 0.01 by `setPrecision` on each side, as `clean` leaves the build's geometries (the overlays and buffers then snap-round on that grid, and `setPrecision(0.01)` of a cleaned geometry only copies it, as GEOS's C API does).
 
@@ -430,7 +460,7 @@ No result needed GEOS's randomness of snap rounding (the sign of zeros, phase 4)
 
 The recording mode: `tilepipeline lab` with `GEOMETRY_RECORD`, `--samples 16`, after the swap, writes recordings byte-identical (the `.rec` and the `.counts`) to the ones GEOS's build wrote, for 15/19810/10243, 15/19808/10243 and 15/19809/10242: the same calls, the same inputs, in the same order.
 
-### Non-finite coordinates
+#### Non-finite coordinates
 
 GEOS throws where its orientation test meets a NaN or infinite point, and its C API returns the failure value; the port raised a flag that only the overlays and the operations of phases 6 and 7 turned into an error. Every operation of `Geometry` now runs inside `NonFinite.scope`, the C API's catch, so the predicates, the buffer, the distance, the hulls and the prepared geometries fail where GEOS does. No recorded call has a non-finite coordinate, but the build computes its geometry (a direction normalized, a projected point) and could make one, so `Parity/WrapperNonFiniteTests` gives both wrappers 2,000 random pairs (polygons with holes, lines, points and collections, with a NaN, an infinity or a (NaN, NaN) point put in, now and then the first point) and compares every operation of the API on them as the replay does: all 2,000 pairs equal in every operation (about 60 comparisons each).
 
@@ -451,7 +481,7 @@ Where GEOS's own behaviour is undefined or crashes, the input is not compared: `
 
 **Resolved: the last input (case 536).** The intersection of `POLYGON ((84.2563585577477 74.51183142897781, 81.99829880196077 77.9685070776905, 79.85676667877205 83.73743403849292, 75.47122430421575 79.39810095483487, 79.15893589950616 56.90308530281746, NaN 55.28349775588518, 81.55616715543691 58.59975189968331, 84.46540428073868 57.68117317553, 85.81132900290532 57.879591329111, 92.22263195338824 59.81952158882663, 84.2563585577477 74.51183142897781))` with `POLYGON ((75.57706816949573 86.1687209934793, 70.6338933443592 83.13362447463776, 67.1427115335806 88.96803582443742, 57.35329606448902 79.73405353068293, 61.985013621160995 66.14253733916115, 75.57706816949573 86.1687209934793))`: GEOS fails in every stage of its robust overlay, the last its snap rounding at the safe scale 1e12 (`Edge direction cannot be determined because endpoints are equal`); the port's snap rounding gave `POLYGON EMPTY`. Traced with lldb on both sides, stage by stage: the inputs of the snap-rounding noder were the same, its hot pixels the same (a NaN vertex never finds its pixel, `equals2D`, so each makes its own, which no query's envelope contains), and no snap added a node on either side. The difference was in `SegmentNodeList.getSplitCoordinates` (the noded coordinates the snap rounding starts from): GEOS begins with the first node paired with itself, two points, then adds without repeats by `equals2D`. For a finite first node the repeat is dropped, so the result is JTS's, but a NaN node never equals itself and stays twice, then a third time from the next pair: GEOS's edge starts with three NaN vertices, the port's started with one. With the first pair as GEOS has it (the split edges, `addSplitEdges`, start from the second node in both), the port's snap rounding leaves GEOS's edges and fails as GEOS does, and the test's 2,000 pairs are all equal.
 
-### The whole pipeline, end to end
+#### The whole pipeline, end to end
 
 `tilepipeline lab ~/Desktop/TilePipeline/data/15_<x>_<y> <scratch> --whole --export --samples 64 --root ~/Desktop/TilePipeline`, three runs of each binary, interleaved, the machine otherwise idle. The geometry of the GLB is its five accessors (`POSITION`, `NORMAL`, `TEXCOORD_0`, `TEXCOORD_1`, indices) compared byte for byte.
 
@@ -482,8 +512,40 @@ All within the goal's 1.5 times.
 
 Tests: the full `swift test` (453 tests in 76 suites) passes in debug, and in release with `TOPOLOGY_LONG_REPLAY=1` (`-Xswiftc -enable-testing`). Builds, debug and release, have no warnings.
 
-## Streets
+### Phase 12: GEOS removed, its answers stored
 
+GEOS left the package in phase 12 (the `geos` product removed from `TopologyTests` by the main session). Before it went, every parity test ran once against GEOS itself (`TOPOLOGY_FREEZE=1`, commit `18f264d`) and wrote GEOS's answers to a tape, in the order it asked (`Tests/TopologyTests/Stored/`, `Docs/PortingTopologyProgress.md`, phase 12). The tests now read those answers: they cannot be made again.
+
+What is stored, and where:
+
+| Stored | Where | Tapes | Size |
+|---|---|---:|---:|
+| The random suites of phases 2 to 7 (every seeded input, near-degenerate and often invalid ones, the signed zeros, the NaN and infinite coordinates, the noding order, GEOS's failures, the grids of 0.01, a seventh, a hundredth and a ten-thousandth), GEOS's results on the JTS XML suites and its reading of their inputs, the 2,000 non-finite pairs through the old wrapper | in git, `Tests/TopologyTests/.oracle/` (hidden from SwiftPM, read with `#filePath`, so `Package.swift` needs no resources) | 77 | 5.6 MB |
+| GEOS's answers to every recorded call of the six recordings, the old wrapper's results on them as recorded and on the grid of 0.01, GEOS's times of a whole tile | outside git, `.build/recording/expected/<recording>/`, beside the recordings | 209 | 100 MB |
+
+A tape (LZMA) keeps each answer whole up to a limit (16 bytes in git, 1,024 bytes beside the recordings for GEOS's functions, 32 bytes for the wrapper replay) and as a 64-bit digest of its bytes above it, with a digest of its value form where the sign of zeros may be compared by value, and whether GEOS varied in ten more runs where it was asked and the result has a zero. A digest that matches is the same bytes but for a chance of one in 2^64. Each tape ends with a digest of every question asked (the operation, its parameters, the digest of every input, the recorded geometry's id): a test that asks anything else than what was stored fails.
+
+What the frozen tests compare, against the GEOS-backed ones:
+
+- The same inputs (the same seeded generators, checked by the alignment digest), the same answers of GEOS, the same rules: bit for bit, a failure of GEOS must be a failure of the port, the sign of zeros by value only where GEOS varied.
+- **GEOS's normal form.** The GEOS-backed tests normalized both results with GEOS. The frozen ones take a result equal to GEOS's as it came as equal in normal form (GEOS's normalize of the same bytes is the same), and compare any other in the port's normal form with GEOS's stored one. When the answers were stored, the port's `normalize` of each of GEOS's results (built again from its coordinates) was checked to be GEOS's normal form: so it was, on every one, so no normal form had to be stored apart from the result. But the port's `normalize` of its own result, applied to the result object the operation returned, can order NaN coordinates otherwise than of the same coordinates built again: on 32 results of make valid of often invalid input, each equal to GEOS's bit for bit as it came. The first rule covers them, and it is the GEOS-backed tests' rule (they normalized a copy of the coordinates in GEOS).
+- **Inputs GEOS made**: the noded linework of the lines tests (GEOS's boundaries and unary union) is made with the port and checked against the digest of GEOS's. The lengths that set the distances of the linear referencing tests, and the validity that decides which inputs the triangulation and the point location see, are GEOS's stored answers.
+- **The JTS XML buffer matcher** measures the Hausdorff distance with JTS's `DiscreteHausdorffDistance` (translated into the test target) where it called GEOS's: the same pass or fail on every buffer test.
+- **Two builds.** GEOS's arcs (the buffer, the offset curve) and the generator of the non-finite pairs (`sin` and `cos` of SIMD values) come out with other last bits in an optimized build than in a debug build, the port alike: each was equal to GEOS in each build. The answers were stored from both builds, and an optimized build's tape (`.release`) is kept where it differs: 7 in git (the random buffers and offset curves, the non-finite pairs), 10 beside the recordings (the recorded buffers and the wrapper replay as recorded, of five recordings). The tapes of the overlays and set-precisions at a fixed precision also differ between two runs of either build, by GEOS's randomness only: one is kept.
+- Not frozen, as they ran GEOS alone: `JTSXMLGEOSTests.geosPassesWhatTheBaselineSays` (GEOS on the JTS suites against `GEOSBaseline`, which stays as GEOS's record) and `DebugCaseTests` (a case on both sides, a tool run by hand).
+
+Equivalence, on commit `18f264d`, where the GEOS-backed suite (moved into `GEOSSuite`) and the frozen suite stood side by side: `swift test --filter TopologyTests.GEOSSuite` against `--skip GEOSSuite`, every line the tests print (`parity`, `jts-xml`) compared.
+
+| Run | Tests, old / new | Shared tests | Comparisons, old / new | Equal, old / new | Printed lines, old / new | Lines different |
+|---|---:|---:|---:|---:|---:|---|
+| debug | 86 / 89, all passed | 84 | 3,125,304 / 3,125,304 | 3,112,646 / 3,112,646 | 269 / 269 | 14: the zero-sign counts of 7 tallies (below) |
+| release, `TOPOLOGY_LONG_REPLAY=1` | 86 / 89, all passed | 84 | 19,733,205 / 19,733,205 | 19,720,547 / 19,720,547 | 370 / 370 | the same 14 |
+
+The 12,658 comparisons not equal on both sides are the `MinimumDiameter` rectangles, which the test requires to differ from GEOS's. The 14 lines that differ are the counts of results equal to GEOS's but for the sign of zeros, and with them of results equal as they came, of the four overlays at a fixed precision and the three set-precision suites: GEOS's randomness (it varied on each of those inputs, and the old suite's own counts change from run to run: 4 and 5 on `Prec overlay 1` in its two runs). Every compared and equal count is the same. The old suite's two tests beyond the shared ones are the two not frozen. The new suite's five are JTS's unit cases of snap rounding and the KD-tree and the target's link test, which never used GEOS.
+
+After GEOS was removed (commit `8b657a8`): the full `swift test` passes, 451 tests in 74 suites, in debug (11 min) and in release with `-Xswiftc -enable-testing` and `TOPOLOGY_LONG_REPLAY=1` (3 min 21 s). In a scratch copy with `Package.swift` changed (no dependencies), the package and its tests build, the 89 topology tests pass, and Xcode builds and tests the shared scheme with code coverage on (`xcodebuild test -enableCodeCoverage YES`, the coverage report written), which GEOS's dynamic library prevented. A whole tile's recorded calls, timed against GEOS's stored times: 1.48 times GEOS's (13,233 ms against 8,943 ms), as in phase 8.
+
+## Streets
 The Swift osm2streets (`Streets` on `StreetGeom`, `GeoAlgorithms`, `Earcut`, `OSMReader`, `CountryBoundaries`, `MuvLanes`) against the Rust binary of the pipeline (`osm2streets-cli`, rev `fc119c4`), the port reading every lane itself. The bar: byte-identical GeoJSON text. Details and the tag-set tests of `MuvLanes` in `Docs/PortingStreetsProgress.md`. Measured 2026-10-25, `swift test -c release -Xswiftc -enable-testing`.
 
 | Compared | Data | Result |
