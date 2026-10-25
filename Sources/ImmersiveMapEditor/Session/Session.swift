@@ -197,7 +197,7 @@ final class Session {
     /// The open tile's landmark candidates read again.
     func readCandidates() {
         guard let tile = workspace.tile else { return }
-        candidates = LandmarkCandidates.list(workspace.paths).filter { $0.tile == tile.name }
+        candidates = LandmarkCandidates.list(workspace.paths, tile: tile)
         candidateBuildings = LandmarkCandidates.osmIDs(workspace.paths, tile: tile)
     }
 
@@ -205,11 +205,12 @@ final class Session {
     func makeLandmark(named name: String) {
         guard let tile = workspace.tile, let projection = buildings.projection, !buildings.selected.isEmpty else { return }
         do {
-            let folder = try LandmarkCandidates.make(name: name, buildings: buildings.selected, tile: tile,
-                                                     projection: projection, paths: workspace.paths)
+            _ = try LandmarkCandidates.make(name: name, buildings: buildings.selected, tile: tile,
+                                            projection: projection, paths: workspace.paths)
             buildings.picked = []
             readCandidates()
-            Platform.open(folder)
+            // The files panel shows it.
+            workspace.tilesRevision += 1
         } catch {
             problem = "Cannot make the landmark \(name): \(error.localizedDescription)"
         }

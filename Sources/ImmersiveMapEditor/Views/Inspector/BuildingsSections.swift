@@ -17,7 +17,7 @@ struct BuildingsSections: View {
                 name = ""
             }
             .disabled(picked.isEmpty)
-            Text("Writes a folder of the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
+            Text("Writes a folder in the tile's landmarks/ with the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         Section("Picked: \(picked.count)") {

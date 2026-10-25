@@ -9,7 +9,7 @@ The desktop tool for the content of the ImmersiveMap engine (`~/Desktop/Immersiv
   - **Tiles 3D**: the tile's model, its palette alone, built without its light (`pipeline build --no-light`).
   - **Light**: the same 3D tile lit by its light map (or the light alone), and its bake: sky light with bounces or ambient occlusion, a sun baked or none (`pipeline bake`).
   - **Landmarks**: the landmark models standing in the tile.
-  - **Buildings**: the tile's OSM buildings and parts from above, picked to see all their tags and made a landmark candidate: `landmarks/candidates/<id>/` of the data folder, `landmark.json` (outlines in WGS84, parts, heights, every tag) and `footprint.geojson`, what a detailed model is made from (by hand, a tool, an AI). A candidate changes nothing of the build until a model of it is placed.
+  - **Buildings**: the tile's OSM buildings and parts from above, picked to see all their tags and made a landmark candidate: the tile's own `landmarks/<id>/`, `landmark.json` (outlines in WGS84, parts, heights, every tag) and `footprint.geojson`, what a detailed model is made from (by hand, a tool, an AI). A candidate changes nothing of the build until a model of it is placed.
 
 Public repository: `github.com/artembobkin/ImmersiveMapEditor`, MIT, as the engine.
 

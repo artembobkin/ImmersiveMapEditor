@@ -13,6 +13,8 @@ import Foundation
 ///   tiles/<z>/<x>/<y>/roads/        its road document, roads.json, hand-edited,
 ///                                   and seed/, what it was seeded from (Seed)
 ///   tiles/<z>/<x>/<y>/build/        its built model (Build, Bake)
+///   tiles/<z>/<x>/<y>/landmarks/    its buildings marked to become landmarks, a
+///                                   folder each (the editor's Buildings view)
 ///   tiles/index.json                the last build of every tile
 ///   landmarks/                      recipes, the landmark registry, downloaded models
 ///   config/                         what OSM shows but the place does not have
@@ -46,6 +48,9 @@ public struct WorkspacePaths: Sendable {
 
     /// What a tile's road document is seeded from, and the editor's underlay.
     public func seed(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("roads/seed") }
+
+    /// A tile's landmark candidates, a folder each.
+    public func tileLandmarks(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("landmarks") }
 
     /// A built tile's folder.
     public func tileOut(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("build") }

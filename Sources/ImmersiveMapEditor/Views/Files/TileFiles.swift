@@ -42,6 +42,7 @@ struct TileFiles {
             Group(title: "Roads", systemImage: "road.lanes",
                   folder: p.roadDocument(z: tile.z, x: tile.x, y: tile.y).deletingLastPathComponent()),
             Group(title: "Build", systemImage: "cube", folder: p.tileOut(z: tile.z, x: tile.x, y: tile.y)),
+            Group(title: "Landmarks", systemImage: "building.columns", folder: p.tileLandmarks(z: tile.z, x: tile.x, y: tile.y)),
         ]
     }
 

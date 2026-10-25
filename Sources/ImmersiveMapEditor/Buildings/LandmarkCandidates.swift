@@ -2,8 +2,8 @@ import Foundation
 import Geometry
 import TileKit
 
-/// The buildings marked to become landmarks, each a folder of the data
-/// folder's landmarks/candidates/<id>/ holding what a detailed model can be
+/// The buildings of a tile marked to become landmarks, each a folder of the
+/// tile's own folder, landmarks/<id>/, holding what a detailed model can be
 /// made from (by hand, by a tool, by an AI): `landmark.json` (its name, tile,
 /// place, and every building and part with its OSM id, all its tags, its
 /// heights and its outline in longitude and latitude) and `footprint.geojson`
@@ -11,12 +11,11 @@ import TileKit
 /// candidate changes nothing of the tile's build until a model of it is
 /// made and placed.
 enum LandmarkCandidates {
-    static func folder(_ paths: WorkspacePaths) -> URL { paths.landmarks.appendingPathComponent("candidates") }
+    static func folder(_ paths: WorkspacePaths, _ tile: TileKey) -> URL { paths.tileLandmarks(z: tile.z, x: tile.x, y: tile.y) }
 
-    /// The candidates there are: their ids and names, with the tile each
-    /// stands in.
-    static func list(_ paths: WorkspacePaths) -> [(id: String, name: String, tile: String, folder: URL)] {
-        let root = folder(paths)
+    /// The tile's candidates: their ids, names and folders.
+    static func list(_ paths: WorkspacePaths, tile: TileKey) -> [(id: String, name: String, tile: String, folder: URL)] {
+        let root = folder(paths, tile)
         return ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted().compactMap { id in
             let f = root.appendingPathComponent(id)
             guard let data = try? Data(contentsOf: f.appendingPathComponent("landmark.json")),
@@ -27,7 +26,7 @@ enum LandmarkCandidates {
 
     /// The OSM elements the candidates of a tile are made of.
     static func osmIDs(_ paths: WorkspacePaths, tile: TileKey) -> [String] {
-        list(paths).filter { $0.tile == tile.name }.flatMap { c -> [String] in
+        list(paths, tile: tile).flatMap { c -> [String] in
             guard let data = try? Data(contentsOf: c.folder.appendingPathComponent("landmark.json")),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
             return (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
@@ -38,8 +37,8 @@ enum LandmarkCandidates {
     /// `projection`. Returns its folder.
     static func make(name: String, buildings: [OsmBuilding], tile: TileKey, projection: Projecting,
                      paths: WorkspacePaths) throws -> URL {
-        let id = slug(name, taken: Set(list(paths).map(\.id)))
-        let out = folder(paths).appendingPathComponent(id)
+        let id = slug(name, taken: Set(list(paths, tile: tile).map(\.id)))
+        let out = folder(paths, tile).appendingPathComponent(id)
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
         func ll(_ p: Vec2) -> [Double] {
             let (lon, lat) = projection.lonLat(P2(p.x, p.y))
@@ -76,11 +75,13 @@ enum LandmarkCandidates {
         return out
     }
 
-    /// A folder name from a name: lowercase letters and digits joined by
-    /// dashes, numbered when taken.
+    /// A folder name from a name, in Latin letters: lowercase a to z and
+    /// digits joined by dashes (Большой театр: bolsoj-teatr), numbered when
+    /// taken.
     static func slug(_ name: String, taken: Set<String>) -> String {
         let latin = name.applyingTransform(.toLatin, reverse: false)?.applyingTransform(.stripDiacritics, reverse: false) ?? name
-        let words = latin.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        let kept = latin.lowercased().unicodeScalars.filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == " " || $0 == "-" }
+        let words = String(String.UnicodeScalarView(kept)).split { $0 == " " || $0 == "-" }.map(String.init)
         let base = words.isEmpty ? "landmark" : words.joined(separator: "-")
         var id = base, n = 2
         while taken.contains(id) {
