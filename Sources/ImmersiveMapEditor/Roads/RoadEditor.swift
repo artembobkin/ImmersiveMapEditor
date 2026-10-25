@@ -47,7 +47,8 @@ final class RoadEditor {
         store = DocumentStore(url: url)
         let doc = try RoadPlan.read(url)
         self.doc = doc
-        context = Underlay.read(store.root.appendingPathComponent("data/regions/\(doc.name)/context.json"), doc.projection)
+        // Beside the document, in the tile's roads/: what it was seeded from.
+        context = Underlay.read(url.deletingLastPathComponent().appendingPathComponent("seed/context.json"), doc.projection)
     }
 
     var url: URL { store.url }

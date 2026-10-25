@@ -2,7 +2,7 @@ import Foundation
 import TileKit
 import MetalKit
 
-/// A built tile (out/tiles/<z>/<x>/<y>/) on the GPU: its one mesh, its
+/// A built tile (its folder's build/) on the GPU: its one mesh, its
 /// palette and light map, read from its GLB as the engine's tooling reads it
 /// (CLAUDE.md, "The model file: GLB"), and where it lies among the others.
 struct TileModel {
@@ -30,7 +30,7 @@ struct TileModel {
 
     /// The folder of a tile's build.
     static func folder(root: URL, z: Int, x: Int, y: Int) -> URL {
-        root.appendingPathComponent("out/tiles/\(z)/\(x)/\(y)")
+        WorkspacePaths(root: root).tileOut(z: z, x: x, y: y)
     }
 
     static func load(device: MTLDevice, root: URL, z: Int, x: Int, y: Int, region: Region) throws -> TileModel {

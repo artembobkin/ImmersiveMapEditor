@@ -4,10 +4,7 @@ import SwiftUI
 struct EditorCommands: Commands {
     let session: Session
     var body: some Commands {
-        CommandGroup(replacing: .newItem) {
-            Button("Open Workspace…") { session.importing = .workspace }.keyboardShortcut("o", modifiers: [.command, .shift])
-            Button("Open Road Document…") { session.importing = .roads }.keyboardShortcut("o")
-        }
+        CommandGroup(replacing: .newItem) {}
         CommandGroup(replacing: .saveItem) {
             Button("Save") { session.model?.save() }
                 .keyboardShortcut("s")

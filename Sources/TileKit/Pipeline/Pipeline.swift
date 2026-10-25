@@ -42,21 +42,19 @@ public enum Pipeline {
         return made
     }
 
-    /// Seeds road documents for the tiles no document holds yet. Returns
-    /// the documents the tiles take their roads from.
+    /// Seeds the road documents of the tiles that have none yet. Returns the
+    /// tiles seeded.
     public static func ensureRoads(_ paths: WorkspacePaths, z: Int, tiles: [(Int, Int)]) throws -> [String] {
-        var names = Set<String>(), missing = Set<[Int]>()
-        for (x, y) in tiles {
-            if let url = RoadDocument.find(z: z, x: x, y: y, in: paths) { names.insert(url.lastPathComponent) } else { missing.insert([x, y]) }
+        var seeded: [String] = []
+        for (x, y) in tiles where RoadDocument.find(z: z, x: x, y: y, in: paths) == nil {
+            _ = try Seed.run(paths, z: z, x: x, y: y)
+            seeded.append("\(z)/\(x)/\(y)")
         }
-        for (x0, y0, x1, y1) in rectangles(missing) {
-            names.insert(try Seed.run(paths, z: z, x0: x0, y0: y0, x1: x1, y1: y1).lastPathComponent)
-        }
-        return names.sorted()
+        return seeded
     }
 
     public static func run(_ paths: WorkspacePaths, z: Int, tiles: [(Int, Int)], options: Options = Options()) throws -> Bool {
-        let out = paths.tilesOut
+        let out = paths.tiles
         for (x, y) in tiles {
             let data = paths.tileData(z: z, x: x, y: y)
             if options.refetch || !FileManager.default.fileExists(atPath: data.appendingPathComponent("osm.json").path) {
@@ -64,7 +62,8 @@ public enum Pipeline {
             }
         }
         Progress.report("Seeding the roads where no document holds them")
-        print("roads from roads/" + (try ensureRoads(paths, z: z, tiles: tiles)).joined(separator: ", roads/"))
+        let seeded = try ensureRoads(paths, z: z, tiles: tiles)
+        if !seeded.isEmpty { print("roads seeded for " + seeded.joined(separator: ", ")) }
         let indexURL = out.appendingPathComponent("index.json")
         var index: [String: [String: Any]] = [:]
         if let data = try? Data(contentsOf: indexURL),
@@ -74,8 +73,8 @@ public enum Pipeline {
         for (x, y) in tiles {
             let name = "\(z)/\(x)/\(y)"
             print(name)
-            let folder = out.appendingPathComponent("\(z)/\(x)/\(y)")
-            var state: [String: Any] = ["tile": name, "folder": "out/tiles/\(z)/\(x)/\(y)"]
+            let folder = paths.tileOut(z: z, x: x, y: y)
+            var state: [String: Any] = ["tile": name, "folder": "tiles/\(z)/\(x)/\(y)/build"]
             let started = Date()
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

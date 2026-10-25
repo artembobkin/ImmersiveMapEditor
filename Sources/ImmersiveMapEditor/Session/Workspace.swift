@@ -18,15 +18,16 @@ enum ViewMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// What TilePipeline (the folder `root`) has of every tile: fetched OSM
-/// (data/<z>_<x>_<y>/osm.json), a built model (out/tiles/<z>/<x>/<y>/), the
-/// road document holding it (roads/). And the one tile picked on the map,
-/// the app's working tile: every other view is a workspace over it alone.
+/// What the app's data folder (`root`, laid out as TileKit's WorkspacePaths:
+/// a folder a tile) has of every tile: its OSM fetched, its road document,
+/// its model built. And the tile open, which every view works on.
 @Observable
 final class Workspace {
     static let zoom = 15
 
     let root: URL
+    /// Where everything of a tile lies, the pipeline's own description.
+    let paths: WorkspacePaths
     var viewMode: ViewMode = .roads
     private(set) var fetched: Set<TileKey> = []
     private(set) var built: Set<TileKey> = []
@@ -56,6 +57,7 @@ final class Workspace {
 
     init(root: URL, remembers: Bool = true) {
         self.root = root
+        paths = WorkspacePaths(root: root)
         self.remembers = remembers
         let d = UserDefaults.standard
         if remembers, let data = d.data(forKey: "tile"), let t = try? JSONDecoder().decode(TileKey.self, from: data) {
@@ -76,36 +78,21 @@ final class Workspace {
         if next != shown { shown = next }
     }
 
-    /// Reads again what is on disk.
+    /// Reads again what is on disk: tiles/<z>/<x>/<y>/, the zoom's.
     func scan() {
         let fm = FileManager.default
         var f = Set<TileKey>(), b = Set<TileKey>()
-        let data = root.appendingPathComponent("data")
-        for name in (try? fm.contentsOfDirectory(atPath: data.path)) ?? [] {
-            let p = name.split(separator: "_").compactMap { Int($0) }
-            if p.count == 3, fm.fileExists(atPath: data.appendingPathComponent("\(name)/osm.json").path) {
-                f.insert(TileKey(z: p[0], x: p[1], y: p[2]))
-            }
-        }
-        let z = Workspace.zoom
-        let out = root.appendingPathComponent("out/tiles/\(z)")
-        for x in (try? fm.contentsOfDirectory(atPath: out.path)) ?? [] {
-            for y in (try? fm.contentsOfDirectory(atPath: out.appendingPathComponent(x).path)) ?? [] {
-                if let xi = Int(x), let yi = Int(y),
-                   fm.fileExists(atPath: out.appendingPathComponent("\(x)/\(y)/placement.json").path) {
-                    b.insert(TileKey(z: z, x: xi, y: yi))
-                }
-            }
-        }
         var docs: [(URL, RoadPlan.Tiles)] = []
-        let roads = root.appendingPathComponent("roads")
-        for name in ((try? fm.contentsOfDirectory(atPath: roads.path)) ?? []).sorted() where name.hasSuffix(".json") {
-            let url = roads.appendingPathComponent(name)
-            if let data = try? Data(contentsOf: url),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let t = json["tiles"] as? [String: Int], let tz = t["z"], let x0 = t["x0"], let y0 = t["y0"],
-               let x1 = t["x1"], let y1 = t["y1"] {
-                docs.append((url, RoadPlan.Tiles(z: tz, x0: x0, y0: y0, x1: x1, y1: y1)))
+        let z = Workspace.zoom
+        let zoom = paths.tiles.appendingPathComponent("\(z)")
+        for x in (try? fm.contentsOfDirectory(atPath: zoom.path)) ?? [] {
+            for y in (try? fm.contentsOfDirectory(atPath: zoom.appendingPathComponent(x).path)) ?? [] {
+                guard let xi = Int(x), let yi = Int(y) else { continue }
+                let t = TileKey(z: z, x: xi, y: yi)
+                if fm.fileExists(atPath: paths.tileData(z: z, x: xi, y: yi).appendingPathComponent("osm.json").path) { f.insert(t) }
+                if fm.fileExists(atPath: paths.tileOut(z: z, x: xi, y: yi).appendingPathComponent("placement.json").path) { b.insert(t) }
+                let doc = paths.roadDocument(z: z, x: xi, y: yi)
+                if fm.fileExists(atPath: doc.path) { docs.append((doc, RoadPlan.Tiles(z: z, x0: xi, y0: yi, x1: xi, y1: yi))) }
             }
         }
         fetched = f
@@ -114,12 +101,16 @@ final class Workspace {
         follow()
     }
 
-    /// The road document holding a tile.
+    /// The road document of a tile, in its folder, if it has one.
     func document(holding t: TileKey) -> URL? {
-        documents.first { d in
-            d.tiles.z == t.z && (d.tiles.x0...d.tiles.x1).contains(t.x) && (d.tiles.y0...d.tiles.y1).contains(t.y)
-        }?.url
+        documents.first { d in d.tiles.z == t.z && d.tiles.x0 == t.x && d.tiles.y0 == t.y }?.url
     }
+
+    /// A tile's folder: everything of it.
+    func folder(_ t: TileKey) -> URL { paths.tile(z: t.z, x: t.x, y: t.y) }
+
+    /// A tile's built model's folder.
+    func build(_ t: TileKey) -> URL { paths.tileOut(z: t.z, x: t.x, y: t.y) }
 
     /// The projection the 3D view places the tiles shown in: their range's.
     var shownProjection: Region? {

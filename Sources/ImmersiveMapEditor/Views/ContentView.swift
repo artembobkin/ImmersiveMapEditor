@@ -14,7 +14,6 @@ struct ContentView: View {
 
     var body: some View {
         let workspace = session.workspace
-        let importing = session.importing
         NavigationSplitView(columnVisibility: $files) {
             FilesSidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
@@ -25,12 +24,6 @@ struct ContentView: View {
         .onChange(of: undoManager, initial: true) { session.model?.undo = undoManager }
         .onChange(of: session.model.map { ObjectIdentifier($0) }) { session.model?.undo = undoManager }
         .onChange(of: phase) { if phase != .active { session.model?.saveIfNeeded() } }
-        .fileImporter(isPresented: Binding(get: { session.importing != nil }, set: { if !$0 { session.importing = nil } }),
-                      allowedContentTypes: session.importing == .workspace ? [.folder] : [.json]) { result in
-            guard let url = try? result.get() else { return }
-            if importing == .workspace { session.open(workspace: url) } else { session.open(roads: url) }
-        }
-        .fileDialogDefaultDirectory(session.importing == .roads ? session.workspace.root.appendingPathComponent("roads") : nil)
         .confirmationDialog("Seed the roads again?", isPresented: Binding(get: { session.reseedAsked },
                                                                           set: { session.reseedAsked = $0 })) {
             Button("Seed Again, Losing the Hand Edits", role: .destructive) { session.seedRoads(force: true) }

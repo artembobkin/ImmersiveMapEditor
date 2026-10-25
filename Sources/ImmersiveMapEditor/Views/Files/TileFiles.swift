@@ -1,10 +1,9 @@
 import Foundation
 
-/// What the workspace holds of one tile, as files on disk, in the groups the
-/// pipeline writes them: its OSM (data/<z>_<x>_<y>/), its roads (the road
-/// document holding it, and what that was seeded from, data/regions/<range>/)
-/// and its build (out/tiles/<z>/<x>/<y>/, with bake/). Read from disk each
-/// time it is asked: a few folders.
+/// What a tile's folder holds (WorkspacePaths: tiles/<z>/<x>/<y>/), in the
+/// groups the pipeline writes it: its OSM (osm/), its roads (roads/: the
+/// document and what it was seeded from, seed/) and its build (build/, with
+/// bake/). Read from disk each time it is asked: a few folders.
 struct TileFiles {
     struct File: Identifiable, Hashable {
         let url: URL
@@ -21,31 +20,33 @@ struct TileFiles {
         let folder: URL
         let files: [File]
         var id: String { title }
+
+        init(title: String, systemImage: String, folder: URL) {
+            self.title = title
+            self.systemImage = systemImage
+            self.folder = folder
+            files = TileFiles.files(in: folder)
+        }
     }
 
     let groups: [Group]
 
+    /// The tile's folder: everything of it.
+    let folder: URL
+
     init(tile: TileKey, workspace: Workspace) {
-        let root = workspace.root
-        var groups = [Group]()
-        let data = root.appendingPathComponent("data/\(tile.z)_\(tile.x)_\(tile.y)")
-        groups.append(Group(title: "OSM", systemImage: "map", folder: data, files: Self.files(in: data)))
-        if let document = workspace.document(holding: tile) {
-            let region = root.appendingPathComponent("data/regions/\(document.deletingPathExtension().lastPathComponent)")
-            groups.append(Group(title: "Roads", systemImage: "road.lanes", folder: document.deletingLastPathComponent(),
-                                files: Self.file(document).map { [$0] } ?? []))
-            groups.append(Group(title: "Roads seeded from", systemImage: "point.3.connected.trianglepath.dotted",
-                                folder: region, files: Self.files(in: region)))
-        } else {
-            groups.append(Group(title: "Roads", systemImage: "road.lanes", folder: root.appendingPathComponent("roads"), files: []))
-        }
-        let out = root.appendingPathComponent("out/tiles/\(tile.z)/\(tile.x)/\(tile.y)")
-        groups.append(Group(title: "Build", systemImage: "cube", folder: out, files: Self.files(in: out)))
-        self.groups = groups
+        let p = workspace.paths
+        folder = workspace.folder(tile)
+        groups = [
+            Group(title: "OSM", systemImage: "map", folder: p.tileData(z: tile.z, x: tile.x, y: tile.y)),
+            Group(title: "Roads", systemImage: "road.lanes",
+                  folder: p.roadDocument(z: tile.z, x: tile.x, y: tile.y).deletingLastPathComponent()),
+            Group(title: "Build", systemImage: "cube", folder: p.tileOut(z: tile.z, x: tile.x, y: tile.y)),
+        ]
     }
 
     /// The files of a folder and of its folders, by name.
-    private static func files(in folder: URL) -> [File] {
+    static func files(in folder: URL) -> [File] {
         let fm = FileManager.default
         guard let walk = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey,
                                                                                  .contentModificationDateKey],

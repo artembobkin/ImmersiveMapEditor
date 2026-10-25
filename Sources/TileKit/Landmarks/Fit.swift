@@ -119,7 +119,11 @@ public enum Fit {
 
     public static func run(_ ident: String, _ paths: WorkspacePaths) throws {
         let spec = try entry(ident, paths)["fit"] as? [String: Any] ?? [:]
-        let tile = try Tile(folder: paths.resolve(spec["data"] as? String ?? ""))
+        // The tile the outline is in: "15/19808/10243", or the older layout's
+        // "data/15_19808_10243".
+        let n = (spec["data"] as? String ?? "").split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+        guard n.count == 3 else { throw PipelineError("fit.data \(spec["data"] ?? "") names no tile") }
+        let tile = try Tile(folder: paths.tileData(z: n[0], x: n[1], y: n[2]))
         let osm = try Osm(tile)
         let ref = (spec["osm"] as? String ?? "").split(separator: "/")
         guard ref.count == 2, let num = Int64(ref[1]),

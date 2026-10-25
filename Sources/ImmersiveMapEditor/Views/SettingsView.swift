@@ -1,14 +1,30 @@
 import SwiftUI
 
-/// The app's settings (⌘,): what holds for every workspace and tile, such as
-/// the keys the satellite imagery's sources are fetched with, kept in the
-/// user's defaults.
+/// The app's settings (⌘,): what holds for every tile: the data folder
+/// everything is kept in, and the keys the satellite imagery's sources are
+/// fetched with, kept in the user's defaults.
 struct SettingsView: View {
+    @Environment(Session.self) private var session
+    @Environment(\.openURL) private var openURL
+    @State private var picking = false
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
 
     var body: some View {
         Form {
+            Section("Data folder") {
+                let root = session.workspace.root
+                Text(root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.callout.monospaced()).textSelection(.enabled).lineLimit(2)
+                Text("Every tile's folder (its OSM, roads and build), the landmarks' recipes and the exclusions.")
+                    .font(.callout).foregroundStyle(.secondary)
+                HStack {
+                    Button("Show in Finder") { openURL(root) }
+                    Button("Choose…") { picking = true }
+                    Button("Use the Standard Folder") { use(nil) }
+                        .disabled(root.standardizedFileURL == DataFolder.standard.standardizedFileURL)
+                }
+            }
             Section("Esri World Imagery") {
                 SecureField("ArcGIS key (optional)", text: $esri)
                 Text("Works without a key. A key of ArcGIS Location Platform's free plan counts its use under Esri's terms.")
@@ -23,6 +39,15 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 480)
+        .frame(width: 520)
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+            if let url = try? result.get() { use(url) }
+        }
+    }
+
+    /// Keeps everything in `url` (the standard folder with nil) from now on.
+    private func use(_ url: URL?) {
+        DataFolder.set(url)
+        session.open(workspace: DataFolder.current)
     }
 }

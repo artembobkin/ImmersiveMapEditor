@@ -1,7 +1,7 @@
 import Foundation
 import TileKit
 
-/// What the editor draws under the roads, from data/regions/<range>/context.json
+/// What the editor draws under the roads, from the tile's roads/seed/context.json
 /// (fetch/seed_roads.py): building outlines, OSM centre lines, crossings and
 /// bus stops. Read only.
 struct Underlay {

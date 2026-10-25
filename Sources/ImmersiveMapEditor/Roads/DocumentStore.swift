@@ -19,9 +19,6 @@ final class DocumentStore {
         self.delay = delay
     }
 
-    /// The workspace the document belongs to: roads/<name>.json sits in it.
-    var root: URL { url.deletingLastPathComponent().deletingLastPathComponent() }
-
     /// The document changed: it is written a moment later by `write`.
     func changed(_ write: @escaping @MainActor () throws -> Void) {
         dirty = true

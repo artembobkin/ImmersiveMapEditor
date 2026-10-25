@@ -140,15 +140,10 @@ public struct RoadDocument {
         return doc
     }
 
-    /// The road document in the workspace's roads/ whose range holds the tile.
+    /// The tile's road document, in its folder, if it has one.
     public static func find(z: Int, x: Int, y: Int, in paths: WorkspacePaths) -> URL? {
-        let folder = paths.roads
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasSuffix(".json") }
-        for name in names.sorted() {
-            let url = folder.appendingPathComponent(name)
-            if let doc = try? read(url), doc.holds(z: z, x: x, y: y) { return url }
-        }
-        return nil
+        let url = paths.roadDocument(z: z, x: x, y: y)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     // MARK: Writing

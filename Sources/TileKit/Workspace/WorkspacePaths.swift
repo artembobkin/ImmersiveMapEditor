@@ -1,17 +1,21 @@
 import Foundation
 
-/// Where the build reads and writes: a TilePipeline folder (its workspace)
-/// and the hand-made models of Modeling. Passed to whatever reads or writes
-/// a file, never kept in a global, so two workspaces can be built side by
-/// side and every function says what it touches.
+/// Where the build reads and writes: the app's data folder (its workspace,
+/// "Immersive Map Editor Data" by default) and the hand-made models of
+/// Modeling. Passed to whatever reads or writes a file, never kept in a
+/// global, so two workspaces can be built side by side and every function
+/// says what it touches.
 ///
-///   data/<z>_<x>_<y>/        a tile's raw sources (Fetch)
-///   data/regions/<range>/    what a range's road document is seeded from (Seed)
-///   roads/                   the road documents, hand-edited
-///   landmarks/               recipes, the landmark registry, downloaded models
-///   config/                  what OSM shows but the place does not have
-///   out/tiles/<z>/<x>/<y>/   the built tiles
-///   tools/osm2streets_cli/   the Rust osm2streets, only the oracle of the Streets tests
+/// Everything of a tile lies in its one folder, so a tile is looked at,
+/// moved or deleted as one:
+///
+///   tiles/<z>/<x>/<y>/osm/          its raw sources (Fetch): osm.json, tile.json
+///   tiles/<z>/<x>/<y>/roads/        its road document, roads.json, hand-edited,
+///                                   and seed/, what it was seeded from (Seed)
+///   tiles/<z>/<x>/<y>/build/        its built model (Build, Bake)
+///   tiles/index.json                the last build of every tile
+///   landmarks/                      recipes, the landmark registry, downloaded models
+///   config/                         what OSM shows but the place does not have
 public struct WorkspacePaths: Sendable {
     public let root: URL
     /// Hand-made models of ~/Desktop/Modeling, read only.
@@ -25,20 +29,26 @@ public struct WorkspacePaths: Sendable {
         self.modeling = modeling
     }
 
-    public var data: URL { root.appendingPathComponent("data") }
-    public var roads: URL { root.appendingPathComponent("roads") }
     public var landmarks: URL { root.appendingPathComponent("landmarks") }
     public var config: URL { root.appendingPathComponent("config") }
-    public var tilesOut: URL { root.appendingPathComponent("out/tiles") }
+    public var tiles: URL { root.appendingPathComponent("tiles") }
+
+    /// A tile's folder: everything of it.
+    public func tile(z: Int, x: Int, y: Int) -> URL { tiles.appendingPathComponent("\(z)/\(x)/\(y)") }
 
     /// A tile's raw sources.
-    public func tileData(z: Int, x: Int, y: Int) -> URL { data.appendingPathComponent("\(z)_\(x)_\(y)") }
+    public func tileData(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("osm") }
+
+    /// A tile's road document, hand-edited.
+    public func roadDocument(z: Int, x: Int, y: Int) -> URL {
+        tile(z: z, x: x, y: y).appendingPathComponent("roads/roads.json")
+    }
+
+    /// What a tile's road document is seeded from, and the editor's underlay.
+    public func seed(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("roads/seed") }
 
     /// A built tile's folder.
-    public func tileOut(z: Int, x: Int, y: Int) -> URL { tilesOut.appendingPathComponent("\(z)/\(x)/\(y)") }
-
-    /// What a range's road document is seeded from.
-    public func region(_ name: String) -> URL { data.appendingPathComponent("regions/\(name)") }
+    public func tileOut(z: Int, x: Int, y: Int) -> URL { tile(z: z, x: x, y: y).appendingPathComponent("build") }
 
     /// A path given relative to the workspace (or absolute).
     public func resolve(_ path: String) -> URL { URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL }

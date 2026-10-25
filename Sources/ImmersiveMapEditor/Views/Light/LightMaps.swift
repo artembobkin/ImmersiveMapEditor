@@ -29,7 +29,7 @@ final class LightMaps {
         revision = workspace.tilesRevision
         var next: [TileKey: Map] = [:]
         for t in tiles where workspace.built.contains(t) {
-            if let map = Self.read(workspace.root.appendingPathComponent("out/tiles/\(t.z)/\(t.x)/\(t.y)")) { next[t] = map }
+            if let map = Self.read(workspace.build(t)) { next[t] = map }
         }
         maps = next
     }

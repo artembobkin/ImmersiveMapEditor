@@ -5,14 +5,13 @@ import SwiftUI
 /// tiles on, fetch their OSM and build them, the road documents corrected by
 /// hand, and the built tiles shown together in 3D.
 ///
-///   ImmersiveMapEditor [WORKSPACE | ROAD DOCUMENT]
+///   ImmersiveMapEditor [DATA FOLDER]
 ///   ImmersiveMapEditor --resave IN OUT                        a document read and written, no window
 ///   ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y       a tile in 3D to a PNG, no window
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
 ///   ImmersiveMapEditor --landmark-snapshot MODEL.glb OUT.png  a landmark model to a PNG, no window
 ///
-/// With no argument it opens the workspace opened last, else
-/// ~/Desktop/TilePipeline.
+/// With no argument it opens the data folder of Settings (DataFolder).
 @main
 enum Entry {
     /// Synchronous on purpose: see `Platform.runMain`.
@@ -32,35 +31,21 @@ enum Entry {
 
 struct EditorApp: App {
     @State private var session: Session
-    private let document: URL?
 
     init() {
+        // A folder given on the command line, else the data folder of Settings.
         let args = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }
-        var root = UserDefaults.standard.string(forKey: "workspace").map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/TilePipeline")
-        var document: URL?
-        if let path = args.first {
-            let url = URL(fileURLWithPath: path)
-            if url.pathExtension == "json" {
-                document = url
-                root = url.deletingLastPathComponent().deletingLastPathComponent()
-            } else {
-                root = url
-            }
-        }
-        _session = State(initialValue: Session(root: root))
-        self.document = document
+        _session = State(initialValue: Session(root: args.first.map { URL(fileURLWithPath: $0) } ?? DataFolder.current))
     }
 
     var body: some Scene {
         Window("Immersive Map Editor", id: "main") {
             ContentView()
                 .environment(session)
-                .task { if let document { session.open(roads: document) } }
         }
         .defaultSize(width: 1400, height: 900)
         .commands { EditorCommands(session: session) }
 
-        Settings { SettingsView() }
+        Settings { SettingsView().environment(session) }
     }
 }

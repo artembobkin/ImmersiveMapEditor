@@ -3,18 +3,18 @@ import Geometry
 import StreetGeom
 import Streets
 
-/// Seeds the road document of a range of tiles from osm2streets and OSM,
-/// and writes what the editor shows under it. Every tile of the range must
-/// be fetched. Writes:
+/// Seeds the road document of a tile from osm2streets and OSM, and writes
+/// what the editor shows under it. The tile must be fetched. Writes, in the
+/// tile's folder:
 ///
-///   data/regions/<range>/osm.json      the tiles' OSM merged, each element once
-///   data/regions/<range>/streets/      osm2streets over all of it, once, so
-///                                      junctions on a tile's edge come out the
-///                                      same for the tiles on either side
-///   data/regions/<range>/context.json  the editor's underlay: building
-///                                      outlines, road centre lines, crossings
-///                                      and bus stops, in lon and lat
-///   roads/<range>.json                 the road document
+///   roads/seed/osm.json      the tile's OSM, each element once
+///   roads/seed/streets/      osm2streets over it and its margin
+///   roads/seed/context.json  the editor's underlay: building outlines, road
+///                            centre lines, crossings and bus stops, in lon
+///                            and lat
+///   roads/roads.json         the road document, the roadway reaching the
+///                            margin over the tile's edge, so a tile's
+///                            roadway runs on under its edge
 ///
 /// A road document holds hand edits: it is not overwritten unless forced.
 /// osm2streets runs in process, the Swift port of the `Streets` target (the
@@ -22,14 +22,13 @@ import Streets
 public enum Seed {
     static let margin = 80.0        // metres of streets around the range, within the fetched margin
 
-    public static func run(_ paths: WorkspacePaths, z: Int, x0: Int, y0: Int, x1: Int, y1: Int,
-                           force: Bool = false) throws -> URL {
-        let region = Region(z: z, x0: x0, y0: y0, x1: x1, y1: y1)
-        let folder = paths.region(region.name)
+    public static func run(_ paths: WorkspacePaths, z: Int, x: Int, y: Int, force: Bool = false) throws -> URL {
+        let region = Region(z: z, x0: x, y0: y, x1: x, y1: y)
+        let folder = paths.seed(z: z, x: x, y: y)
         region.folder = folder
-        let path = paths.roads.appendingPathComponent("\(region.name).json")
+        let path = paths.roadDocument(z: z, x: x, y: y)
         if FileManager.default.fileExists(atPath: path.path) && !force {
-            throw PipelineError("roads/\(region.name).json exists and may hold hand edits: seed it again only when forced")
+            throw PipelineError("\(region.name): its road document exists and may hold hand edits: seed it again only when forced")
         }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         Progress.report("Seeding the roads", fraction: 0, detail: "merging the tiles' OSM")
@@ -44,7 +43,7 @@ public enum Seed {
         try doc.write(path)
         var kinds: [String: Int] = [:]
         for m in doc.markings { kinds[m.kind, default: 0] += 1 }
-        print("roads/\(region.name).json: \(doc.areas.count) areas, markings \(kinds), \(doc.shelters.count) shelters")
+        print("\(region.name) roads: \(doc.areas.count) areas, markings \(kinds), \(doc.shelters.count) shelters")
         Progress.report("Seeding the roads", fraction: 0.9, detail: "the editor's underlay")
         try context(osm, region, work, folder)
         Progress.report("Seeding the roads", fraction: 1)

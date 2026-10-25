@@ -2,8 +2,9 @@ import Foundation
 import TileKit
 
 /// tilepipeline: map tiles into 3D models for the ImmersiveMap engine, from
-/// the command line. Works on a TilePipeline folder (data/, roads/,
-/// landmarks/, out/): the current folder, or --root.
+/// the command line. Works on the app's data folder (tiles/<z>/<x>/<y>/ with
+/// osm/, roads/ and build/, then landmarks/ and config/; WorkspacePaths):
+/// the current folder, or --root.
 ///
 ///   tilepipeline build 15 19808 10243                 one tile
 ///   tilepipeline build 15 19808 10242 19809 10243     a range of tiles
@@ -12,10 +13,11 @@ import TileKit
 ///   tilepipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
 ///       [--samples 128] [--roads roads/....json]
 ///   tilepipeline fetch 15 19808 10243 [--force]
-///   tilepipeline seed 15 19808 10242 19809 10243 [--force]
+///   tilepipeline seed 15 19808 10243 [--force]           a tile's road document
+///   tilepipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
 ///   tilepipeline bake 15 --tiles 19808/10243 ...      the light of built tiles again
 ///       [--size 1024] [--samples 256] [--bounces 3] [--gamma 1.6] [--lit R G B] [--shade R G B]
-///   tilepipeline validate out/tiles/15/19808/10243
+///   tilepipeline validate tiles/15/19808/10243/build
 ///   tilepipeline fit detsky-mir
 @main
 enum TilePipelineCommand {
@@ -79,8 +81,11 @@ enum TilePipelineCommand {
             case "seed":
                 let force = args.flag("--force")
                 let n = args.list.compactMap { Int($0) }
-                guard n.count == 5 else { usage() }
-                _ = try Seed.run(paths, z: n[0], x0: n[1], y0: n[2], x1: n[3], y1: n[4], force: force)
+                guard n.count == 3 else { usage() }
+                _ = try Seed.run(paths, z: n[0], x: n[1], y: n[2], force: force)
+            case "migrate":
+                guard let from = args.list.first else { usage() }
+                try Migration.run(from: URL(fileURLWithPath: (from as NSString).expandingTildeInPath), to: paths)
             case "validate":
                 guard let f = args.list.first else { usage() }
                 let r = try Validate.tile(path(f))
@@ -104,7 +109,8 @@ enum TilePipelineCommand {
         usage: tilepipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N]
                tilepipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
                tilepipeline fetch Z X Y [--force]
-               tilepipeline seed Z X0 Y0 X1 Y1 [--force]
+               tilepipeline seed Z X Y [--force]
+               tilepipeline migrate OLD_WORKSPACE
                tilepipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
                tilepipeline validate FOLDER
                tilepipeline fit ID

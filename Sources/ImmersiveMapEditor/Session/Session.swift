@@ -39,21 +39,17 @@ final class Session {
     /// Whether seeding the roads again over the document's hand edits waits
     /// for the user's yes.
     var reseedAsked = false
-    /// What the open dialog is asked for, if it is.
-    var importing: Importing?
-
-    enum Importing { case workspace, roads }
 
     init(root: URL) {
         workspace = Workspace(root: root)
         candidate = workspace.tile
         tiles = TileView(model: workspace)
         camera.frame(workspace)
-        UserDefaults.standard.set(root.path, forKey: "workspace")
         scanLandmarks()
     }
 
-    /// A TilePipeline folder instead of the current one.
+    /// Another data folder instead of the current one, back to choosing a
+    /// tile in it.
     func open(workspace root: URL) {
         model?.saveIfNeeded()
         model = nil
@@ -63,7 +59,6 @@ final class Session {
         phase = .choosing
         tiles = TileView(model: workspace)
         camera.frame(workspace)
-        UserDefaults.standard.set(root.path, forKey: "workspace")
         scanLandmarks()
     }
 
@@ -82,9 +77,7 @@ final class Session {
         workspace.tile = tile
         var steps: [[String]] = []
         if !workspace.fetched.contains(tile) { steps.append(["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
-        if workspace.document(holding: tile) == nil {
-            steps.append(["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)", "\(tile.x)", "\(tile.y)"])
-        }
+        if workspace.document(holding: tile) == nil { steps.append(["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
         guard !steps.isEmpty else { return startWork() }
         phase = .preparing
         run(steps) { ok in
@@ -190,8 +183,7 @@ final class Session {
             run([buildStep(tile)])
         case .light:
             // A tile built before builds kept what a bake needs builds once first.
-            let ready = FileManager.default.fileExists(atPath: TileModel.folder(root: workspace.root, z: tile.z, x: tile.x, y: tile.y)
-                .appendingPathComponent("bake/scene.bin").path)
+            let ready = FileManager.default.fileExists(atPath: workspace.build(tile).appendingPathComponent("bake/scene.bin").path)
             let s = lightSettings
             run((ready ? [] : [buildStep(tile)])
                 + [["bake", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)",
@@ -201,19 +193,14 @@ final class Session {
         }
     }
 
-    /// Seeds the road document holding the working tile (its range), or a new
-    /// one of the tile alone, fetching the OSM it needs first. `force` writes
-    /// over the hand edits of the one there.
+    /// Seeds the tile open's road document, fetching its OSM first when it
+    /// is missing. `force` writes over the hand edits of the one there.
     func seedRoads(force: Bool) {
         guard let tile = workspace.tile else { return }
-        let range = workspace.document(holding: tile).flatMap { url in workspace.documents.first { $0.url == url }?.tiles }
-            ?? RoadPlan.Tiles(z: tile.z, x0: tile.x, y0: tile.y, x1: tile.x, y1: tile.y)
-        let missing = (range.y0...range.y1).flatMap { y in (range.x0...range.x1).map { TileKey(z: range.z, x: $0, y: y) } }
-            .filter { !workspace.fetched.contains($0) }
         // The document open is closed first, so the seed is what it shows next.
         closeRoads()
-        run(missing.map { ["fetch", "\($0.z)", "\($0.x)", "\($0.y)"] }
-            + [["seed", "\(range.z)", "\(range.x0)", "\(range.y0)", "\(range.x1)", "\(range.y1)"] + (force ? ["--force"] : [])]) { _ in
+        run((workspace.fetched.contains(tile) ? [] : [["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]])
+            + [["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)"] + (force ? ["--force"] : [])]) { _ in
             self.follow(self.workspace.viewMode)
         }
     }

@@ -3,10 +3,10 @@
 The desktop tool for the content of the ImmersiveMap engine (`~/Desktop/ImmersiveMap`, a Swift and Metal map engine), native to the Mac. It is meant to grow into the place where the engine's content is made and tuned (decided with the user, 2026-10-24). Today it is two things in one Swift package:
 
 - **The tile pipeline** (`TileKit` and the command line `tilepipeline`): OpenStreetMap to one 3D model per z15 map tile (GLB with a palette and a baked light map), which the engine shows over its vector tile. Its rules of style and output are in `~/Desktop/TilePipeline/CLAUDE.md`: read it before changing what a tile looks like.
-- **The editor** (the app), on a TilePipeline folder, its workspace (`~/Desktop/TilePipeline`: `data/`, `roads/`, `landmarks/`, `out/`), in three views:
-  - **Map**: OpenStreetMap under the grid of z15 tiles, each coloured by what the workspace has of it (built, OSM fetched, a road document). Pick tiles, then show the built ones in 3D, open their road document, or fetch OSM and build them (`tilepipeline build --tiles`, which seeds a road document for the tiles that have none).
-  - **Roads**: corrects a road document by hand, the one source of a tile's roads (its format is the doc comment of `Sources/TileKit/Roads.swift`).
-  - **Tiles 3D**: the tiles picked, shown together as the engine draws them, so neither the engine nor any other tool is needed to look at them.
+- **The editor** (the app), on its data folder (`~/Library/Application Support/Immersive Map Editor Data` by default, picked in Settings; `tiles/<z>/<x>/<y>/` a folder a tile with `osm/`, `roads/` and `build/`, then `landmarks/` and `config/`), one tile at a time:
+  - **Choosing**: the map, OpenStreetMap under the grid of z15 tiles, each coloured by what the data folder has of it. A tile picked is opened: its OSM fetched and its road document seeded when missing, then its views.
+  - **Roads**: corrects the tile's road document by hand, the one source of its roads (its format is the doc comment of `Sources/TileKit/Roads.swift`).
+  - **Tiles 3D**, **Light**, **Landmarks**: the tile as the engine draws it, its light map and bake, the landmark models standing in it.
 
 Public repository: `github.com/artembobkin/ImmersiveMapEditor`, MIT, as the engine.
 
@@ -40,7 +40,7 @@ Every change is checked before it is called done, and the check is said plainly 
 - Looking at a result without a screen: `ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y` (a tile in 3D) and `--map-snapshot WORKSPACE OUT.png` (the map) render offscreen to a PNG that can be read. Do not capture the screen (`screencapture`): it raises a permission prompt the user must answer. The live window is the user's to try.
 - The road document: `ImmersiveMapEditor --resave IN OUT` then `cmp IN OUT`, identical.
 - A tile: `tilepipeline validate`. A change to the pipeline: build `15/19808/10243` (Red Square, with landmarks, construction sites and roads) before and after and compare `stats.json` (`triangles`, `triangles_by_kind`, landmark windows, shelters) and the light map, and say what changed and why.
-- Write builds of a check to the scratchpad, not to `out/tiles/`, unless the user asked for the tiles to be rebuilt.
+- Write builds of a check to the scratchpad (a copy of the tiles it needs), not to the data folder, unless the user asked for the tiles to be rebuilt.
 
 ## The package
 
@@ -59,7 +59,7 @@ Targets:
 The app's sources (`Sources/ImmersiveMapEditor/`), a folder per area:
 
 - `App/`: `App.swift` (the entry, the SwiftUI app and its scenes), `EditorCommands.swift` (the menus), `Headless.swift` (`--resave`, `--snapshot`, `--map-snapshot`, `--landmark-snapshot`, before any window).
-- `Session/`: `Session` (the workspace, the open road document, the build, what the window asks for), `Workspace` (what the TilePipeline folder has of each tile, and the tile open), `Session` (the app's global state: its phase, choosing a tile on the map, preparing it (its OSM fetched, its roads seeded when missing), then working on it in the views, shown as tabs only then; the tile picked while choosing; the views and the build), `BuildRunner` (runs `tilepipeline` commands one after another, their output as an `async` sequence), `TileAction` (each view's one action on the working tile: Map fetches and builds it all, Roads seeds its road document, Tiles 3D builds it, Light bakes its light; the toolbar, the Tiles menu and the top of the panel all take it from there).
+- `Session/`: `DataFolder` (where everything is kept: Application Support's "Immersive Map Editor Data" by default, picked in Settings), `Workspace` (what the data folder has of each tile, through TileKit's `WorkspacePaths`, and the tile open), `Session` (the app's global state: its phase, choosing a tile on the map, preparing it (its OSM fetched, its roads seeded when missing), then working on it in the views, shown as tabs only then; the tile picked while choosing; the views and the build), `BuildRunner` (runs `tilepipeline` commands one after another, their output as an `async` sequence), `TileAction` (each view's one action on the working tile: Map fetches and builds it all, Roads seeds its road document, Tiles 3D builds it, Light bakes its light; the toolbar, the Tiles menu and the top of the panel all take it from there).
 - `Map/`: the Map view in SwiftUI. `MapCamera` (centre and zoom), `RasterTiles` (OpenStreetMap's tiles, loaded with `async`), `MapCanvas` (drawn in `Canvas`), `MapPicker` (its gestures).
 - `Roads/`: the road document as it is edited. `RoadPlan` (the plan in local metres, read and written through TileKit's `RoadDocument`), `RoadEditor` (the open plan, selection, tool, settings, layers; every change through `change`, one undo step, saved by its `DocumentStore`), `RoadEdits` (every edit as a plain operation on a plan), `Selection`, `Tool`, `RoadHitTest` (what is under a point), `ViewTransform2D`, `RoadwayIndex`, `Geometry2D` (fillet, simplify, offsets, dashes), `MarkingShapes` (markings as quads, with TileKit's constants), `Underlay`. `Tools/`: `RoadToolHandler` (the protocol, `Pointer`, `ToolPreview`, `ToolContext`) and one type per tool (`SelectTool`, `DrawTool`, `DragPlaceTool`, `ClickPlaceTool`).
 - `Views/`: `ContentView` (the window: a `NavigationSplitView` with the tile's files on the left, the main region with the console and status line, the inspector on the right; the map while choosing, the tab picked while working; `.toolbar`, `.fileImporter`, `.alert`), `Files/` (`TileFiles`, what the workspace holds of a tile, grouped as the pipeline writes it; `FilesSidebar`, the left panel), `WindowLayout` (the window's one layout, the same in every view: the view's content filling what is left, the console under it at its own height, the status line at the foot in a height kept for it, the inspector on the right; a view fills the regions and never moves or sizes them, so a placeholder leaves the console where it is), `StatusLine`, `BottomPanel` (the build's log, the same in every view), `SettingsView` (the app's settings, ⌘,: the imagery sources' keys), `Inspector/` (`Inspector`, the one inspector of every view: its header, the working tile, then the view's sections, one file of sections per view and the selection's; a view adds sections, never a frame of its own), `Light/` (the Light view: `LightMaps`, `LightView`, `LightSettings`).
@@ -86,21 +86,22 @@ Keep the code clean as it grows (the user asked for it, 2026-10-24):
 ```sh
 swift build -c release            # or open the folder (Package.swift) in Xcode: there is no .xcodeproj
 ./make_app.sh                     # build/Immersive Map Editor.app, tilepipeline inside it
-TP=.build/release/tilepipeline    # run in the workspace, or give --root
+TP=.build/release/tilepipeline    # run in the data folder, or give --root
 $TP build 15 --tiles 19808/10243 19810/10243     # fetch, seed roads, build, validate (or Z X Y, or Z X0 Y0 X1 Y1)
 $TP lab data/15_19808_10243 OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
 $TP fetch 15 19808 10243 [--force]
-$TP seed 15 19808 10242 19809 10243 [--force]    # never over hand edits without --force
+$TP seed 15 19808 10243 [--force]                # a tile's road document, never over hand edits without --force
+$TP migrate ~/Desktop/TilePipeline               # an older workspace copied into the data folder
 $TP bake 15 --tiles 19808/10243 [--size 1024] [--samples 256] [--bounces 3] [--gamma 1.6] [--lit R G B] [--shade R G B]
-$TP validate out/tiles/15/19808/10243
+$TP validate tiles/15/19808/10243/build
 $TP fit detsky-mir
-.build/release/ImmersiveMapEditor [WORKSPACE | ROAD DOCUMENT]
+.build/release/ImmersiveMapEditor [DATA FOLDER]
 .build/release/ImmersiveMapEditor --resave IN OUT
 .build/release/ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y
 .build/release/ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png
 ```
 
-A built tile keeps what its light needs in `out/tiles/<z>/<x>/<y>/bake/`: `scene.bin` (`BakeScene`: the uncut triangles with the margin and the neighbours' buildings, in doubles, the region's and the light map's bounds, the landmark ids and the statistics that do not depend on the light, LZFSE-compressed, about 2.4 MB for Red Square) and `settings.json` (`Lighting.Settings` of the last bake: `size` texels over the tile, `samples`, `bounces`, `lit`, `shade`, `gamma`, and the `light_map_px` they gave). `bake` reads them, changes the settings given (the rest stay as stored), bakes again and redoes the light map, the cut, TEXCOORD_1, `stats.json`, the GLB, `placement.json`, `metadata.json` and the validation, in about 10 s against 26 s for the build. A tile with no `bake/` fails: build it first. With the stored settings it gives the build's geometry and statistics byte for byte (but `seconds`, the bake's own time). The light map is the same but a few dozen bytes off by 1 or 2, as it is between two builds: the GPU bake itself is not exactly repeatable.
+A built tile keeps what its light needs in its `build/bake/`: `scene.bin` (`BakeScene`: the uncut triangles with the margin and the neighbours' buildings, in doubles, the region's and the light map's bounds, the landmark ids and the statistics that do not depend on the light, LZFSE-compressed, about 2.4 MB for Red Square) and `settings.json` (`Lighting.Settings` of the last bake: `size` texels over the tile, `samples`, `bounces`, `lit`, `shade`, `gamma`, and the `light_map_px` they gave). `bake` reads them, changes the settings given (the rest stay as stored), bakes again and redoes the light map, the cut, TEXCOORD_1, `stats.json`, the GLB, `placement.json`, `metadata.json` and the validation, in about 10 s against 26 s for the build. A tile with no `bake/` fails: build it first. With the stored settings it gives the build's geometry and statistics byte for byte (but `seconds`, the bake's own time). The light map is the same but a few dozen bytes off by 1 or 2, as it is between two builds: the GPU bake itself is not exactly repeatable.
 
 The package needs macOS 15 and Swift tools 6.0 (in the Swift 5 language mode). In Xcode, use the shared schemes in `.swiftpm/xcode/xcshareddata/xcschemes/` (`ImmersiveMapEditor`, `ImmersiveMapEditor-Package`), with code coverage on. With no argument the app opens the workspace opened last, else `~/Desktop/TilePipeline`. Started from the Finder, macOS asks once for access to the Desktop folder.
 
