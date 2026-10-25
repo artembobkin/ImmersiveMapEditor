@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The one panel at the foot of the window, the same in every view: the
-/// build's log, the pipeline's output following its end. A build opens it,
-/// ⌘L, the toolbar or its close button hide it.
+/// build's log, the pipeline's output following its end. Shown or hidden in
+/// the View menu (⌘L).
 struct BottomPanel: View {
     @Environment(BuildRunner.self) private var runner
 
@@ -10,10 +10,6 @@ struct BottomPanel: View {
         VStack(spacing: 0) {
             PanelHeader(title: "Build", systemImage: "terminal") {
                 if runner.running { BuildProgress() }
-                Button("Hide", systemImage: "xmark") { runner.shown = false }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .help("Hide the build log (⌘L)")
             }
             ScrollViewReader { reader in
                 ScrollView {

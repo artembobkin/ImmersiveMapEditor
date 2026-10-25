@@ -20,9 +20,6 @@ final class BuildRunner {
     /// Which command of a run this is, and how many there are.
     private(set) var step = (index: 0, count: 0)
 
-    /// Whether the log is open at the foot of the window: a build opens it.
-    var shown = false
-
     func run(root: URL, arguments: [String], done: @escaping @MainActor (Bool) -> Void = { _ in }) {
         run(root: root, steps: [arguments], done: done)
     }
@@ -35,7 +32,6 @@ final class BuildRunner {
             return
         }
         running = true
-        shown = true
         log = ""
         stage = nil
         Task {

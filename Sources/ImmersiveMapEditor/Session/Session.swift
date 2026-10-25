@@ -22,6 +22,7 @@ final class Session {
     let camera = MapCamera()
     let raster = RasterTiles()
     let build = BuildRunner()
+    let panels = PanelLayout()
     let lights = LightMaps()
     let lightSettings = LightSettings()
     let landmarks = LandmarkCatalog()

@@ -9,14 +9,15 @@ struct ContentView: View {
     @Environment(Session.self) private var session
     @Environment(\.undoManager) private var undoManager
     @Environment(\.scenePhase) private var phase
-    @State private var inspector = true
-    @State private var files = NavigationSplitViewVisibility.all
 
     var body: some View {
         let workspace = session.workspace
-        NavigationSplitView(columnVisibility: $files) {
+        NavigationSplitView(columnVisibility: Binding(get: { session.panels.files ? .all : .detailOnly },
+                                                       set: { session.panels.files = $0 != .detailOnly })) {
             FilesSidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 380)
+                // Shown or hidden in the View menu, no button of its own.
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             detail
         }
@@ -41,7 +42,7 @@ struct ContentView: View {
     private var detail: some View {
         @Bindable var workspace = session.workspace
         let working = session.phase == .working
-        return WindowLayout(consoleShown: session.build.shown) {
+        return WindowLayout(consoleShown: session.panels.console) {
             main
         } console: {
             BottomPanel().environment(session.build)
@@ -66,24 +67,8 @@ struct ContentView: View {
                         .help("Choose another tile (⌘0)")
                 }
             }
-            ToolbarItem {
-                // The view's own action on the tile open.
-                if working, let action = workspace.viewMode.action {
-                    Button(action.title, systemImage: action.systemImage) { session.perform(action) }
-                        .disabled(!session.can(action))
-                        .help(action.help)
-                }
-            }
-            ToolbarItem {
-                Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
-                    .help("Show or hide the build's log (⌘L)")
-            }
-            ToolbarItem {
-                Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
-                    .help("Show or hide the panel")
-            }
         }
-        .inspector(isPresented: $inspector) {
+        .inspector(isPresented: Binding(get: { session.panels.inspector }, set: { session.panels.inspector = $0 })) {
             Inspector()
                 .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
         }

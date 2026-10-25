@@ -23,6 +23,14 @@ struct EditorCommands: Commands {
                     .disabled(session.phase != .working)
             }
             Divider()
+            // Which panels show: the app's setting, kept between runs.
+            Toggle("Files", isOn: Binding(get: { session.panels.files }, set: { session.panels.files = $0 }))
+                .keyboardShortcut("1", modifiers: [.command, .option])
+            Toggle("Console", isOn: Binding(get: { session.panels.console }, set: { session.panels.console = $0 }))
+                .keyboardShortcut("l")
+            Toggle("Inspector", isOn: Binding(get: { session.panels.inspector }, set: { session.panels.inspector = $0 }))
+                .keyboardShortcut("0", modifiers: [.command, .option])
+            Divider()
         }
         CommandMenu("Tile") {
             if session.phase == .choosing {
@@ -40,7 +48,6 @@ struct EditorCommands: Commands {
                     .keyboardShortcut("b")
                     .disabled(!session.can(action))
             }
-            Button(session.build.shown ? "Hide Build Log" : "Show Build Log") { session.build.shown.toggle() }.keyboardShortcut("l")
         }
     }
 }
