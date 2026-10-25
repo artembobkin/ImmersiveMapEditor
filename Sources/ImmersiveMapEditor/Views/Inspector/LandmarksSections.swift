@@ -6,6 +6,7 @@ import SwiftUI
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
     @State private var request = ""
+    @State private var forgetting = false
 
     private var runner: BuildRunner { session.build }
 
@@ -36,7 +37,7 @@ struct LandmarksSections: View {
                 } else {
                     Button("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
                         .disabled(runner.running)
-                        .help("Claude Code looks for freely licensed photos, writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
+                        .help("A new attempt from OSM: Claude Code looks for freely licensed photos (the ones kept are used again), writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
                 }
                 if LandmarkAgent.hasConversation(landmark.folder) {
                     HStack {
@@ -47,6 +48,20 @@ struct LandmarksSections: View {
                             .labelStyle(.iconOnly)
                             .disabled(request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || runner.running)
                     }
+                }
+            }
+            if LandmarkAgent.hasWork(landmark.folder) {
+                Section {
+                    Button("Forget Claude's Work…", systemImage: "trash", role: .destructive) { forgetting = true }
+                        .disabled(runner.running)
+                        .confirmationDialog("Forget everything Claude made for \(landmark.name)?", isPresented: $forgetting) {
+                            Button("Forget the Photos, Recipe and Model", role: .destructive) {
+                                LandmarkAgent.forget(landmark.folder)
+                                session.landmarkWorkChanged()
+                            }
+                        } message: {
+                            Text("Its photos, renders, recipe, model and conversation are deleted. The landmark itself stays.")
+                        }
                 }
             }
             Section {

@@ -142,6 +142,13 @@ final class Session {
         }
     }
 
+    /// The picked landmark's folder changed by hand (its work forgotten):
+    /// shown again, the files listed again.
+    func landmarkWorkChanged() {
+        workspace.tilesRevision += 1
+        showLandmark(again: true)
+    }
+
     func modelLandmark(request: String? = nil) {
         guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return }
         agent.start(folder: landmark.folder, name: landmark.name, request: request, console: build)

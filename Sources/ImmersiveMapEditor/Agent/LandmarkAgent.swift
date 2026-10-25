@@ -29,6 +29,27 @@ final class LandmarkAgent {
     /// Whether the landmark in `folder` has a conversation to go on with.
     static func hasConversation(_ folder: URL) -> Bool { conversation(folder) != nil }
 
+    /// What the agent makes in a landmark's folder, besides the photos.
+    static let work = ["views", "recipe.json", "model.glb", "agent.json"]
+
+    /// Whether the agent has made anything in `folder`.
+    static func hasWork(_ folder: URL) -> Bool {
+        (work + ["references"]).contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+    }
+
+    /// Removes everything the agent made in `folder`: its photos, renders,
+    /// recipe, model and conversation. The landmark itself (landmark.json,
+    /// footprint.geojson) stays.
+    static func forget(_ folder: URL) {
+        for name in work + ["references"] { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
+    }
+
+    /// A new attempt starts from OSM again: the renders, recipe, model and
+    /// conversation of the last one go, the photos stay to be used again.
+    static func startOver(_ folder: URL) {
+        for name in work { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
+    }
+
     private static func conversation(_ folder: URL) -> String? {
         guard let data = try? Data(contentsOf: folder.appendingPathComponent("agent.json")),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -60,6 +81,8 @@ final class LandmarkAgent {
         if request != nil, let session = Self.conversation(folder) {
             args += ["--resume", session]
         } else {
+            Self.startOver(folder)
+            modelChanged()
             let session = UUID().uuidString.lowercased()
             args += ["--session-id", session]
             let json = try? JSONSerialization.data(withJSONObject: ["session": session, "started": ISO8601DateFormatter().string(from: Date())],
@@ -114,8 +137,9 @@ final class LandmarkAgent {
         """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
-        2. Search the web for freely licensed photos of it (Wikimedia Commons) from several sides, and from above if there \
-        are any. Keep 3 to 6 good ones with save_reference_photo.
+        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Search the \
+        web for more freely licensed photos of it (Wikimedia Commons) only if they do not show it from enough sides, and \
+        from above if there are any. Keep 3 to 6 good ones in all with save_reference_photo.
         3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Two to four rounds, until the \
         silhouette, proportions, colours and main details agree.
         4. End with a short summary: what the model has, and what you were not sure of.
