@@ -28,9 +28,10 @@ struct EditorCommands: Commands {
             Divider()
         }
         CommandMenu("Tiles") {
-            Button("Fetch and Build the Tile") { session.buildTile() }
+            let action = session.workspace.viewMode.action ?? .everything
+            Button(action.title) { session.perform(action) }
             .keyboardShortcut("b")
-            .disabled(session.build.running || session.workspace.tile == nil)
+            .disabled(!session.can(action))
             Button(session.build.shown ? "Hide Build Log" : "Show Build Log") { session.build.shown.toggle() }.keyboardShortcut("l")
         }
     }

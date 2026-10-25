@@ -13,6 +13,7 @@ struct Inspector: View {
             PanelHeader(title: mode.rawValue, systemImage: mode.systemImage)
             Form {
                 WorkingTile()
+                if let action = mode.action { ActionSection(action: action) }
                 switch mode {
                 case .map: MapSections()
                 case .roads:
@@ -74,6 +75,21 @@ struct WorkingTile: View {
             } else {
                 Text("None: pick a tile on the Map.").foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+/// The view's action on the working tile, at the top of its sections, as
+/// the toolbar's button does it.
+struct ActionSection: View {
+    @Environment(Session.self) private var session
+    let action: TileAction
+
+    var body: some View {
+        Section("Build") {
+            Button(action.title, systemImage: action.systemImage) { session.perform(action) }
+                .disabled(!session.can(action))
+            Text(action.help).font(.callout).foregroundStyle(.secondary)
         }
     }
 }

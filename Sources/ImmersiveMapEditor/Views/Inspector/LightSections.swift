@@ -9,7 +9,7 @@ struct LightSections: View {
         @Bindable var light = session.lightSettings
         let workspace = session.workspace
         let built = workspace.shown
-        Section("Bake") {
+        Section("Bake settings") {
             Picker("Light map", selection: $light.size) {
                 ForEach([512, 1024, 2048], id: \.self) { Text("\($0) px a tile").tag($0) }
             }
@@ -17,10 +17,6 @@ struct LightSections: View {
                 ForEach([64, 128, 256, 512, 1024], id: \.self) { Text("\($0)").tag($0) }
             }
             Stepper("Bounces: \(light.bounces)", value: $light.bounces, in: 0...6)
-            Button("Bake Light") { session.bake(built) }
-                .disabled(built.isEmpty || session.build.running)
-            Text("Bakes the tile's light map again, its geometry as built. A tile built before bakes were kept builds once first.")
-                .font(.callout).foregroundStyle(.secondary)
         }
         Section("Light map") {
             ForEach(built, id: \.self) { t in

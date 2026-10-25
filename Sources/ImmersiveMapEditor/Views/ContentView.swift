@@ -37,9 +37,12 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
             }
             ToolbarItem {
-                Button("Fetch and Build the Tile", systemImage: "hammer") { session.buildTile() }
-                .disabled(session.build.running || workspace.tile == nil)
-                .help("Fetch the tile's OSM if missing, seed its roads if no document holds it, build, bake and export it (⌘B)")
+                // The view's own action on the working tile.
+                if let action = workspace.viewMode.action {
+                    Button(action.title, systemImage: action.systemImage) { session.perform(action) }
+                        .disabled(!session.can(action))
+                        .help(action.help)
+                }
             }
             ToolbarItem {
                 Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
@@ -66,6 +69,12 @@ struct ContentView: View {
             if importing == .workspace { session.open(workspace: url) } else { session.open(roads: url) }
         }
         .fileDialogDefaultDirectory(session.importing == .roads ? session.workspace.root.appendingPathComponent("roads") : nil)
+        .confirmationDialog("Seed the roads again?", isPresented: Binding(get: { session.reseedAsked },
+                                                                          set: { session.reseedAsked = $0 })) {
+            Button("Seed Again, Losing the Hand Edits", role: .destructive) { session.seedRoads(force: true) }
+        } message: {
+            Text("The road document holding the tile is seeded again from osm2streets and OSM, over every hand edit in it.")
+        }
         .alert("Immersive Map Editor", isPresented: Binding(get: { session.problem != nil }, set: { if !$0 { session.problem = nil } })) {
         } message: {
             Text(session.problem ?? "")
