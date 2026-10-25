@@ -2,7 +2,7 @@
 /// kept, and the vertices within the snap tolerance of another segment:
 /// JTS's `SnappingIntersectionAdder`.
 public final class SnappingIntersectionAdder: SegmentIntersector {
-    private var li = RobustLineIntersector()
+    @exclusivity(unchecked) private var li = RobustLineIntersector()
     private let snapTolerance: Double
     private let snapPointIndex: SnappingPointIndex
 

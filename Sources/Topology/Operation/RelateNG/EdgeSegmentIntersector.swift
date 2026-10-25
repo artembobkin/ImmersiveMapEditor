@@ -2,7 +2,7 @@
 /// topology computer as pairs of node sections: JTS's
 /// `EdgeSegmentIntersector`.
 final class EdgeSegmentIntersector: SegmentIntersector {
-    private var li = RobustLineIntersector()
+    @exclusivity(unchecked) private var li = RobustLineIntersector()
     private let topoComputer: TopologyComputer
 
     init(_ topoBuilder: TopologyComputer) { topoComputer = topoBuilder }

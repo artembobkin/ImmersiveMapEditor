@@ -66,7 +66,7 @@ final class OffsetSegmentGenerator {
     private var distance = 0.0
     private let precisionModel: PrecisionModel
     private let bufParams: BufferParameters
-    private var li = RobustLineIntersector()
+    @exclusivity(unchecked) private var li = RobustLineIntersector()
     private var s0 = Coordinate(0, 0), s1 = Coordinate(0, 0), s2 = Coordinate(0, 0)
     private var seg0 = LineSegment(), seg1 = LineSegment()
     private var offset0 = LineSegment(), offset1 = LineSegment()

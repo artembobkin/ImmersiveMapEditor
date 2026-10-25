@@ -57,7 +57,7 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 ### Phase 5: buffer and offset curve
 
 - **The old planar graph** (`GeomGraph/`, namespace `GeomGraph`): `Label` and `TopologyLocation`, `Edge` and `EdgeList`, `EdgeEnd` and `DirectedEdge`, `DirectedEdgeStar`, `Node` and `PlanarGraph`, `EdgeRing`: the part of JTS's `geomgraph` the buffer uses. The old overlay's polygon builder (`Operation/Overlay/`, namespace `Overlay`): `PolygonBuilder`, `MaximalEdgeRing`, `MinimalEdgeRing`.
-- **The buffer** (`Operation/Buffer/`): `BufferOp` (with GEOS's retries at reduced precision, 12 digits down to 6, snap rounding), `BufferParameters`, `BufferBuilder`, `BufferCurveSetBuilder`, `OffsetCurveBuilder`, `OffsetSegmentGenerator`, `OffsetSegmentString`, `BufferInputLineSimplifier`, `BufferSubgraph`, `RightmostEdgeFinder`, `SubgraphDepthLocater`; `Geometry.buffer` as `GEOSBufferWithStyle` takes it. `UnionStrategy.classic` now unions two areas whose overlay fails by the buffer by zero of both, as GEOS.
+- **The buffer** (`Operation/Buffer/`): `BufferOp` (with GEOS's retries at reduced precision, 12 digits down to 6, snap rounding), `BufferParameters`, `BufferBuilder`, `BufferCurveSetBuilder`, `OffsetCurveBuilder`, `OffsetSegmentGenerator`, `OffsetSegmentString`, `BufferInputLineSimplifier`, `BufferSubgraph`, `RightmostEdgeFinder`, `SubgraphDepthLocater`; `Geometry.buffer` as `GEOSBufferWithStyle` takes it. `UnionStrategy.classic` now has its union by the buffer by zero of two areas whose overlay fails, reached only where GEOS reaches it (see `Docs/PortingParity.md`: robust OverlayNG's final failure is not a topology failure).
 - **The offset curve** (`Operation/Buffer/OffsetCurve.swift`): `OffsetCurve`, `OffsetCurveSection`, `SegmentMCIndex` (GEOS 3.13's `GEOSOffsetCurve`); `Geometry.offsetCurve`.
 - Helpers: `Algorithm/Angle`, `Geom/Triangle` (in-centre), `Geom/Util/GeometryMapper` (`flatMap`), `LineSegment.offset`.
 - Not ported: single-sided buffers (GEOS builds them with the polygonizer and line merger, phases to come; the package never asks for one), the joined offset curve, the variable buffer. `MCIndexSnapRounder` (see Decisions).
@@ -65,7 +65,7 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 
 ## Left
 
-- The port's speed (optimized, 1.6 to 5 times GEOS's time on the recorded calls, the overlays and the buffer about 4 times, `Docs/PortingParity.md`), to bring down with the parity tests green before and after.
+- The port's speed: after a first pass, 1.6 to 3 times GEOS's time on the recorded calls (`Docs/PortingParity.md`, "Speed after the first optimization pass"); reference counting and allocation are what is left.
 - Phases 6 and after (validity, precision, simplify, triangulation, polygonize, line merge, linear referencing, then the swap of `Geometry`).
 
 ## Decisions

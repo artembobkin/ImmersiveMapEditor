@@ -259,3 +259,22 @@ The JTS XML suites: `buffer` 151 tests, all passed as on GEOS; `bufferMitredJoin
 - **Polygons**: a free hole is placed by an indexed point-in-area locator per shell (JTS: the point against the ring, the same answer), two shells among minimal rings fail as topology (JTS asserts).
 - **Offset curve**: a buffer segment matches a raw segment when both its ends are within the match distance of it (JTS tests the shorter segment's ends against the longer), sections are sorted by `std::sort`, only polygons count for the buffer's largest.
 - **The union by buffer is out of reach for floating inputs.** GEOS's `ClassicUnionStrategy` falls back to the buffer by zero of two areas when their overlay throws a `TopologyException`, but robust OverlayNG keeps its first failure in a `std::runtime_error` (sliced) and throws that when every strategy fails, which the fallback does not catch. The port throws that failure as a `RuntimeError` likewise. Found when the buffer arrived: with the fallback reaching the buffer, 446 of 2,000 random unary unions gave a result where GEOS fails.
+
+## Speed after the first optimization pass
+
+Optimized, on every recorded call (the port's objects of `swift build -c release`, GEOS at its release flags; each side's call alone). The pass changed no result: the full suite with the long replays was green before and after.
+
+| Function | Recorded calls | Port | GEOS | Port / GEOS (before the pass) |
+|---|---:|---:|---:|---:|
+| intersection | 14,804 | 15.9 s | 7.6 s | 2.1 (about 4) |
+| difference | 2,462 | 1.6 s | 0.63 s | 2.6 (3.5) |
+| union | 6 | 286 ms | 135 ms | 2.1 (2.9) |
+| unaryUnion | 41,629 | 38.8 s | 13.2 s | 2.9 (3.5) |
+| intersects | 1,428,861 | 1.5 s | 0.79 s | 1.9 (1.9) |
+| contains | 16,649 | 63 ms | 27 ms | 2.4 (2.4) |
+| Prepared.contains | 175,334 | 229 ms | 77 ms | 3.0 (5.0) |
+| distance | 100,452 | 124 ms | 45 ms | 2.8 (3.1) |
+| buffer | 112,586 | 5.4 s | 2.4 s | 2.3 (4.1) |
+| offsetCurve | 273 | 3 ms | 1 ms | 2.2 (2.2) |
+
+What changed: the stable merge sort behind JTS's sorts (`javaSorted`) merges in one scratch buffer instead of allocating arrays at every level (the same order, the same comparisons); the STR tree is queried from one flat array of its nodes; the line intersector keeps its points inline instead of in arrays; the segment envelope test uses GEOS's `std::min` and `std::max`; the intersectors held by noders skip the dynamic exclusivity checks. The rest is reference counting and allocation, for a later pass. Run to run the times vary by about 10%.

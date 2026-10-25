@@ -1,7 +1,7 @@
 /// Finds whether segments intersect, and of which kinds (proper or not),
 /// stopping as soon as what is asked is found: JTS's `SegmentIntersectionDetector`.
 public final class SegmentIntersectionDetector: SegmentIntersector {
-    private var li = RobustLineIntersector()
+    @exclusivity(unchecked) private var li = RobustLineIntersector()
     public var findProper = false
     public var findAllIntersectionTypes = false
     public private(set) var hasIntersection = false

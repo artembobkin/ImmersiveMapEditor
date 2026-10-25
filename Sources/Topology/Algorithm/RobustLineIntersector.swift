@@ -8,9 +8,9 @@ public struct RobustLineIntersector {
     public static let collinearIntersection = 2
 
     public private(set) var result = 0
-    var inputLines = [[Coordinate]](repeating: [Coordinate(0, 0), Coordinate(0, 0)], count: 2)
-    public private(set) var intPt = [Coordinate(0, 0), Coordinate(0, 0)]
-    var intLineIndex: [[Int]]?
+    var inputLines = Duo(Duo(Coordinate(0, 0), Coordinate(0, 0)), Duo(Coordinate(0, 0), Coordinate(0, 0)))
+    public private(set) var intPt = Duo(Coordinate(0, 0), Coordinate(0, 0))
+    var intLineIndex: Duo<Duo<Int>>?
     var isProperValue = false
     /// Rounds computed intersections to this model, when set.
     public var precisionModel: PrecisionModel?
@@ -98,7 +98,7 @@ public struct RobustLineIntersector {
 
     mutating func computeIntLineIndex() {
         if intLineIndex == nil {
-            intLineIndex = [[0, 0], [0, 0]]
+            intLineIndex = Duo(Duo(0, 0), Duo(0, 0))
             computeIntLineIndex(0)
             computeIntLineIndex(1)
         }
@@ -108,9 +108,9 @@ public struct RobustLineIntersector {
         let dist0 = getEdgeDistance(segmentIndex, 0)
         let dist1 = getEdgeDistance(segmentIndex, 1)
         if dist0 > dist1 {
-            intLineIndex![segmentIndex] = [0, 1]
+            intLineIndex![segmentIndex] = Duo(0, 1)
         } else {
-            intLineIndex![segmentIndex] = [1, 0]
+            intLineIndex![segmentIndex] = Duo(1, 0)
         }
     }
 
@@ -234,5 +234,23 @@ public struct RobustLineIntersector {
             nearestPt = q2
         }
         return nearestPt
+    }
+}
+
+/// Two values indexed 0 and 1, held inline (the intersector's points and
+/// input segments: arrays there cost an allocation and a uniqueness check
+/// at every write).
+public struct Duo<T> {
+    public var first: T
+    public var second: T
+
+    public init(_ first: T, _ second: T) {
+        self.first = first
+        self.second = second
+    }
+
+    public subscript(i: Int) -> T {
+        get { i == 0 ? first : second }
+        set { if i == 0 { first = newValue } else { second = newValue } }
     }
 }
