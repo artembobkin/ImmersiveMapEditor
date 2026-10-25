@@ -315,7 +315,7 @@ What changed (the profile was taken with Instruments' Time Profiler, `xctrace`, 
 - **The STR tree is built into flat value arrays** (no node objects, no boundable enums), the sort keys computed once per level: the same sorts on the same sequences, so the same packing and the same order. Its queries skip the null test of entries that cannot be null. The nearest neighbour search makes its node tree from the flat one when first used.
 - **The overlay graph's half-edge links are `unowned(unsafe)`** (the graph's edge array owns every edge while the graph is used), its node map a class (reading a struct of arrays out of a class property copied it each time) with its arrays reserved.
 - **The interval tree of the indexed point locator** sorts indices of its intervals' middles (Swift's sort; any order of equal middles gives the same query sets, and the crossing count depends only on the set), with its arrays reserved.
-- **Fewer allocations**: a noded segment string makes its node list only when a node is added, the chains are appended straight into the noder's array, the KD-tree reuses its query stack, the edge merger and the graph reserve their arrays.
+- **Fewer allocations**: a noded segment string makes its node list only when a node is added (the list refers back to its string `unowned(unsafe)`), the chains are appended straight into the noder's array, the KD-tree reuses its query stack, the edge merger and the graph reserve their arrays.
 
 Tried and dropped: `unowned(unsafe)` local variables for the graph traversals (slower: 9.8 s to 10.2 s for the unary union).
 

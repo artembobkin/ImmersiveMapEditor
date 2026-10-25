@@ -11,7 +11,8 @@ public final class SegmentNodeList {
     @exclusivity(unchecked) private var nodes: [SegmentNode] = []
     /// Whether `nodes` is sorted and free of duplicates.
     @exclusivity(unchecked) private var ready = true
-    unowned let edge: NodedSegmentString
+    /// The string the list belongs to, which owns the list.
+    unowned(unsafe) let edge: NodedSegmentString
 
     init(_ edge: NodedSegmentString) { self.edge = edge }
 
