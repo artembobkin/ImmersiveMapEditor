@@ -47,6 +47,11 @@ struct StatusLine: View {
                 .lineLimit(1)
             Spacer()
             Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
+        case .buildings:
+            Text("The tile's OSM buildings from above. Click picks one, shift-click more. Drag to move, scroll to zoom, F frames.")
+                .lineLimit(1)
+            Spacer()
+            Text(session.buildings.status).lineLimit(1).foregroundStyle(.secondary)
         case .landmarks:
             Text("Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames the model.")
                 .lineLimit(1)

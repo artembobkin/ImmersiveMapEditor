@@ -103,6 +103,8 @@ struct ContentView: View {
             } else if let tiles = session.tiles {
                 MetalHost(view: tiles)
             }
+        case .buildings:
+            BuildingsView()
         case .light:
             // The same 3D tile, lit: its light map on the palette, or alone.
             if session.workspace.shown.isEmpty {

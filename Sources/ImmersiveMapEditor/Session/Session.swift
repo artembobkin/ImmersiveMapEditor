@@ -28,6 +28,11 @@ final class Session {
     let lights = LightMaps()
     let lightSettings = LightSettings()
     let landmarks = LandmarkCatalog()
+    /// The open tile's buildings of OSM, for the Buildings view.
+    let buildings = OsmBuildings()
+    /// The open tile's landmark candidates, and the OSM elements they hold.
+    private(set) var candidates: [(id: String, name: String, tile: String, folder: URL)] = []
+    private(set) var candidateBuildings: [String] = []
     private(set) var landmarkView: LandmarkView?
     /// When and how sharp the imagery over the working tile was taken, by its
     /// source's metadata (Esri says it, Mapbox does not).
@@ -142,6 +147,13 @@ final class Session {
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
+        if phase == .working, mode == .buildings {
+            let tile = workspace.tile, paths = workspace.paths
+            Task { @MainActor in
+                await self.buildings.load(tile, paths: paths)
+                self.readCandidates()
+            }
+        }
         if phase == .working, mode == .tiles || mode == .light {
             // The 3D view where the others looked, once it is laid out.
             Task { @MainActor in self.tiles?.takeSharedCamera() }
@@ -178,6 +190,29 @@ final class Session {
         let lon = (Double(t.x) + 0.5) / n * 360 - 180
         let lat = atan(sinh(.pi * (1 - 2 * (Double(t.y) + 0.5) / n))) * 180 / .pi
         imageryCapture = await source.capture(latitude: lat, longitude: lon)
+    }
+
+    // MARK: Landmark candidates
+
+    /// The open tile's landmark candidates read again.
+    func readCandidates() {
+        guard let tile = workspace.tile else { return }
+        candidates = LandmarkCandidates.list(workspace.paths).filter { $0.tile == tile.name }
+        candidateBuildings = LandmarkCandidates.osmIDs(workspace.paths, tile: tile)
+    }
+
+    /// The buildings picked in the Buildings view made a landmark candidate.
+    func makeLandmark(named name: String) {
+        guard let tile = workspace.tile, let projection = buildings.projection, !buildings.selected.isEmpty else { return }
+        do {
+            let folder = try LandmarkCandidates.make(name: name, buildings: buildings.selected, tile: tile,
+                                                     projection: projection, paths: workspace.paths)
+            buildings.picked = []
+            readCandidates()
+            Platform.open(folder)
+        } catch {
+            problem = "Cannot make the landmark \(name): \(error.localizedDescription)"
+        }
     }
 
     // MARK: Building the working tile

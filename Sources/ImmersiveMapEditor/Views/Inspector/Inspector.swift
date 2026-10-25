@@ -40,6 +40,7 @@ struct Inspector: View {
                 case .tiles: TilesSections()
                 case .light: LightSections()
                 case .landmarks: LandmarksSections()
+                case .buildings: BuildingsSections()
                 }
     }
 }
@@ -113,6 +114,7 @@ extension ViewMode {
         case .tiles: "cube"
         case .light: "sun.max"
         case .landmarks: "building.columns"
+        case .buildings: "building.2"
         }
     }
 }

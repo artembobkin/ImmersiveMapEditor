@@ -47,7 +47,7 @@ extension ViewMode {
         case .roads: .roads
         case .tiles: .tile
         case .light: .light
-        case .landmarks: nil
+        case .landmarks, .buildings: nil
         }
     }
 }
