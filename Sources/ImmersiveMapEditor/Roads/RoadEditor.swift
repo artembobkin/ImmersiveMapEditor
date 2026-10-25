@@ -33,9 +33,12 @@ final class RoadEditor {
         var centreLines = true
         var markings = true
         var handles = true
-        /// Mapbox's satellite imagery under the document, over the working
-        /// tile, and how opaque it is and the roadway over it.
+        /// Satellite imagery under the document, over the working tile: its
+        /// source, and how opaque it is and the roadway over it.
         var satellite = false
+        var imagery = ImagerySource(rawValue: UserDefaults.standard.string(forKey: "imagery.source") ?? "") ?? .esri {
+            didSet { UserDefaults.standard.set(imagery.rawValue, forKey: "imagery.source") }
+        }
         var satelliteOpacity = 1.0
         var roadwayOpacity = 0.5
     }

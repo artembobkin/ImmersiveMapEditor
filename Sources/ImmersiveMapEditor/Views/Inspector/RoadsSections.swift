@@ -45,8 +45,14 @@ struct RoadsSections: View {
             Toggle("Buildings", isOn: $model.layers.buildings)
             Toggle("OSM centre lines, crossings, stops", isOn: $model.layers.centreLines)
             Toggle("Markings", isOn: $model.layers.markings)
-            Toggle("Satellite (Mapbox)  I", isOn: $model.layers.satellite)
+            Toggle("Satellite  I", isOn: $model.layers.satellite)
             if model.layers.satellite {
+                Picker("Source", selection: $model.layers.imagery) {
+                    ForEach(ImagerySource.allCases) { Text($0.name).tag($0) }
+                }
+                if model.layers.imagery.needsKey && model.layers.imagery.key.isEmpty {
+                    Text("\(model.layers.imagery.name) needs a key: Settings (⌘,).").font(.callout).foregroundStyle(.secondary)
+                }
                 opacity("Satellite", $model.layers.satelliteOpacity)
                 opacity("Roadway", $model.layers.roadwayOpacity)
             }

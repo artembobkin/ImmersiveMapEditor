@@ -15,6 +15,9 @@ final class Session {
     let lightSettings = LightSettings()
     let landmarks = LandmarkCatalog()
     private(set) var landmarkView: LandmarkView?
+    /// When and how sharp the imagery over the working tile was taken, by its
+    /// source's metadata (Esri says it, Mapbox does not).
+    var imageryCapture: String?
     /// What the Landmarks view shows: the model's size, or what went wrong.
     var landmarkStatus = ""
     private(set) var tiles: TileView?
@@ -99,6 +102,16 @@ final class Session {
         model?.saveIfNeeded()
         model = nil
         roads = nil
+    }
+
+    /// Reads the date of the imagery over the working tile from its source.
+    func readImageryCapture(_ source: ImagerySource) async {
+        imageryCapture = nil
+        guard let t = workspace.tile else { return }
+        let n = pow(2, Double(t.z))
+        let lon = (Double(t.x) + 0.5) / n * 360 - 180
+        let lat = atan(sinh(.pi * (1 - 2 * (Double(t.y) + 0.5) / n))) * 180 / .pi
+        imageryCapture = await source.capture(latitude: lat, longitude: lon)
     }
 
     // MARK: Building the working tile

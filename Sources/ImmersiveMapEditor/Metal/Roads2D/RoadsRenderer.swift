@@ -170,7 +170,7 @@ final class RoadsRenderer: NSObject, MTKViewDelegate {
         let imagery = model.layers.satellite
         if imagery {
             opacity(Float(model.layers.satelliteOpacity))
-            drawSatellite(enc, doc: model.doc, tile: view.focus, transform: t, size: size,
+            drawSatellite(enc, source: model.layers.imagery, doc: model.doc, tile: view.focus, transform: t, size: size,
                           pixels: mtkView.drawableSize.width / max(1, size.width))
             // The roadway over the imagery as see-through as asked, so the real
             // road shows under it.
@@ -200,12 +200,12 @@ final class RoadsRenderer: NSObject, MTKViewDelegate {
         buffer.commit()
     }
 
-    /// Mapbox's satellite tiles over the working tile only (or the document's
+    /// The imagery's tiles over the working tile only (or the document's
     /// tiles with none), those of them in view, at the zoom whose texels are
     /// about the screen's pixels and never coarser than the z15 tile itself.
     /// Local metres are linear in Web Mercator, so a tile is a rectangle: from
     /// the z15 grid of the document's projection.
-    private func drawSatellite(_ enc: MTLRenderCommandEncoder, doc: RoadPlan, tile: TileKey?, transform t: ViewTransform2D,
+    private func drawSatellite(_ enc: MTLRenderCommandEncoder, source: ImagerySource, doc: RoadPlan, tile: TileKey?, transform t: ViewTransform2D,
                                size: CGSize, pixels: Double) {
         let proj = doc.projection, x0 = doc.tiles.x0, y0 = doc.tiles.y0
         let (a, b) = proj.tileRect(x: x0, y: y0)
@@ -215,8 +215,7 @@ final class RoadsRenderer: NSObject, MTKViewDelegate {
         let (lo, hi) = t.visible(in: size)
         let fx0 = Double(x0) + (lo.x - a.x) / w, fx1 = Double(x0) + (hi.x - a.x) / w
         let fy0 = Double(y0) + (b.y - hi.y) / w, fy1 = Double(y0) + (b.y - lo.y) / w
-        // 512 texels a tile (the @2x tiles).
-        let z = min(19, max(15, Int((15 + log2(w * t.scale * pixels / 512)).rounded())))
+        let z = min(19, max(15, Int((15 + log2(w * t.scale * pixels / source.tileTexels)).rounded())))
         let k = pow(2, Double(z - 15)), n = Int(k)
         // The z15 tiles covered: the working tile, or the document's.
         let (cx0, cy0, cx1, cy1) = tile.map { ($0.x, $0.y, $0.x, $0.y) } ?? (doc.tiles.x0, doc.tiles.y0, doc.tiles.x1, doc.tiles.y1)
@@ -228,7 +227,7 @@ final class RoadsRenderer: NSObject, MTKViewDelegate {
         enc.setFragmentSamplerState(sampler, index: 0)
         for ty in ty0...ty1 {
             for tx in tx0...tx1 {
-                guard let tex = satellite.texture(.init(z: z, x: tx, y: ty)) else { continue }
+                guard let tex = satellite.texture(.init(source: source, z: z, x: tx, y: ty)) else { continue }
                 let p = metres(Double(tx) / k, Double(ty) / k), q = metres(Double(tx + 1) / k, Double(ty + 1) / k)
                 // Two triangles, counter-clockwise: p is the north-west corner, q the south-east.
                 let v: [SIMD4<Float>] = [

@@ -44,7 +44,7 @@ final class RoadsView: MTKView {
         guard let model else { return }
         withObservationTracking {
             _ = (model.revision, model.selection, model.tool, model.layers.buildings, model.layers.centreLines,
-                 model.layers.markings, model.layers.handles, model.layers.satellite,
+                 model.layers.markings, model.layers.handles, model.layers.satellite, model.layers.imagery,
                  model.layers.satelliteOpacity, model.layers.roadwayOpacity)
         } onChange: { [weak self] in
             Task { @MainActor in

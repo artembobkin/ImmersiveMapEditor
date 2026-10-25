@@ -16,7 +16,13 @@ struct StatusLine: View {
                     Spacer()
                     Text(model.status).lineLimit(1).foregroundStyle(.secondary)
                     if model.layers.satellite {
-                        Text("© Mapbox © Maxar").lineLimit(1).foregroundStyle(.secondary)
+                        let source = model.layers.imagery
+                        Text(([source.name + (session.imageryCapture.map { " " + $0 } ?? "")] + [source.attribution])
+                                .joined(separator: " · "))
+                            .lineLimit(1).foregroundStyle(.secondary)
+                            .task(id: "\(source.rawValue) \(session.workspace.tile?.name ?? "")") {
+                                await session.readImageryCapture(source)
+                            }
                     }
                 } else {
                     Spacer()
