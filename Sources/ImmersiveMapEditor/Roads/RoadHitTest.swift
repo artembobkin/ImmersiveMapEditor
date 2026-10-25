@@ -57,7 +57,7 @@ struct RoadHitTest {
             case "zebra":
                 if winding(MarkingShapes.zebraZone(m), p) != 0 { return .marking(i) }
             case "letter":
-                if (m.centre - p).length < 1.6 + tolerance { return .marking(i) }
+                if (m.centre - p).length < 1.6 * m.size / MarkingShapes.letterSize.y + tolerance { return .marking(i) }
             default:
                 let pts = m.kind == "zigzag" ? MarkingShapes.zigzag(m) : m.points
                 for k in 0..<max(0, pts.count - 1) where (nearestOnSegment(p, pts[k], pts[k + 1]).0 - p).length < tolerance + 0.2 {

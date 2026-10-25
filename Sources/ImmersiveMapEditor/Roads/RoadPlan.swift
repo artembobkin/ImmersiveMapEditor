@@ -31,6 +31,7 @@ struct RoadPlan {
         var step = 2.0              // zigzag
         var depth = 0.9             // zigzag
         var text = "A"              // letter
+        var size = Markings.busLetterSize.1  // letter: its height in metres
 
         /// Where it is, for moving and picking.
         var anchor: Vec2 { points.isEmpty ? centre : points.reduce(.zero, +) / Double(points.count) }
@@ -82,7 +83,7 @@ extension RoadPlan {
         markings = doc.markings.map { k in
             Marking(id: k.id, kind: k.kind, style: k.style, colour: k.colour, points: k.points.map(m),
                     centre: k.centre.map(m) ?? .zero, heading: k.heading, span: k.span, bar: k.bar, length: k.length,
-                    side: k.side, step: k.step, depth: k.depth, text: k.text)
+                    side: k.side, step: k.step, depth: k.depth, text: k.text, size: k.size)
         }
         shelters = doc.shelters.map { Shelter(id: $0.id, position: m($0.position), heading: $0.heading) }
     }
@@ -114,6 +115,7 @@ extension RoadPlan {
             mark.step = k.step
             mark.depth = k.depth
             mark.text = k.text
+            mark.size = k.size
             return mark
         }
         doc.shelters = shelters.map { RoadDocument.Shelter(id: $0.id, position: ll($0.position), heading: $0.heading) }

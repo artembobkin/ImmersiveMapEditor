@@ -2,13 +2,16 @@ import Foundation
 
 /// Selects (click, shift-click, a box; command-click a whole area), moves
 /// what is selected (drag; shift along 15 degree steps), turns it (option-
-/// drag; shift by 5 degrees), adds a point (double-click an edge).
+/// drag, or the frame's handle above; shift by 5 degrees), scales it (the
+/// frame's corners, about the corner across, with option about its centre),
+/// adds a point (double-click an edge).
 @MainActor
 final class SelectTool: RoadToolHandler {
     private enum Gesture {
         case none
         case move(from: Vec2, start: RoadPlan, began: Bool)
         case rotate(pivot: Vec2, from: Double, start: RoadPlan, began: Bool)
+        case scale(pivot: Vec2, from: Double, start: RoadPlan, began: Bool)
         case box(from: Vec2, to: Vec2)
     }
 
@@ -16,6 +19,18 @@ final class SelectTool: RoadToolHandler {
 
     func down(_ p: Pointer, _ ctx: ToolContext) {
         let editor = ctx.editor
+        // The selection's frame first: its handles lie over what is under them.
+        if let frame = TransformFrame(editor.doc, editor.selection, pixel: ctx.tolerance / 7),
+           let handle = frame.handle(at: p.at, reach: ctx.tolerance * 1.3) {
+            switch handle {
+            case .turn:
+                gesture = .rotate(pivot: frame.centre, from: (p.at - frame.centre).angle, start: editor.doc, began: false)
+            case .corner(let i):
+                let pivot = frame.pivot(of: i, aboutCentre: p.option)
+                gesture = .scale(pivot: pivot, from: max((p.at - pivot).length, 1e-6), start: editor.doc, began: false)
+            }
+            return
+        }
         if p.clicks == 2, let (owner, ring, index, q) = ctx.hits.edge(p.at) {
             editor.insertPoint(owner, ring, after: index, at: q)
             gesture = .none
@@ -60,6 +75,11 @@ final class SelectTool: RoadToolHandler {
             if p.shift { a = (a / 5).rounded() * 5 }
             editor.apply(start.rotated(editor.selection, by: a, around: pivot))
             gesture = .rotate(pivot: pivot, from: from, start: start, began: true)
+        case let .scale(pivot, from, start, began):
+            if !began { editor.beginGesture("Scale") }
+            let k = max(0.05, (p.at - pivot).length / from)
+            editor.apply(start.scaled(editor.selection, by: k, around: pivot))
+            gesture = .scale(pivot: pivot, from: from, start: start, began: true)
         case let .box(from, _):
             gesture = .box(from: from, to: p.at)
         case .none:

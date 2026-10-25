@@ -43,6 +43,15 @@ enum RoadOverlay {
                 break
             }
         }
+        // The selection's frame: corners that scale, a handle above that turns.
+        if editor.tool == .select, let frame = TransformFrame(editor.doc, selected, pixel: 1 / transform.scale) {
+            m.pixelPolyline(frame.corners, closed: true, width: 1, Colours.selected)
+            m.pixelLine(frame.top, frame.turnHandle, width: 1, Colours.selected)
+            for c in frame.corners + [frame.turnHandle] {
+                m.pixelSquare(c, size: 10, Colours.handleEdge)
+                m.pixelSquare(c, size: 8, Colours.handle)
+            }
+        }
         if editor.layers.centreLines {
             for p in editor.context.crossings where visible(p) { m.pixelSquare(p, size: 5, Colours.crossing) }
             for p in editor.context.stops where visible(p) { m.pixelSquare(p, size: 7, Colours.stop) }

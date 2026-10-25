@@ -194,7 +194,20 @@ final class RoadsView: MTKView {
     override func otherMouseDragged(with event: NSEvent) { _ = pan(event) }
     override func otherMouseUp(with event: NSEvent) { panning = nil }
 
+    /// When option-scrolling last scaled the selection: a pause makes the
+    /// next its own undo step.
+    private var lastScaleScroll = Date.distantPast
+
     override func scrollWheel(with event: NSEvent) {
+        // Option: the selection larger or smaller about its frame's centre.
+        if event.modifierFlags.contains(.option), let model, let frame = TransformFrame(model.doc, model.selection, pixel: 1 / transform.scale) {
+            let dy = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 200 : event.scrollingDeltaY / 20
+            if Date().timeIntervalSince(lastScaleScroll) > 0.6 { model.beginGesture("Scale") }
+            lastScaleScroll = Date()
+            model.apply(model.doc.scaled(model.selection, by: exp(dy), around: frame.centre))
+            needsDisplay = true
+            return
+        }
         if event.hasPreciseScrollingDeltas && !event.modifierFlags.contains(.command) {
             transform.pan(by: CGSize(width: event.scrollingDeltaX, height: -event.scrollingDeltaY))
         } else {

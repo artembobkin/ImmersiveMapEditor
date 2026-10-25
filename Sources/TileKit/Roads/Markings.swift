@@ -19,6 +19,7 @@ public struct Mark {
     public var step = Markings.zigzagStep
     public var depth = Markings.zigzagDepth
     public var text = "A"                // letter
+    public var size = Markings.busLetterSize.1  // letter: its height in metres, its width in proportion
 
     public init(kind: String) { self.kind = kind }
 }
@@ -359,7 +360,8 @@ public enum Markings {
 
     /// The letter A, its top pointing along its heading.
     public static func letterPaint(_ m: Mark) -> Geometry {
-        let (w, h) = busLetterSize
+        let k = m.size / busLetterSize.1
+        let (w, h) = (busLetterSize.0 * k, busLetterSize.1 * k)
         let letter = Geometry.polygon(letterA[0], holes: [letterA[1]])
         return letter.scale(w, h, origin: .zero).translate(-w / 2, -h / 2)
             .rotate(m.heading - 90, origin: .zero).translate((m.centre ?? .zero).x, (m.centre ?? .zero).y)

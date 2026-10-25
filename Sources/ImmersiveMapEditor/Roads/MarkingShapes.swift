@@ -78,9 +78,10 @@ enum MarkingShapes {
 
     /// The letter's rings, its top along its heading.
     static func letterRings(_ m: RoadPlan.Marking) -> [[Vec2]] {
-        letterA.map { ring in
+        let size = letterSize * (m.size / letterSize.y)
+        return letterA.map { ring in
             ring.map { q in
-                let local = Vec2(q.x * letterSize.x - letterSize.x / 2, q.y * letterSize.y - letterSize.y / 2)
+                let local = Vec2(q.x * size.x - size.x / 2, q.y * size.y - size.y / 2)
                 return local.rotated(m.heading - 90) + m.centre
             }
         }

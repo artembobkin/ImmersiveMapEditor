@@ -27,7 +27,8 @@ import Geometry
 ///   {"id": "m1", "kind": "line", "style": "dashed", "colour": "white", "points": [[lon, lat], ...]},
 ///   {"id": "z1", "kind": "zebra", "centre": [lon, lat], "heading": 31.5, "span": 14.2, "bar": 0.5, "length": 4},
 ///   {"id": "g1", "kind": "zigzag", "side": 1, "step": 2, "depth": 0.9, "points": [[lon, lat], [lon, lat]]},
-///   {"id": "l1", "kind": "letter", "text": "A", "centre": [lon, lat], "heading": 120},
+///   {"id": "l1", "kind": "letter", "text": "A", "centre": [lon, lat], "heading": 120[, "size": 3.2]},
+///   (a letter's size: its height in metres, 2.6 when left out)
 ///   ...
 ///   ],
 ///   "shelters": [
@@ -131,6 +132,7 @@ public struct RoadDocument {
             k.step = number(m["step"], k.step)
             k.depth = number(m["depth"], k.depth)
             k.text = m["text"] as? String ?? k.text
+            k.size = number(m["size"], k.size)
             doc.markings.append(k)
         }
         for case let s as [String: Any] in root["shelters"] as? [Any] ?? [] {
@@ -187,7 +189,11 @@ public struct RoadDocument {
                                     ("bar", n(m.bar)), ("length", n(m.length))]
             case "zigzag": pairs += [("side", n(Double(m.side))), ("step", n(m.step)), ("depth", n(m.depth)),
                                      ("points", Self.line(m.points))]
-            default: pairs += [("text", s(m.text)), ("centre", c(m.centre ?? .zero)), ("heading", n(m.heading))]
+            default:
+                pairs += [("text", s(m.text)), ("centre", c(m.centre ?? .zero)), ("heading", n(m.heading))]
+                // Written only when not the standard height, so documents
+                // from before letters had a size stay byte for byte.
+                if m.size != Markings.busLetterSize.1 { pairs.append(("size", n(m.size))) }
             }
             return feature(pairs)
         })

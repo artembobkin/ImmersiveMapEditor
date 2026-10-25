@@ -1,4 +1,5 @@
 import Foundation
+import simd
 import Geometry
 
 /// The edits of the Roads view as plain operations on a document: no
@@ -43,8 +44,9 @@ extension RoadPlan {
     // MARK: Moving and turning
 
     /// Everything selected moved by `f`, markings and shelters turned by
-    /// `turn` degrees with it (0 for a move).
-    func transformed(_ selection: Set<Item>, turn: Double = 0, _ f: (Vec2) -> Vec2) -> RoadPlan {
+    /// `turn` degrees with it (0 for a move), the markings' sizes times
+    /// `scale` (1 for a move or a turn).
+    func transformed(_ selection: Set<Item>, turn: Double = 0, scale: Double = 1, _ f: (Vec2) -> Vec2) -> RoadPlan {
         var next = self
         for item in selection {
             switch item {
@@ -58,6 +60,16 @@ extension RoadPlan {
                 next.markings[m].centre = f(markings[m].centre)
                 next.markings[m].points = markings[m].points.map(f)
                 next.markings[m].heading = markings[m].heading + turn
+                if scale != 1 {
+                    // Its size with it: a zebra's width and bars' length, a
+                    // letter's height, a zigzag's teeth. A bar stays a bar.
+                    let k = markings[m]
+                    next.markings[m].span = max(1, k.span * scale)
+                    next.markings[m].length = max(0.5, k.length * scale)
+                    next.markings[m].size = max(0.3, k.size * scale)
+                    next.markings[m].step = max(0.5, k.step * scale)
+                    next.markings[m].depth = k.depth * scale
+                }
             case .shelter(let s):
                 next.shelters[s].position = f(shelters[s].position)
                 next.shelters[s].heading = shelters[s].heading + turn
@@ -72,6 +84,35 @@ extension RoadPlan {
 
     func rotated(_ selection: Set<Item>, by degrees: Double, around pivot: Vec2) -> RoadPlan {
         transformed(selection, turn: degrees) { $0.rotated(degrees, around: pivot) }
+    }
+
+    /// Everything selected `factor` times as large about `pivot`, the
+    /// markings' sizes too.
+    func scaled(_ selection: Set<Item>, by factor: Double, around pivot: Vec2) -> RoadPlan {
+        transformed(selection, scale: factor) { pivot + ($0 - pivot) * factor }
+    }
+
+    /// The box around what is selected as it is drawn (a marking's shape,
+    /// not only its anchor), nil when nothing is.
+    func bounds(of selection: Set<Item>) -> (Vec2, Vec2)? {
+        var pts: [Vec2] = []
+        for item in selection {
+            switch item {
+            case let .vertex(owner, ring, index): pts.append(points(owner, ring)[index])
+            case .marking(let m):
+                let k = markings[m]
+                switch k.kind {
+                case "zebra": pts += MarkingShapes.zebraZone(k)
+                case "letter": pts += MarkingShapes.letterRings(k).flatMap { $0 }
+                case "zigzag": pts += MarkingShapes.zigzag(k)
+                default: pts += k.points
+                }
+            case .shelter(let s): pts += MarkingShapes.shelterRect(shelters[s])
+            case .area(let a): pts += areas[a].rings[0]
+            }
+        }
+        guard let first = pts.first else { return nil }
+        return pts.reduce((first, first)) { (simd_min($0.0, $1), simd_max($0.1, $1)) }
     }
 
     /// Each selected marking and shelter turned about itself.

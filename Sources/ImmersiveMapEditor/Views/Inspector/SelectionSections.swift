@@ -52,6 +52,7 @@ struct SelectionSections: View {
             Button("Flip side  X") { model.change("Flip Zigzag") { $0.markings[i].side *= -1 } }
         default:
             number("Heading °", { model.doc.markings[i].heading }) { d, v in d.markings[i].heading = v }
+            number("Size m", { model.doc.markings[i].size }) { d, v in d.markings[i].size = max(0.3, v) }
         }
     }
 

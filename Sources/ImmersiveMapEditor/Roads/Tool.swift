@@ -25,7 +25,7 @@ enum Tool: String, CaseIterable, Identifiable {
     }
     var hint: String {
         switch self {
-        case .select: "Click, shift-click or drag a box to select. Drag to move, option-drag to rotate markings. Double-click an edge to add a point."
+        case .select: "Click, shift-click or a box selects. Drag moves; the frame's corners scale, its top handle turns; option-scroll scales; [ ] turn. Double-click an edge adds a point."
         case .addArea, .cutArea: "Click the corners, Return or a click on the first point closes. Backspace drops the last point."
         case .line: "Click the points, Return finishes."
         case .zebra: "Drag across the road from kerb to kerb."
