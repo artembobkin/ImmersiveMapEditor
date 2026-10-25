@@ -1,33 +1,25 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
 /// The recorded `distance` and `nearestPoints` calls of `Geometry` replayed
-/// on the port and on GEOS: every value bit for bit. Long: run with
-/// `TOPOLOGY_LONG_REPLAY=1`.
-@Suite(.enabled(if: Recording.longReplay, "long replays run with TOPOLOGY_LONG_REPLAY=1 and the recordings in .build/recording"))
+/// on the port against GEOS's stored answers: every value bit for bit.
+/// Long: run with `TOPOLOGY_LONG_REPLAY=1`.
+@Suite(.enabled(if: Recording.longStored, "long replays run with TOPOLOGY_LONG_REPLAY=1, the recordings and their stored answers in .build/recording"))
 struct DistanceReplayTests {
     @Test func distance() {
-        ReplayTests.replay("distance") { inputs, c, tally in
+        ReplayTests.replay("distance") { inputs, o, c, tally in
             let m = inputs.port(c.geometries[0]).distance(inputs.port(c.geometries[1]))
-            let g = inputs.geos(c.geometries[0]).measure(inputs.geos(c.geometries[1]), GEOSDistance_r)
+            let g = o.measure(.distance, [inputs.input(c.geometries[0]), inputs.input(c.geometries[1])])
             tally.check(m.bitPattern == g?.bitPattern, "#\(c.geometries): port \(m) GEOS \(String(describing: g))")
         }.report()
     }
 
     @Test func nearestPoints() {
-        ReplayTests.replay("nearestPoints") { inputs, c, tally in
-            let ga = inputs.geos(c.geometries[0]), gb = inputs.geos(c.geometries[1])
-            var theirs: [Double]?
-            if let seq = GEOSNearestPoints_r(ga.handle, ga.ptr, gb.ptr) {
-                var flat = [Double](repeating: 0, count: 4)
-                GEOSCoordSeq_copyToBuffer_r(ga.handle, seq, &flat, 0, 0)
-                GEOSCoordSeq_destroy_r(ga.handle, seq)
-                theirs = flat
-            }
+        ReplayTests.replay("nearestPoints") { inputs, o, c, tally in
+            let theirs = o.nearestPoints(inputs.input(c.geometries[0]), inputs.input(c.geometries[1]))
             let mine = DistanceOp.nearestPoints(inputs.port(c.geometries[0]), inputs.port(c.geometries[1])).map { $0.flatMap { [$0.x, $0.y] } }
-            tally.check(mine?.map(\.bitPattern) == theirs?.map(\.bitPattern), "#\(c.geometries)")
+            tally.check(theirs.matches(mine.map { TapeReader.encode($0) }), "#\(c.geometries)")
         }.report()
     }
 }

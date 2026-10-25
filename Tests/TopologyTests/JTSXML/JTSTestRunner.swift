@@ -36,7 +36,8 @@ enum JTSOutcome: Equatable {
     case unsupported
 }
 
-/// An implementation the JTS XML tests run on: GEOS (the oracle) or the port.
+/// An implementation the JTS XML tests run on: the port (GEOS was one, as the
+/// oracle, until phase 12).
 protocol JTSTestEngine {
     associatedtype G
     /// Reads a geometry of a test, its coordinates made precise to `scale`

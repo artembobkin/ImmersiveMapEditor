@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 /// A recording of `Geometry`'s calls (its `GEOMETRY_RECORD` mode, the format
 /// in the doc comment of `Sources/Geometry/Recorder.swift`): the geometries
@@ -84,5 +85,27 @@ struct Recording {
     /// Every recording on disk, read.
     static func load() throws -> [Recording] {
         try files().map { try Recording(url: $0.url, name: $0.name) }
+    }
+}
+
+extension Recording {
+    /// Whether GEOS's stored answers of the recorded calls are there too
+    /// (`expected/` beside the recordings, outside git).
+    static var stored: Bool { available && FileManager.default.fileExists(atPath: TestPaths.expected.path) }
+
+    /// Whether to replay the long recorded runs against the stored answers.
+    static var longStored: Bool { stored && longReplay }
+
+    /// The input of a recorded geometry, for the oracle.
+    func input(_ id: UInt32) -> OracleInput { .recorded(id, geometries[id]!) }
+
+    /// Runs `body` on every recording with the stored answers of the test
+    /// `tape` for it, then checks the tape.
+    static func replay(_ tape: String, _ body: (Recording, StoredOracle) -> Void) {
+        for r in (try? load()) ?? [] {
+            let o = Oracles.make(tape, .recording(r.name))
+            body(r, o)
+            o.finish()
+        }
     }
 }

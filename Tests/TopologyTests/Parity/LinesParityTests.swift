@@ -1,19 +1,20 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
 /// The polygonizer (`GEOSPolygonize`, as `Geometry.polygonize` calls it on a
 /// list of geometries) and the line merger (`GEOSLineMerge`) against GEOS
-/// 3.13, on seeded random linework: pieces of random walks on a grid (ends
-/// shared exactly, some reversed, repeated, closed into loops), the noded
-/// boundaries of random polygons (from GEOS's unary union, so fully noded
-/// as the pipeline gives them), raw unnoded lines, dangles, cut edges and
-/// nested rings. Results bit for bit, normalized and as they come; where
-/// GEOS fails, the port must throw.
+/// 3.13's stored answers, on seeded random linework: pieces of random walks
+/// on a grid (ends shared exactly, some reversed, repeated, closed into
+/// loops), the noded boundaries of random polygons (a unary union, so fully
+/// noded as the pipeline gives them), raw unnoded lines, dangles, cut edges
+/// and nested rings. Results bit for bit, normalized and as they come; where
+/// GEOS failed, the port must throw.
 @Suite struct LinesParityTests {
     /// Random linework as a list of shapes (lines, multi-lines, polygons).
-    static func linework(_ r: inout RandomGeometries, _ o: GEOSOracle) -> [Shape] {
+    /// The noded boundaries were GEOS's (`GEOSBoundary`, `GEOSUnaryUnion`):
+    /// they are made with the port, and the oracle checks them against GEOS's.
+    static func linework(_ r: inout RandomGeometries, _ o: StoredOracle) -> [Shape] {
         switch r.int(0...5) {
         case 0, 1:
             // Pieces of random walks on a grid: shared ends, loops, repeats.
@@ -49,23 +50,20 @@ import geos
             if r.chance(0.3) { lines = [Shape(kind: .multiLineString, parts: lines)] }
             return lines.shuffled(using: &r.rng)
         case 2, 3:
-            // The noded boundaries of random geometries, as GEOS's union gives them.
+            // The noded boundaries of random geometries, as a union gives them.
             var parts: [Shape] = []
             for _ in 0..<r.int(1...3) {
                 let a = r.geometry()
                 parts.append(a)
                 if r.chance(0.5) { parts.append(OverlayParityTests.partner(a, &r)) }
             }
-            var lines: [OpaquePointer?] = []
-            for p in parts {
-                guard let g = o.geometry(p), let b = g.unary(GEOSBoundary_r) else { _ = o.takeError(); continue }
-                lines.append(GEOSGeom_clone_r(o.handle, b.ptr))
-                _ = g
-            }
-            guard !lines.isEmpty, let c = o.wrap(GEOSGeom_createCollection_r(o.handle, 7, &lines, UInt32(lines.count))),
-                  let u = c.unaryUnion else { _ = o.takeError(); return [r.lineString()] }
-            if r.chance(0.5) { return [u.shape] }
-            return (0..<u.numGeometries).map { u.geometry($0).shape }
+            // GEOS refuses the boundary of a geometry collection: such a part is left out.
+            let lines = parts.map { $0.topology() }.filter { type(of: $0) != GeometryCollection.self }.map { $0.getBoundary() }
+            let union = lines.isEmpty ? nil : try? GeometryFactory.default.createGeometryCollection(lines).union()
+            o.linework(parts, made: union.map(Shape.init))
+            guard let u = union else { return [r.lineString()] }
+            if r.chance(0.5) { return [Shape(u)] }
+            return (0..<u.getNumGeometries()).map { Shape(u.getGeometryN($0)) }
         case 4:
             // Polygons themselves (their rings are the linework), touching or nested.
             return (0..<r.int(1...3)).map { _ in r.polygon() }
@@ -76,36 +74,33 @@ import geos
     }
 
     @Test func polygonize() {
-        let o = GEOSOracle()
+        let o = Oracles.make("LinesParityTests.polygonize")
+        defer { o.finish() }
         var t = OverlayParityTests.Tallies("polygonize")
         var nonEmpty = 0
         var r = RandomGeometries(seed: 700)
         for _ in 0..<4000 {
             let shapes = LinesParityTests.linework(&r, o)
-            let gs = shapes.map { o.geometry($0)! }
-            var ptrs: [OpaquePointer?] = gs.map { $0.ptr }
-            // The geometries must outlive the call (an optimized build frees them
-            // after their last use, the pointers taken).
-            let theirs = withExtendedLifetime(gs) { o.wrap(GEOSPolygonize_r(o.handle, &ptrs, UInt32(ptrs.count))) }
-            if let theirs, theirs.numGeometries > 0 { nonEmpty += 1 }
-            OverlayParityTests.compare(o, "\(shapes)", { try Topology.Geometry.polygonize(shapes.map { $0.topology() }) }, theirs, &t)
+            let theirs = o.geometry(.polygonize, shapes.map { .shape($0) })
+            if let g = theirs.result, g.numGeometries > 0 { nonEmpty += 1 }
+            OverlayParityTests.compare("\(shapes)", { try Topology.Geometry.polygonize(shapes.map { $0.topology() }) }, theirs, &t)
         }
         t.report()
         print("parity polygonize: \(nonEmpty) results with polygons")
     }
 
     @Test func lineMerge() {
-        let o = GEOSOracle()
+        let o = Oracles.make("LinesParityTests.lineMerge")
+        defer { o.finish() }
         var t = OverlayParityTests.Tallies("lineMerge")
         var merged = 0
         var r = RandomGeometries(seed: 701)
         for _ in 0..<4000 {
             let shapes = LinesParityTests.linework(&r, o)
             let s = shapes.count == 1 ? shapes[0] : Shape(kind: .geometryCollection, parts: shapes)
-            let g = o.geometry(s)!
-            let theirs = g.unary(GEOSLineMerge_r)
-            if let theirs, theirs.numGeometries < LinesParityTests.lineCount(s) { merged += 1 }
-            OverlayParityTests.compare(o, "\(s)", { try s.topology().lineMerge() }, theirs, &t)
+            let theirs = o.geometry(.lineMerge, [.shape(s)])
+            if let g = theirs.result, g.numGeometries < LinesParityTests.lineCount(s) { merged += 1 }
+            OverlayParityTests.compare("\(s)", { try s.topology().lineMerge() }, theirs, &t)
         }
         t.report()
         print("parity lineMerge: \(merged) inputs with lines merged")

@@ -2,39 +2,29 @@ import Foundation
 import Testing
 @testable import Geometry
 
-/// Non-finite coordinates through both wrappers (Docs/PortingTopologyProgress.md,
-/// Decisions: GEOS throws where its orientation test meets a NaN or infinite
-/// coordinate, and its C API turns that into the function's failure value).
-/// No recorded call has one, but the build's geometry is computed (a zero
-/// length normalized, a projection of a far point) and could make one. Random
-/// polygons, lines and points with a NaN or an infinity put in now and then,
-/// built through the public constructors on each side, and every operation of
-/// the API on them, compared as the replay compares
-/// (`WrapperReplayTests.compare`). In the suite of the replay, which is
-/// serialized for the old wrapper's one GEOS context.
+/// Non-finite coordinates through the new wrapper against the old one's
+/// stored results (Docs/PortingTopologyProgress.md, Decisions: GEOS throws
+/// where its orientation test meets a NaN or infinite coordinate, and its C
+/// API turns that into the function's failure value). No recorded call has
+/// one, but the build's geometry is computed (a zero length normalized, a
+/// projection of a far point) and could make one. Random polygons, lines and
+/// points with a NaN or an infinity put in now and then, built through the
+/// public constructors, and every operation of the API on them, compared as
+/// the replay compares (`WrapperReplayTests`). In the suite of the replay.
 extension WrapperReplayTests {
     /// A random geometry as plain values, to build on either side.
-    indirect enum Spec {
+    indirect enum Spec: CustomStringConvertible {
         case point(SIMD2<Double>)
         case line([SIMD2<Double>])
         case polygon([SIMD2<Double>], [[SIMD2<Double>]])
         case multi([Spec])
 
-        func old() -> Old {
+        func make<G: WrapperGeometry>(_: G.Type) -> G {
             switch self {
-            case .point(let p): return .point(p)
-            case .line(let ps): return .lineString(ps)
-            case .polygon(let s, let h): return .polygon(s, holes: h)
-            case .multi(let m): return .collection(m.map { $0.old() })
-            }
-        }
-
-        func new() -> Geometry {
-            switch self {
-            case .point(let p): return .point(p)
-            case .line(let ps): return .lineString(ps)
-            case .polygon(let s, let h): return .polygon(s, holes: h)
-            case .multi(let m): return .collection(m.map { $0.new() })
+            case .point(let p): return G.makePoint(p)
+            case .line(let ps): return G.makeLineString(ps)
+            case .polygon(let s, let h): return G.makePolygon(s, holes: h)
+            case .multi(let m): return G.makeCollection(m.map { $0.make(G.self) })
             }
         }
 
@@ -54,6 +44,15 @@ extension WrapperReplayTests {
             case .line: return true
             case .multi(let m): return m.allSatisfy(\.isLinear)
             default: return false
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .point(let p): return "point(\(p))"
+            case .line(let ps): return "line(\(ps))"
+            case .polygon(let s, let h): return "polygon(\(s), \(h))"
+            case .multi(let m): return "multi(\(m))"
             }
         }
     }
@@ -103,63 +102,70 @@ extension WrapperReplayTests {
         }
     }
 
-    @Test func nonFinite() {
-        let t = Tallies("wrapper, non-finite coordinates")
+    /// The 2,000 pairs on one wrapper.
+    static func nonFiniteWalk<G: WrapperGeometry>(_: G.Type, _ x: ReplayObserver) {
         var r = NonFiniteGenerator(rng: SeededRandom(seed: 8008))
         for k in 0..<2000 {
             let sa = r.spec(poisoned: r.chance(0.8)), sb = r.spec(poisoned: r.chance(0.3))
-            let oa = sa.old(), na = sa.new(), ob = sb.old(), nb = sb.new()
+            let a = sa.make(G.self), b = sb.make(G.self)
             let what = "#\(k) \(sa) | \(sb)"
-            WrapperReplayTests.reading(t, what, oa, na)
-            let c = WrapperReplayTests.self
-            c.same(t, "isValid", what, oa.isValid, na.isValid)
-            c.same(t, "area, length", what, [oa.area, oa.length].map(c.bits), [na.area, na.length].map(c.bits))
-            let ba = oa.bounds, bn = na.bounds
-            c.same(t, "bounds", what, [ba.0, ba.1, ba.2, ba.3].map(c.bits), [bn.0, bn.1, bn.2, bn.3].map(c.bits))
-            c.same(t, "description", what, oa.description, na.description)
-            c.compare(t, "centroid", what, { oa.centroid }, { na.centroid })
-            c.compare(t, "representativePoint", what, { oa.representativePoint }, { na.representativePoint })
-            c.compare(t, "convexHull", what, { oa.convexHull }, { na.convexHull })
-            c.compare(t, "envelope", what, { oa.envelope }, { na.envelope })
-            c.compare(t, "boundary", what, { oa.boundary }, { na.boundary })
+            WrapperReplayTests.reading(x, what, a)
+            x.same("isValid", what, a.isValid)
+            x.same("area, length", what, [a.area, a.length].map(bits))
+            let ba = a.bounds
+            x.same("bounds", what, [ba.0, ba.1, ba.2, ba.3].map(bits))
+            x.same("description", what, a.description)
+            x.geometry("centroid", what) { a.centroid }
+            x.geometry("representativePoint", what) { a.representativePoint }
+            x.geometry("convexHull", what) { a.convexHull }
+            x.geometry("envelope", what) { a.envelope }
+            x.geometry("boundary", what) { a.boundary }
             // GEOS reads before the hull ring for some non-finite hulls (no
             // rectangle is smaller than the largest double): finite input only.
-            if sa.isFinite { c.compare(t, "minimumRotatedRectangle", what, { oa.minimumRotatedRectangle }, { na.minimumRotatedRectangle }) }
-            c.compare(t, "buffer", what, { oa.buffer(2, quadSegs: 8) }, { na.buffer(2, quadSegs: 8) })
-            c.compare(t, "buffer flat mitre", what, { oa.buffer(-1, cap: .flat, join: .mitre) }, { na.buffer(-1, cap: .flat, join: .mitre) })
-            c.compare(t, "buffer square bevel", what, { oa.buffer(0.5, cap: .square, join: .bevel) }, { na.buffer(0.5, cap: .square, join: .bevel) })
-            c.compare(t, "union", what, { oa.union(ob) }, { na.union(nb) })
-            c.compare(t, "intersection", what, { oa.intersection(ob) }, { na.intersection(nb) })
-            c.compare(t, "difference", what, { oa.difference(ob) }, { na.difference(nb) })
-            c.compare(t, "unaryUnion", what, { .unaryUnion([oa, ob]) }, { .unaryUnion([na, nb]) })
-            c.compare(t, "simplify", what, { oa.simplify(0.5) }, { na.simplify(0.5) })
-            c.compare(t, "makeValid", what, { oa.makeValid() }, { na.makeValid() })
-            c.compare(t, "setPrecision", what, { oa.setPrecision(0.01) }, { na.setPrecision(0.01) })
-            c.compare(t, "offsetCurve", what, { oa.offsetCurve(1.5) }, { na.offsetCurve(1.5) })
-            c.same(t, "distance", what, c.bits(oa.distance(ob)), c.bits(na.distance(nb)))
-            c.same(t, "predicates", what, [oa.intersects(ob), oa.contains(ob), oa.within(ob)], [na.intersects(nb), na.contains(nb), na.within(nb)])
-            let po = oa.nearestPoints(ob), pn = na.nearestPoints(nb)
-            c.same(t, "nearestPoints", what, c.bits(po.0) + c.bits(po.1), c.bits(pn.0) + c.bits(pn.1))
+            if sa.isFinite { x.geometry("minimumRotatedRectangle", what) { a.minimumRotatedRectangle } }
+            x.geometry("buffer", what) { a.styledBuffer(2, quadSegs: 8, cap: 1, join: 1, mitreLimit: 5) }
+            x.geometry("buffer flat mitre", what) { a.styledBuffer(-1, quadSegs: 16, cap: 2, join: 2, mitreLimit: 5) }
+            x.geometry("buffer square bevel", what) { a.styledBuffer(0.5, quadSegs: 16, cap: 3, join: 3, mitreLimit: 5) }
+            x.geometry("union", what) { a.union(b) }
+            x.geometry("intersection", what) { a.intersection(b) }
+            x.geometry("difference", what) { a.difference(b) }
+            x.geometry("unaryUnion", what) { G.makeUnaryUnion([a, b]) }
+            x.geometry("simplify", what) { a.simplify(0.5) }
+            x.geometry("makeValid", what) { a.makeValid() }
+            x.geometry("setPrecision", what) { a.setPrecision(0.01) }
+            x.geometry("offsetCurve", what) { a.styledOffsetCurve(1.5, quadSegs: 16, join: 1, mitreLimit: 5) }
+            x.same("distance", what, bits(a.distance(b)))
+            x.same("predicates", what, [a.intersects(b), a.contains(b), a.within(b)])
+            let p = a.nearestPoints(b)
+            x.same("nearestPoints", what, bits(p.0) + bits(p.1))
             if sa.isLinear {
-                c.compare(t, "interpolate", what, { oa.interpolate(3) }, { na.interpolate(3) })
-                c.compare(t, "interpolate normalized", what, { oa.interpolate(0.4, normalized: true) }, { na.interpolate(0.4, normalized: true) })
-                if case .point = sb { c.same(t, "project", what, c.bits(oa.project(ob)), c.bits(na.project(nb))) }
-                c.compare(t, "lineMerge", what, { oa.lineMerge() }, { na.lineMerge() })
+                x.geometry("interpolate", what) { a.interpolate(3, normalized: false) }
+                x.geometry("interpolate normalized", what) { a.interpolate(0.4, normalized: true) }
+                if case .point = sb { x.same("project", what, bits(a.project(b))) }
+                x.geometry("lineMerge", what) { a.lineMerge() }
                 // GEOS crashes polygonizing some non-finite lines (a null ring in
                 // `EdgeRing::computeValid`): compared on finite lines only.
-                if sa.isFinite && sb.isFinite { c.compare(t, "polygonize", what, { .polygonize([oa, ob]) }, { .polygonize([na, nb]) }) }
+                if sa.isFinite && sb.isFinite { x.geometry("polygonize", what) { G.makePolygonize([a, b]) } }
             }
-            // GEOS's triangulator needs valid polygons (it crashes on some others).
-            if case .polygon = sa, oa.isValid {
-                let to = oa.constrainedDelaunay(), tn = na.constrainedDelaunay()
-                c.same(t, "constrainedDelaunay", what, to.flatMap { c.bits($0) }, tn.flatMap { c.bits($0) })
+            // GEOS's triangulator needs valid polygons (it crashes on some
+            // others): the old wrapper's validity decides.
+            if case .polygon = sa, x.steer(a.isValid) {
+                let t = a.constrainedDelaunay()
+                x.same("constrainedDelaunay", what, t.flatMap { bits($0) })
             }
-            let pro = GEOSWrapper.Prepared(oa), prn = Prepared(na)
-            c.same(t, "Prepared", what, [pro.contains(ob), pro.intersects(ob)], [prn.contains(nb), prn.intersects(nb)])
-            let tro = GEOSWrapper.STRtree([oa, ob, oa]), trn = STRtree([na, nb, na])
-            c.same(t, "STRtree.query", what, tro.query(ob), trn.query(nb))
-            c.same(t, "STRtree.nearest", what, tro.nearest(ob), trn.nearest(nb))
+            let pa = G.PreparedType(a)
+            x.same("Prepared", what, [pa.contains(b), pa.intersects(b)])
+            let tree = G.TreeType([a, b, a])
+            x.same("STRtree.query", what, tree.query(b))
+            x.same("STRtree.nearest", what, tree.nearest(b))
         }
+    }
+
+    @Test func nonFinite() {
+        let t = WrapperTallies("wrapper, non-finite coordinates")
+        let x = Observers.make("WrapperReplayTests.nonFinite", .fixtures, t)
+        WrapperReplayTests.nonFiniteWalk(Geometry.self, x)
+        x.finish(sourceLocation: #_sourceLocation)
         t.report()
     }
 }

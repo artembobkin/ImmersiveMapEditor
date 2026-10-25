@@ -1,15 +1,15 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
-/// The noder against GEOS's `GEOSNode`, which nodes the lines of a geometry
-/// (rings included) with an iterated MC index noder at floating precision and
-/// drops the duplicate substrings (in either direction), keeping the first:
-/// the port's `IteratedNoder` and `OrientedCoordinateArray` doing the same
-/// give the same lines, in the same order, bit for bit. An empty input comes
-/// back as it is. GEOS crashes (a segmentation fault) on a collection that
-/// holds an empty geometry, so those inputs are counted and not given to it.
+/// The noder against GEOS's stored answers of `GEOSNode`, which nodes the
+/// lines of a geometry (rings included) with an iterated MC index noder at
+/// floating precision and drops the duplicate substrings (in either
+/// direction), keeping the first: the port's `IteratedNoder` and
+/// `OrientedCoordinateArray` doing the same give the same lines, in the same
+/// order, bit for bit. An empty input comes back as it is. GEOS crashes (a
+/// segmentation fault) on a collection that holds an empty geometry, so
+/// those inputs are counted and were not given to it.
 ///
 /// Bit for bit includes the sign of a zero: at a zero-length segment between
 /// `0.0` and `-0.0`, which of the two equal values a node takes follows the
@@ -48,22 +48,23 @@ import geos
         return g.factory.createMultiLineString(out)
     }
 
-    static func compare(_ s: Shape, _ o: GEOSOracle, _ tally: inout ParityTally) {
+    static func compare(_ s: Shape, _ o: StoredOracle, _ tally: inout ParityTally) {
         let g = s.topology()
-        guard let expected = o.geometry(s)!.unary(GEOSNode_r) else {
+        guard case .result(let expected) = o.geometry(.node, [.shape(s)]) else {
             let mine = try? NodingParityTests.node(g)
-            tally.check(mine == nil, "\(s): GEOS fails (\(o.takeError() ?? "")), the port does not")
+            tally.check(mine == nil, "\(s): GEOS fails, the port does not")
             return
         }
         guard let mine = try? NodingParityTests.node(g) else {
             tally.check(false, "\(s): the port fails")
             return
         }
-        tally.check(Shape(mine) == expected.shape, "\(s):\n  port \(Shape(mine))\n  GEOS \(expected.shape)")
+        tally.check(expected.rawEquals(Shape(mine)), "\(s):\n  port \(Shape(mine))\n  GEOS \(expected.description)")
     }
 
     @Test func nodeLikeGEOSNode() {
-        let o = GEOSOracle()
+        let o = Oracles.make("NodingParityTests.nodeLikeGEOSNode")
+        defer { o.finish() }
         var tally = ParityTally("MCIndexNoder, IteratedNoder (GEOSNode)")
         var r = RandomGeometries(seed: 60)
         var crashing = 0
@@ -82,7 +83,8 @@ import geos
 
     /// The inputs whose nodes took the other zero in phase 3.
     @Test func theSignOfAZeroAtANode() throws {
-        let o = GEOSOracle()
+        let o = Oracles.make("NodingParityTests.theSignOfAZeroAtANode")
+        defer { o.finish() }
         var tally = ParityTally("GEOSNode, the sign of a zero")
         for wkt in ["LINESTRING (1 0, 0 0, -0 0, -1 -1)",
                     "POLYGON ((300 -225, -37.5 37.5, -150 -0, -149.99999999975554 -75, -150 -150, -262.5 -225, -75 -450, -0 -525, 0 -525, 37.5 -487.5, 225 -412.5, 225 -300, 300 -225))"] {

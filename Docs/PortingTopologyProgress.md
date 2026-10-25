@@ -92,6 +92,14 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 - Topology changed where non-finite input showed GEOS 3.13 computing otherwise (the list is in `Docs/PortingParity.md`, phase 8): new `IO/WKBWriter`, `Index/IntervalSTRtree` (GEOS's index of `IndexedPointInAreaLocator`; `SortedPackedIntervalRTree` is no longer used), `CxxAlgorithms.sortDoubles`, `NonFinite.watch`, `SegmentNodeList.getSplitCoordinates` starting as GEOS's.
 - End to end (`Docs/PortingParity.md`, phase 8): the five tiles' GLB geometry, `stats.json` and palettes identical, the light maps within the bake's noise, seeding and the editor identical, a whole tile in at most 1.29 times GEOS's build time, seeding 1.17 times.
 
+### Phase 12: GEOS removed, its answers stored
+
+- **The stored oracle** (`Tests/TopologyTests/Stored/`): every question a parity test asked GEOS is a `Question` of a `StoredOracle`, answered by `FrozenOracle` from the test's tape (`Tape.swift`: entries in the order asked, LZMA, an alignment digest of every question, its parameters and the digests of its inputs, checked at the end). A geometry answer (`StoredGeometry`) keeps GEOS's result as it came and in its normal form, whole up to the tape's limit and as 64-bit digests above it, with whether GEOS varied from run to run where the result has a zero. The wrapper replay walks either wrapper through one generic walk (`WrapperGeometry`, `ReplayObserver`), its results kept as `Observation`s.
+- **How the answers were made**: while GEOS was still in the package, every test ran with `TOPOLOGY_FREEZE=1`, its questions asked of GEOS itself (`LiveOracle`, `LiveObserver`, the old wrapper on GEOS), and the answers written. That code and GEOS's calls went with GEOS: the tapes cannot be made again.
+- **Where they are**: in git, `Tests/TopologyTests/.oracle/` (a hidden folder, left out of the target by SwiftPM, read with `#filePath`): the random suites, GEOS's results on the JTS XML suites and the non-finite pairs through the old wrapper. Outside git, `.build/recording/expected/<recording>/`: the answers to every recorded call and GEOS's times of the speed test.
+- **Two builds**: GEOS's buffer and offset-curve arcs come out with other last bits in an optimized build than in a debug build, the port's alike (both sides were equal in each). Their answers were stored from both builds: a tape of an optimized build (`.release`) is kept where it differs from the debug build's.
+- The JTS XML runner's buffer matcher measures the Hausdorff distance with JTS's `DiscreteHausdorffDistance`, translated into the test target (it was GEOS's). `DebugCaseTests` (both sides on one case) and `JTSXMLGEOSTests` (GEOS on the suites) went with GEOS: they ran GEOS alone.
+
 ### Every GEOS call of `Geometry.swift` and the port's answer
 
 | GEOS (C API) | Port (`Topology`) |
@@ -130,7 +138,7 @@ Phase 3 ended with one difference: at the zero-length segment of `LINESTRING (1 
 ## Left
 
 - The port's speed: after the second pass, a whole tile's recorded calls take 1.48 times GEOS's time (`Docs/PortingParity.md`, "Speed after the second optimization pass"), within the goal's 1.5 but with little margin; the unary union (1.56) is most of it. Reference counting and allocation in the overlay are what is left.
-- Phase 8 is done (above). Phases 9 to 12 follow: GEOS leaves the package only in phase 12.
+- Nothing of the port. GEOS left the package in phase 12 (above).
 
 ## Decisions
 

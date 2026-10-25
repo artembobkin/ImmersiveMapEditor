@@ -1,6 +1,5 @@
 import Foundation
 import Topology
-import geos
 
 /// The port as an engine of the JTS XML tests: the operations ported so far,
 /// nil (unsupported) for the rest. Grows phase by phase.
@@ -36,9 +35,11 @@ struct TopologyEngine: JTSTestEngine {
         actual.norm().equalsExact(expected.norm(), tolerance: tolerance)
     }
 
-    /// JTS's `BufferResultMatcher` as `GEOSEngine` runs it: the area of the
-    /// symmetric difference by the port, the Hausdorff distance of the
-    /// boundaries by GEOS (the port has no Hausdorff distance).
+    /// JTS's `BufferResultMatcher` as GEOS's engine ran it: the area of the
+    /// symmetric difference, then the Hausdorff distance of the boundaries
+    /// (`DiscreteHausdorffDistance`, densified by a quarter), both ways (GEOS
+    /// had no oriented one, so the runner took the symmetric distance, the
+    /// stricter check).
     func bufferMatch(_ actual: Topology.Geometry, _ expected: Topology.Geometry, distance: Double) -> Bool {
         if actual.isEmpty() && expected.isEmpty() { return true }
         guard let diff = try? actual.symDifference(expected) else { return false }
@@ -47,12 +48,10 @@ struct TopologyEngine: JTSTestEngine {
             let frac = area > 0 ? areaDiff / area : .infinity
             if !(frac < 1e-3) { return false }
         }
-        let o = GEOSOracle()
-        let ab = o.geos(actual.getBoundary()), eb = o.geos(expected.getBoundary())
-        var d = 0.0
-        guard GEOSHausdorffDistanceDensify_r(o.handle, ab.ptr, eb.ptr, 0.25, &d) == 1 else { return false }
+        let d = DiscreteHausdorffDistance.distance(actual.getBoundary(), expected.getBoundary(), densifyFrac: 0.25)
         return d <= max(abs(distance) / 100, 1e-8)
     }
+
 
     /// The operations of the port, by the JTS test names.
     static let supported: Set<String> = [
@@ -158,7 +157,7 @@ struct TopologyEngine: JTSTestEngine {
         }
     }
 
-    /// JTS's `TestCaseGeometryFunctions.overlayAreaTest`, as `GEOSEngine` runs it.
+    /// JTS's `TestCaseGeometryFunctions.overlayAreaTest`, as GEOS's engine ran it.
     func overlayAreaTest(_ a: Topology.Geometry, _ b: Topology.Geometry) throws -> Bool {
         let areaA = a.getArea(), areaB = b.getArea()
         if areaA == 0 || areaB == 0 { return true }

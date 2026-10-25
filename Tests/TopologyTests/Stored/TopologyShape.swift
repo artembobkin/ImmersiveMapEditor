@@ -36,14 +36,3 @@ extension Shape {
         }
     }
 }
-
-extension GEOSOracle {
-    /// A geometry of the port as a GEOS geometry, exactly.
-    func geos(_ g: Topology.Geometry) -> GEOSGeom { geometry(Shape(g))! }
-
-    /// GEOS's normal form of a port's result and of GEOS's, as shapes:
-    /// equal when the results are the same geometry, bit for bit.
-    func normalizedShapes(_ topology: Topology.Geometry, _ geos: GEOSGeom) -> (Shape, Shape) {
-        (normalized(self.geos(topology)).shape, normalized(geos).shape)
-    }
-}

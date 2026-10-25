@@ -1,9 +1,8 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
-/// The robust predicates against GEOS on seeded random inputs, ordinary and
+/// The robust predicates against GEOS's stored answers on seeded random inputs, ordinary and
 /// near-degenerate: the orientation of three points (`GEOSOrientationIndex`)
 /// and the intersection of two segments (`GEOSSegmentIntersection`, which is
 /// GEOS's `LineIntersector`).
@@ -39,29 +38,27 @@ import geos
     }
 
     @Test func orientationIndex() {
-        let o = GEOSOracle()
+        let o = Oracles.make("RobustParityTests.orientationIndex")
+        defer { o.finish() }
         var tally = ParityTally("Orientation.index")
         for (a, b, c) in RobustParityTests.triples(seed: 1, count: 200_000) {
             let mine = Orientation.index(a, b, c)
-            let geos = Int(GEOSOrientationIndex_r(o.handle, a.x, a.y, b.x, b.y, c.x, c.y))
+            let geos = o.orientationIndex(a, b, c)
             tally.check(mine == geos, "\(a) \(b) \(c): \(mine) vs \(geos)")
         }
         tally.report()
     }
 
     @Test func isCCW() {
-        let o = GEOSOracle()
+        let o = Oracles.make("RobustParityTests.isCCW")
+        defer { o.finish() }
         var tally = ParityTally("Orientation.isCCW")
         var r = RandomGeometries(seed: 2)
         for _ in 0..<20_000 {
             let p = r.polygon()
             let ring = p.parts[0].coordinates
             let pts = stride(from: 0, to: ring.count, by: 2).map { Coordinate(ring[$0], ring[$0 + 1]) }
-            let seq = GEOSCoordSeq_copyFromBuffer_r(o.handle, ring, UInt32(pts.count), 0, 0)!
-            defer { GEOSCoordSeq_destroy_r(o.handle, seq) }
-            var ccw: Int8 = 0
-            GEOSCoordSeq_isCCW_r(o.handle, seq, &ccw)
-            tally.check(Orientation.isCCW(pts) == (ccw == 1), "\(p)")
+            tally.check(Orientation.isCCW(pts) == o.isCCW(ring), "\(p)")
         }
         tally.report()
     }
@@ -97,19 +94,21 @@ import geos
     }
 
     @Test func segmentIntersection() {
-        let o = GEOSOracle()
+        let o = Oracles.make("RobustParityTests.segmentIntersection")
+        defer { o.finish() }
         var tally = ParityTally("RobustLineIntersector (GEOSSegmentIntersection)")
         for (p1, p2, q1, q2) in RobustParityTests.segmentPairs(seed: 3, count: 200_000) {
-            var cx = 0.0, cy = 0.0
-            let r = GEOSSegmentIntersection_r(o.handle, p1.x, p1.y, p2.x, p2.y, q1.x, q1.y, q2.x, q2.y, &cx, &cy)
+            let answer = o.segmentIntersection(p1, p2, q1, q2)
+            let r = answer.result
             let mine = LineSegment(p1, p2).intersection(LineSegment(q1, q2))
             let equal: Bool
             if r == 1, let m = mine {
-                equal = m.x.bitPattern == cx.bitPattern && m.y.bitPattern == cy.bitPattern
+                equal = answer.point?.matches(TapeReader.encode([m.x, m.y])) == true
             } else {
                 equal = (r == -1 && mine == nil)
             }
-            tally.check(equal, "\(p1) \(p2) \(q1) \(q2): \(mine.map { "\($0)" } ?? "none") vs \(r == 1 ? "(\(cx), \(cy))" : "none")")
+            let theirs = answer.point.map { $0.whole.map { "\(TapeReader.decode(doubles: $0))" } ?? "a point (stored as a digest)" } ?? "none"
+            tally.check(equal, "\(p1) \(p2) \(q1) \(q2): \(mine.map { "\($0)" } ?? "none") vs \(theirs)")
         }
         tally.report()
     }

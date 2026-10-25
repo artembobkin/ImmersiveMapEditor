@@ -1,42 +1,13 @@
 import Foundation
 import Testing
 import Topology
-import geos
 
-/// Validity against GEOS 3.13: `GEOSisValidDetail` (which runs the same
-/// `IsValidOp` as `GEOSisValid`) on seeded random geometries and on often
-/// invalid ones (`InvalidGeometries`). The answer, the reason and the
-/// location of the error must all be GEOS's, the location bit for bit;
-/// where GEOS fails, the port must throw.
+/// Validity against GEOS 3.13's stored answers of `GEOSisValidDetail` (which
+/// runs the same `IsValidOp` as `GEOSisValid`) on seeded random geometries
+/// and on often invalid ones (`InvalidGeometries`). The answer, the reason
+/// and the location of the error must all be GEOS's, the location bit for
+/// bit; where GEOS failed, the port must throw.
 @Suite struct ValidityParityTests {
-    /// GEOS's verdict: nil when GEOS fails, else whether valid, the reason
-    /// and the location.
-    struct Verdict: Equatable, CustomStringConvertible {
-        var valid: Bool
-        var reason: String
-        var location: [UInt64]
-
-        var description: String { valid ? "valid" : "\(reason) at \(location.map { Double(bitPattern: $0) })" }
-    }
-
-    static func geos(_ g: GEOSGeom) -> Verdict? {
-        var reason: UnsafeMutablePointer<CChar>?
-        var location: OpaquePointer?
-        let r = GEOSisValidDetail_r(g.handle, g.ptr, 0, &reason, &location)
-        defer {
-            if let reason { GEOSFree_r(g.handle, reason) }
-            if let location { GEOSGeom_destroy_r(g.handle, location) }
-        }
-        if r == 2 { return nil }
-        if r == 1 { return Verdict(valid: true, reason: "", location: []) }
-        var x = 0.0, y = 0.0
-        if let location {
-            GEOSGeomGetX_r(g.handle, location, &x)
-            GEOSGeomGetY_r(g.handle, location, &y)
-        }
-        return Verdict(valid: false, reason: reason.map { String(cString: $0) } ?? "", location: [x.bitPattern, y.bitPattern])
-    }
-
     static func port(_ g: Topology.Geometry) throws -> Verdict {
         guard let e = try IsValidOp(g).getValidationError() else { return Verdict(valid: true, reason: "", location: []) }
         // GEOS writes a missing location as its default coordinate (0, 0),
@@ -56,17 +27,16 @@ import geos
         }
     }
 
-    static func compare(_ o: GEOSOracle, _ input: @autoclosure () -> String, _ mine: Topology.Geometry, _ theirs: GEOSGeom, _ tally: inout Tally) {
+    static func compare(_ input: @autoclosure () -> String, _ mine: Topology.Geometry, _ theirs: Verdict?, _ tally: inout Tally) {
         let m = Result { try port(mine) }
-        switch (m, geos(theirs)) {
+        switch (m, theirs) {
         case (.failure, nil):
-            _ = o.takeError()
             tally.failingBoth += 1
             tally.t.check(true, "")
         case (.failure(let e), let g?):
             tally.t.check(false, "\(input()): the port fails (\(e)), GEOS \(g)")
         case (.success(let p), nil):
-            tally.t.check(false, "\(input()): GEOS fails (\(o.takeError() ?? "")), the port \(p)")
+            tally.t.check(false, "\(input()): GEOS fails, the port \(p)")
         case (.success(let p), let g?):
             if !g.valid { tally.invalid += 1 }
             tally.t.check(p == g, "\(input()): port \(p) GEOS \(g)")
@@ -74,23 +44,25 @@ import geos
     }
 
     @Test func randomGeometries() {
-        let o = GEOSOracle()
+        let o = Oracles.make("ValidityParityTests.randomGeometries")
+        defer { o.finish() }
         var t = Tally("isValid random")
         var r = RandomGeometries(seed: 600)
         for _ in 0..<6000 {
             let s = r.geometry()
-            ValidityParityTests.compare(o, "\(s)", s.topology(), o.geometry(s)!, &t)
+            ValidityParityTests.compare("\(s)", s.topology(), o.validity(.shape(s)), &t)
         }
         t.report()
     }
 
     @Test func invalidGeometries() {
-        let o = GEOSOracle()
+        let o = Oracles.make("ValidityParityTests.invalidGeometries")
+        defer { o.finish() }
         var t = Tally("isValid invalid-prone")
         var r = InvalidGeometries(seed: 601)
         for _ in 0..<12000 {
             let s = r.geometry()
-            ValidityParityTests.compare(o, "\(s)", s.topology(), o.geometry(s)!, &t)
+            ValidityParityTests.compare("\(s)", s.topology(), o.validity(.shape(s)), &t)
         }
         t.report()
     }
