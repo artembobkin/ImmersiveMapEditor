@@ -4,7 +4,6 @@ import SwiftUI
 /// with them.
 struct MapPanel: View {
     @Environment(Session.self) private var session
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         let workspace = session.workspace
@@ -36,10 +35,7 @@ struct MapPanel: View {
                     if let url = picked.compactMap({ workspace.document(holding: $0) }).first { session.open(roads: url) }
                 }
                 .disabled(documents.isEmpty)
-                Button("Fetch OSM and Build \(picked.count)") {
-                    session.build(picked)
-                    openWindow(id: "build")
-                }
+                Button("Fetch OSM and Build \(picked.count)") { session.build(picked) }
                 .disabled(picked.isEmpty || session.build.running)
                 if !toFetch.isEmpty {
                     Text("\(toFetch.count) not fetched yet: Overpass first, about half a minute each, then osm2streets and a road document for the tiles that have none.")

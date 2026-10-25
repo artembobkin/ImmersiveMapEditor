@@ -1,30 +1,24 @@
 import SwiftUI
 
 /// The window's content: the view of the mode, its panel in the inspector,
-/// the mode in the toolbar, hints and state along the bottom.
+/// the mode in the toolbar, the build's log below it while open, hints and
+/// state along the bottom.
 struct ContentView: View {
     @Environment(Session.self) private var session
     @Environment(\.undoManager) private var undoManager
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var phase
     @State private var inspector = true
 
     var body: some View {
         @Bindable var workspace = session.workspace
         let importing = session.importing
-        Group {
-            switch workspace.viewMode {
-            case .map:
-                MapPicker()
-            case .roads:
-                if let roads = session.roads {
-                    MetalHost(view: roads)
-                } else {
-                    ContentUnavailableView("No road document", systemImage: "road.lanes",
-                                           description: Text("Pick a tile with roads on the Map, then Edit Roads."))
-                }
-            case .tiles:
-                if let tiles = session.tiles { MetalHost(view: tiles) }
+        VSplitView {
+            mode
+                .frame(minWidth: 600, minHeight: 300)
+            if session.build.shown {
+                BuildLogView()
+                    .environment(session.build)
+                    .frame(minHeight: 120, idealHeight: 220)
             }
         }
         .frame(minWidth: 600, minHeight: 400)
@@ -43,11 +37,11 @@ struct ContentView: View {
                 .pickerStyle(.segmented)
             }
             ToolbarItem {
-                Button("Fetch and Build", systemImage: "hammer") {
-                    session.buildPickedOrOpen()
-                    openWindow(id: "build")
-                }
+                Button("Fetch and Build", systemImage: "hammer") { session.buildPickedOrOpen() }
                 .disabled(session.build.running)
+            }
+            ToolbarItem {
+                Button("Build Log", systemImage: "terminal") { session.build.shown.toggle() }
             }
             ToolbarItem {
                 Button("Panel", systemImage: "sidebar.trailing") { inspector.toggle() }
@@ -78,6 +72,23 @@ struct ContentView: View {
         .alert("Immersive Map Editor", isPresented: Binding(get: { session.problem != nil }, set: { if !$0 { session.problem = nil } })) {
         } message: {
             Text(session.problem ?? "")
+        }
+    }
+
+    /// The view of the mode.
+    @ViewBuilder private var mode: some View {
+        switch session.workspace.viewMode {
+        case .map:
+            MapPicker()
+        case .roads:
+            if let roads = session.roads {
+                MetalHost(view: roads)
+            } else {
+                ContentUnavailableView("No road document", systemImage: "road.lanes",
+                                       description: Text("Pick a tile with roads on the Map, then Edit Roads."))
+            }
+        case .tiles:
+            if let tiles = session.tiles { MetalHost(view: tiles) }
         }
     }
 }

@@ -3,7 +3,6 @@ import SwiftUI
 /// The menus: workspaces and documents, saving, the views, building.
 struct EditorCommands: Commands {
     let session: Session
-    @Environment(\.openWindow) private var openWindow
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Open Workspace…") { session.importing = .workspace }.keyboardShortcut("o", modifiers: [.command, .shift])
@@ -27,13 +26,10 @@ struct EditorCommands: Commands {
             Divider()
         }
         CommandMenu("Tiles") {
-            Button("Fetch and Build") {
-                session.buildPickedOrOpen()
-                openWindow(id: "build")
-            }
+            Button("Fetch and Build") { session.buildPickedOrOpen() }
             .keyboardShortcut("b")
             .disabled(session.build.running)
-            Button("Show Build Log") { openWindow(id: "build") }.keyboardShortcut("l")
+            Button(session.build.shown ? "Hide Build Log" : "Show Build Log") { session.build.shown.toggle() }.keyboardShortcut("l")
         }
     }
 }

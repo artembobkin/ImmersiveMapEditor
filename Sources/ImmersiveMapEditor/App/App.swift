@@ -54,10 +54,5 @@ struct EditorApp: App {
         }
         .defaultSize(width: 1400, height: 900)
         .commands { EditorCommands(session: session) }
-
-        Window("Build", id: "build") {
-            BuildLogView().environment(session.build)
-        }
-        .defaultSize(width: 760, height: 420)
     }
 }
