@@ -67,7 +67,7 @@ The region and the other tiles have a contested end whose choices give the same 
 
 `Seed` (`Sources/TileKit/Pipeline/Seed.swift`) no longer runs the Rust binary: it calls `Streets` in process (`StreetNetwork.fromOSM` with inferred sidewalks and kerbs, the transformations for clipped areas) on the same merged OSM XML and the same clip, read back from `clip.geojson` as the Rust read it, and writes the four GeoJSON outputs into `streets/` as before. `TileKit` depends on `Streets` (the one `Package.swift` change). `WorkspacePaths.osm2streets` is gone. `tools/osm2streets_cli` stays in the workspace as the oracle of the parity tests only. Whether to delete it is the user's decision.
 
-Seeding parity, `tilepipeline seed 15 19808 10242 19809 10243` into temporary roots (`data/` holding links to the four tile folders of the workspace, `roads/` empty), before (this branch at `a38bf4d`, the Rust binary) and after:
+Seeding parity, `tilepipeline seed 15 19808 10242 19809 10243` into temporary roots (`data/` holding links to the four tile folders of the workspace, `roads/` empty), before (this branch at `e40bda6`, the Rust binary) and after:
 
 - the road document `roads/15_19808_10242_19809_10243.json`: identical but the `"seeded"` date line (42 areas, markings line 698, zebra 186, letter 111, zigzag 32, 29 shelters);
 - `streets/plain.geojson`, `lanes.geojson`, `lane_markings.geojson`, `intersection_markings.geojson`: byte-identical;
@@ -90,12 +90,12 @@ The whole `swift test`: 401 tests in 55 suites pass, in 557 s in debug and 86 s 
 
 ## The release test hang
 
-An earlier `swift test -c release` sat at 0% CPU for 40 minutes. Found: the test process ran the editor's SwiftUI app, not the tests (its sample: `App.main` in `NSApplicationMain`, waiting for events). The executable's async `@main` emits its entry thunk under the same name as the test runner's (`async_Main`, with a shared specialised reabstraction thunk), and in an optimised build the linker keeps the executable's copy, so the runner's `main` started the app. Fixed by a synchronous entry (`Platform.runMain`, commit `b9f82e2`). Release tests also need `-Xswiftc -enable-testing` (the test targets use `@testable import`).
+An earlier `swift test -c release` sat at 0% CPU for 40 minutes. Found: the test process ran the editor's SwiftUI app, not the tests (its sample: `App.main` in `NSApplicationMain`, waiting for events). The executable's async `@main` emits its entry thunk under the same name as the test runner's (`async_Main`, with a shared specialised reabstraction thunk), and in an optimised build the linker keeps the executable's copy, so the runner's `main` started the app. Fixed by a synchronous entry (`Platform.runMain`, commit `70f2925`). Release tests also need `-Xswiftc -enable-testing` (the test targets use `@testable import`).
 
 ## Commits
 
-- `5935bdb` Earcut. `3130717` CountryBoundaries. `7ddc315`, `cc93bb6` OSMReader. `7217ddf` GeoAlgorithms. `1aec73d` StreetGeom. `1cf1ea7` Streets with the parity tests. `b48762f` the remaining transformations.
-- `b9f82e2` the synchronous entry point (the release test hang). `45ffd45` MuvLanes and osm2lanes reading through it. Then phase 11, `Seed` onto `Streets`.
+- `35e8f39` Earcut. `83580c7` CountryBoundaries. `3beda24`, `1984e35` OSMReader. `90462b0` GeoAlgorithms. `7904438` StreetGeom. `c23063a` Streets with the parity tests. `b01ae76` the remaining transformations.
+- `70f2925` the synchronous entry point (the release test hang). `4936c3d` MuvLanes and osm2lanes reading through it. Then phase 11, `Seed` onto `Streets`.
 
 ## Left
 

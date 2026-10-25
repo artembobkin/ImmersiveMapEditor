@@ -1,7 +1,7 @@
 DONE
 
 Phase: all 12 done. GEOS is frozen into stored answers (Tests/TopologyTests/.oracle) and removed: the package has no dependencies and no C, C++, Rust or Python in its build.
-Last green commit: the commit that wrote DONE, on main (phase 12 merged as 51f7d47, the GEOS package removed from Package.swift). 451 tests in 74 suites pass in debug (598 s) and in release with -enable-testing (83 s), clean debug and release builds have no warnings.
+Last green commit: the commit that wrote DONE, on main (phase 12 merged as 1d27d0f, the GEOS package removed from Package.swift). 451 tests in 74 suites pass in debug (598 s) and in release with -enable-testing (83 s), clean debug and release builds have no warnings.
 Branches: port/topology in .worktrees/topology, port/streets in .worktrees/streets, merged into main by the main session when green
 Next step: none for the goal. The user's review of the decisions below. Nothing is pushed.
 Decisions taken on the user's behalf:
