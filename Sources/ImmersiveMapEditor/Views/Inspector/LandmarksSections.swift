@@ -5,8 +5,9 @@ import SwiftUI
 /// see its model, its buildings and its folder.
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
-    @Environment(BuildRunner.self) private var runner
     @State private var request = ""
+
+    private var runner: BuildRunner { session.build }
 
     var body: some View {
         @Bindable var session = session
