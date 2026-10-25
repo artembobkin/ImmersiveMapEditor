@@ -108,6 +108,20 @@ public enum PipelineCommand {
             case "fit":
                 guard let id = args.list.first else { usage() }
                 try Fit.run(id, paths)
+            case "landmark":
+                // A landmark's model from its recipe (a starter recipe from
+                // OSM first when it has none, or when asked).
+                guard let f = args.list.first else { usage() }
+                let folder = path(f)
+                let recipe = folder.appendingPathComponent("recipe.json")
+                if args.flag("--starter") || !FileManager.default.fileExists(atPath: recipe.path) {
+                    try LandmarkSource(folder.appendingPathComponent("landmark.json")).starterRecipe().write(recipe)
+                    print("[landmark] a starter recipe from OSM: \(recipe.lastPathComponent)")
+                }
+                let (problems, summary) = try LandmarkGenerator.run(folder: folder)
+                for p in problems { print("problem: \(p)") }
+                guard problems.isEmpty else { exit(1) }
+                print("[landmark] model.glb: \(summary)")
             default:
                 usage()
             }
@@ -128,6 +142,7 @@ public enum PipelineCommand {
                ImmersiveMapEditor pipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
                    [--mode sky|ao] [--ao-radius M] [--sky S] [--sun AZ EL S | --no-sun]
                ImmersiveMapEditor pipeline validate FOLDER
+               ImmersiveMapEditor pipeline landmark LANDMARK_FOLDER [--starter]
                ImmersiveMapEditor pipeline fit ID
 
         """.data(using: .utf8)!)

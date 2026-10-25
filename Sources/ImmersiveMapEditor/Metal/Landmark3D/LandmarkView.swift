@@ -104,6 +104,37 @@ final class LandmarkView: MTKView {
         }
     }
 
+    /// A model, or boxes, rendered from around and above to PNGs in `dir`
+    /// without a window: what the landmarks' agent compares with photos.
+    /// Returns the files, named by where they look from.
+    func views(_ next: Source, to dir: URL, width: Int = 1024, height: Int = 768) throws -> [URL] {
+        source = next
+        switch next {
+        case .model(let url): mesh = try LandmarkRenderer.Model.load(url, device: renderer.device)
+        case .boxes(_, let boxes): mesh = try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
+        }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        var out: [URL] = []
+        // From the south, east, north, west, at eye level and a slant, and
+        // from straight above (north up).
+        let shots: [(String, Double, Double)] = [("from-south", 180, -12), ("from-east", 90, -12), ("from-north", 0, -12),
+                                                 ("from-west", 270, -12), ("from-south-west", 225, -35), ("from-north-east", 45, -35),
+                                                 ("from-above", 0, -89.9)]
+        for (name, from, pitch) in shots {
+            frameModel()
+            controller.camera.yaw = (from + 180).truncatingRemainder(dividingBy: 360)
+            controller.camera.pitch = pitch
+            controller.camera.distance *= pitch < -80 ? 1.1 : 0.9
+            let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))
+            let url = dir.appendingPathComponent("\(name).png")
+            try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: url, width: width, height: height) { enc in
+                renderer.encode(enc, model: mesh, viewProjection: vp)
+            }
+            out.append(url)
+        }
+        return out
+    }
+
     func frameModel() {
         guard let mesh else { return }
         let c = mesh.centre, s = mesh.size

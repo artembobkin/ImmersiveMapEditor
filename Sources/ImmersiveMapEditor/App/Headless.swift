@@ -9,7 +9,7 @@ import SwiftUI
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -48,6 +48,26 @@ enum Headless {
             do {
                 try view.snapshot(URL(fileURLWithPath: arguments[i + 1]), to: URL(fileURLWithPath: arguments[i + 2]),
                                   width: 1200, height: 900)
+                return 0
+            } catch {
+                return fail(error.localizedDescription)
+            }
+        }
+        if let i = arguments.firstIndex(of: "--landmark-views"), arguments.count > i + 2 {
+            // A landmark's model (its OSM boxes with --boxes) from around and
+            // above, a PNG each, into a folder.
+            let folder = URL(fileURLWithPath: arguments[i + 1])
+            guard let view = LandmarkView.make() else { return fail("no Metal device") }
+            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [])
+            let source: LandmarkView.Source
+            if arguments.contains("--boxes") {
+                source = .boxes(id: landmark.id, landmark.boxes)
+            } else {
+                guard let model = landmark.model else { return fail("no model in \(folder.path)") }
+                source = .model(model)
+            }
+            do {
+                for url in try view.views(source, to: URL(fileURLWithPath: arguments[i + 2])) { print(url.path) }
                 return 0
             } catch {
                 return fail(error.localizedDescription)

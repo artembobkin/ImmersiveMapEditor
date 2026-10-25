@@ -157,8 +157,11 @@ public enum Imported {
             }
             let height = faces.isEmpty ? 0 : faces.flatMap { $0.corners.map(\.z) }.max()! - Level.ground
             let sky = recipe["skyscraper"] as? Bool ?? (height > skyscraper)
+            // A model generated from a recipe has its own windows.
+            let generated = FileManager.default.fileExists(atPath: place.glb.deletingLastPathComponent()
+                .appendingPathComponent("recipe.json").path)
             models.append(Model(id: place.id, origin: place.origin, faces: faces, images: images, family: fam,
-                                windows: recipe["windows"] as? Bool ?? true, fill: recipe["fill_windows"] as? Bool ?? true,
+                                windows: recipe["windows"] as? Bool ?? !generated, fill: recipe["fill_windows"] as? Bool ?? !generated,
                                 bays: recipe["bays"] as? [String: Any], glass: sky ? "lm_sky_glass" : nil))
         }
         // What the models cover in plan: an OSM building standing mostly under

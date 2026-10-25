@@ -12,6 +12,7 @@ import TileKit
 ///   ImmersiveMapEditor --snapshot WORKSPACE OUT.png X/Y       a tile in 3D to a PNG, no window
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
 ///   ImmersiveMapEditor --landmark-snapshot MODEL.glb OUT.png  a landmark model to a PNG, no window
+///   ImmersiveMapEditor --landmark-views FOLDER OUT_DIR [--boxes]  a landmark's model (or OSM boxes) from around, PNGs
 ///
 /// With no argument it opens the data folder of Settings (DataFolder).
 @main
