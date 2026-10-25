@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(Session.self) private var session
     @State private var picking = false
     @AppStorage(CameraController.invertTurningKey) private var invertTurning = true
+    @AppStorage(CameraController.invertTiltingKey) private var invertTilting = false
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
 
@@ -26,8 +27,9 @@ struct SettingsView: View {
                 }
             }
             Section("Camera") {
-                Toggle("Invert turning with the right mouse button", isOn: $invertTurning)
-                Text("Right-drag (or option-drag) turns and tilts the 3D views: the other way round while this is on.")
+                Toggle("Invert turning (left and right)", isOn: $invertTurning)
+                Toggle("Invert tilting (up and down)", isOn: $invertTilting)
+                Text("Right-drag (or option-drag) turns and tilts the 3D views: each the other way round while it is on.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             Section("Esri World Imagery") {

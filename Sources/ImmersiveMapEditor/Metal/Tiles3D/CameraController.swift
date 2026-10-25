@@ -26,15 +26,17 @@ struct CameraController {
         keys = []
     }
 
-    /// The defaults key of the app's setting: turning the other way round
-    /// (on unless turned off in Settings).
+    /// The app's settings, by their defaults keys: turning (left and right)
+    /// the other way round, on unless turned off, and tilting (up and down)
+    /// the other way round, off unless turned on.
     static let invertTurningKey = "camera.invertTurning"
+    static let invertTiltingKey = "camera.invertTilting"
     static var invertTurning: Bool { UserDefaults.standard.object(forKey: invertTurningKey) as? Bool ?? true }
+    static var invertTilting: Bool { UserDefaults.standard.object(forKey: invertTiltingKey) as? Bool ?? false }
 
     mutating func drag(_ dx: Double, _ dy: Double, turning: Bool, size: SIMD2<Double>, flying: Bool) {
         if turning {
-            let k = Self.invertTurning ? -1.0 : 1.0
-            camera.turn(dx * k, dy * k, size: size, flying: flying)
+            camera.turn(Self.invertTurning ? -dx : dx, Self.invertTilting ? -dy : dy, size: size, flying: flying)
         } else {
             camera.pan(dx, dy, height: size.y)
         }
