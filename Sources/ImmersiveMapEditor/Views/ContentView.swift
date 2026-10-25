@@ -16,7 +16,7 @@ struct ContentView: View {
             mode
                 .frame(minWidth: 600, minHeight: 300)
             if session.build.shown {
-                BuildLogView()
+                BottomPanel()
                     .environment(session.build)
                     .frame(minHeight: 120, idealHeight: 220)
             }
@@ -48,17 +48,8 @@ struct ContentView: View {
             }
         }
         .inspector(isPresented: $inspector) {
-            Group {
-                switch workspace.viewMode {
-                case .map: MapPanel()
-                case .roads:
-                    if let model = session.model, let roads = session.roads { RoadsPanel(model: model, map: roads) }
-                case .tiles: TilesPanel()
-                case .light: LightPanel()
-                case .landmarks: LandmarksPanel()
-                }
-            }
-            .inspectorColumnWidth(min: 260, ideal: 290, max: 400)
+            Inspector()
+                .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
         }
         .navigationTitle(session.model.map { "\($0.url.lastPathComponent)\($0.dirty ? " (edited)" : "")" }
                          ?? session.workspace.root.lastPathComponent)

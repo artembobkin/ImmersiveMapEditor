@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The parameters of the one selected marking or shelter, editable.
-struct SelectionPanel: View {
+struct SelectionSections: View {
     @Bindable var model: RoadEditor
 
     var body: some View {
