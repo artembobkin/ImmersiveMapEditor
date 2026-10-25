@@ -28,12 +28,12 @@ final class LandmarkCatalog {
     private(set) var all: [Landmark] = []
     var picked: Landmark.ID?
     var query = ""
-    /// Only the models standing in the tiles picked on the map.
+    /// Only the models standing in the working tile.
     var onlyPickedTiles = true
 
     var selected: Landmark? { all.first { $0.id == picked } }
 
-    /// The models listed, by the query and the tiles picked.
+    /// The models listed, by the query and the working tile.
     func listed(in tiles: Set<TileKey>) -> [Landmark] {
         all.filter { m in
             (!onlyPickedTiles || tiles.isEmpty || tiles.contains(m.tile))

@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The one inspector of the window, the same in every view: a header with
-/// the view's name, the tiles picked on the map (what every view works on),
-/// then the sections of the view chosen at the top. A view adds sections,
+/// the view's name, the working tile (picked on the map, the one every view
+/// works on), then the sections of the view chosen at the top. A view adds sections,
 /// never a frame of its own.
 struct Inspector: View {
     @Environment(Session.self) private var session
@@ -12,14 +12,14 @@ struct Inspector: View {
         VStack(spacing: 0) {
             PanelHeader(title: mode.rawValue, systemImage: mode.systemImage)
             Form {
-                PickedTiles()
+                WorkingTile()
                 switch mode {
                 case .map: MapSections()
                 case .roads:
                     if let model = session.model, let roads = session.roads {
                         RoadsSections(model: model, map: roads)
                     } else {
-                        Section { Text("No road document: pick tiles that have one on the Map.").foregroundStyle(.secondary) }
+                        Section { Text("No road document holds the tile.").foregroundStyle(.secondary) }
                     }
                 case .tiles: TilesSections()
                 case .light: LightSections()
@@ -57,19 +57,22 @@ extension PanelHeader where Trailing == EmptyView {
     }
 }
 
-/// The tiles picked on the map, shown at the top of the inspector in every
-/// view.
-struct PickedTiles: View {
+/// The working tile, picked on the map, at the top of the inspector in
+/// every view: its name and what the workspace has of it.
+struct WorkingTile: View {
     @Environment(Session.self) private var session
 
     var body: some View {
-        let picked = session.workspace.selection.sorted()
-        Section("Tiles picked: \(picked.count)") {
-            if picked.isEmpty {
-                Text("None: pick tiles on the Map.").foregroundStyle(.secondary)
+        let workspace = session.workspace
+        Section("Tile") {
+            if let t = workspace.tile {
+                Text(verbatim: t.name).font(.body.monospaced())
+                Text([workspace.fetched.contains(t) ? "OSM fetched" : "not fetched",
+                      workspace.built.contains(t) ? "built" : "not built",
+                      workspace.document(holding: t) != nil ? "has roads" : "no road document"].joined(separator: ", "))
+                    .foregroundStyle(.secondary)
             } else {
-                Text(picked.map(\.name).joined(separator: "  "))
-                    .font(.callout.monospaced()).foregroundStyle(.secondary).lineLimit(6)
+                Text("None: pick a tile on the Map.").foregroundStyle(.secondary)
             }
         }
     }

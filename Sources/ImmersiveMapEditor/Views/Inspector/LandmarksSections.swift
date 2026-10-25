@@ -1,22 +1,22 @@
 import SwiftUI
 
-/// The Landmarks view's sections: the landmark models ready, those of the
-/// tiles picked on the map or all of them, to pick one and look at it.
+/// The Landmarks view's sections: the landmark models ready, those standing
+/// in the working tile or all of them, to pick one and look at it.
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
     @Environment(\.openURL) private var openURL
 
     var body: some View {
         @Bindable var catalog = session.landmarks
-        let picked = session.workspace.selection
+        let picked: Set<TileKey> = session.workspace.tile.map { [$0] } ?? []
         let listed = catalog.listed(in: picked)
         Section("Find") {
             TextField("Search", text: $catalog.query)
-            Toggle("Only in the tiles picked", isOn: $catalog.onlyPickedTiles)
+            Toggle("Only in the tile", isOn: $catalog.onlyPickedTiles)
                 .disabled(picked.isEmpty)
             Text(picked.isEmpty || !catalog.onlyPickedTiles
                  ? "\(listed.count) of \(catalog.all.count) models"
-                 : "\(listed.count) models in the tiles picked, \(catalog.all.count) in all")
+                 : "\(listed.count) models in the tile, \(catalog.all.count) in all")
                 .foregroundStyle(.secondary)
         }
         Section("Models") {

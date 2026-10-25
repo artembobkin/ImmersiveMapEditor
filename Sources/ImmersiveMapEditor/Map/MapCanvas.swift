@@ -1,12 +1,11 @@
 import SwiftUI
 
 /// The map drawn: OpenStreetMap under the grid of z15 tiles, each coloured
-/// by what the workspace has of it, a selection box over it.
+/// by what the workspace has of it, the tile picked outlined.
 struct MapCanvas: View {
     let workspace: Workspace
     let camera: MapCamera
     let raster: RasterTiles
-    var box: (CGPoint, CGPoint)?
 
     var body: some View {
         // Read here, so the map is drawn again as OpenStreetMap's tiles come.
@@ -22,11 +21,6 @@ struct MapCanvas: View {
             // A veil, so the grid's colours read over the map.
             ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(0.25)))
             grid(&ctx, size)
-            if let (a, b) = box {
-                let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
-                ctx.fill(Path(r), with: .color(.blue.opacity(0.15)))
-                ctx.stroke(Path(r), with: .color(.blue), lineWidth: 1)
-            }
             ctx.draw(Text("© OpenStreetMap contributors").font(.system(size: 11)).foregroundStyle(.secondary),
                      at: CGPoint(x: size.width - 6, y: size.height - 4), anchor: .bottomTrailing)
         }
@@ -49,7 +43,7 @@ struct MapCanvas: View {
                 } else if workspace.fetched.contains(t) {
                     ctx.fill(Path(r), with: .color(.yellow.opacity(0.3)))
                 }
-                let picked = workspace.selection.contains(t)
+                let picked = workspace.tile == t
                 if picked { ctx.fill(Path(r), with: .color(.blue.opacity(0.3))) }
                 ctx.stroke(Path(r), with: .color(.black.opacity(0.25)), lineWidth: 1)
                 if workspace.document(holding: t) != nil {

@@ -28,12 +28,11 @@ enum Headless {
             }
         }
         if let i = arguments.firstIndex(of: "--snapshot"), arguments.count > i + 3 {
-            // Built tiles rendered together in 3D from above at a slant.
+            // A built tile rendered in 3D from above at a slant.
             let workspace = Workspace(root: URL(fileURLWithPath: arguments[i + 1]), remembers: false)
-            workspace.selection = Set(arguments[(i + 3)...].compactMap { t in
-                let p = t.split(separator: "/").compactMap { Int($0) }
-                return p.count == 2 ? TileKey(z: Workspace.zoom, x: p[0], y: p[1]) : nil
-            })
+            let p = arguments[i + 3].split(separator: "/").compactMap { Int($0) }
+            guard p.count == 2 else { return fail("--snapshot WORKSPACE OUT.png X/Y") }
+            workspace.tile = TileKey(z: Workspace.zoom, x: p[0], y: p[1])
             guard let view = TileView(model: workspace) else { return fail("no Metal device") }
             do {
                 try view.snapshot(to: URL(fileURLWithPath: arguments[i + 2]), width: 1600, height: 1000)

@@ -1,8 +1,6 @@
 import SwiftUI
 
-/// The Light view: the light maps of the tiles picked on the map, seen from
-/// above and joined at their edges, so the light can be judged across a
-/// seam. Drag to move, scroll or pinch to zoom at the cursor, F frames.
+/// The Light view: the light map of the working tile, seen from above. Drag to move, scroll or pinch to zoom at the cursor, F frames.
 struct LightView: View {
     @Environment(Session.self) private var session
     @State private var size = CGSize(width: 800, height: 600)
@@ -14,12 +12,12 @@ struct LightView: View {
 
     var body: some View {
         let workspace = session.workspace, lights = session.lights
-        let tiles = workspace.selection.sorted()
+        let tiles = workspace.tile.map { [$0] } ?? []
         let built = tiles.filter { workspace.built.contains($0) }
         Group {
             if built.isEmpty {
-                ContentUnavailableView("No built tile picked", systemImage: "sun.max",
-                                       description: Text("Pick built tiles on the Map: their light maps show here."))
+                ContentUnavailableView("The tile is not built", systemImage: "sun.max",
+                                       description: Text("Pick a built tile on the Map: its light map shows here."))
             } else {
                 Canvas { ctx, _ in
                     ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.12)))

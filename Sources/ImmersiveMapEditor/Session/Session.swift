@@ -127,31 +127,28 @@ final class Session {
         }
     }
 
-    /// The tiles picked on the map are what every view works on: entering a
-    /// view, the Roads view opens the road document holding them and frames
-    /// them. Nothing picked, it keeps what it had.
+    /// The tile picked on the map is what every other view works on, alone:
+    /// entering the Roads view opens the road document holding it and frames
+    /// it, or closes the document open when none holds it.
     func follow(_ mode: ViewMode) {
-        let picked = workspace.selection.sorted()
-        guard !picked.isEmpty else { return }
-        switch mode {
-        case .map, .light, .tiles, .landmarks:
-            // The 3D view shows the tiles picked that are built, always
-            // (Workspace.shown); the Light view reads them itself.
-            break
-        case .roads:
-            guard let url = picked.lazy.compactMap({ self.workspace.document(holding: $0) }).first else { return }
-            if model?.url != url { open(roads: url) }
-            let inside = picked.filter { workspace.document(holding: $0) == url }
-            Task { @MainActor in self.roads?.frame(tiles: inside) }
+        guard mode == .roads, let tile = workspace.tile else { return }
+        guard let url = workspace.document(holding: tile) else {
+            closeRoads()
+            return
         }
+        if model?.url != url { open(roads: url) }
+        Task { @MainActor in self.roads?.frame(tiles: [tile]) }
     }
 
-    /// The tiles picked on the map, or else those of the road document open.
-    func buildPickedOrOpen() {
-        var tiles = workspace.selection.sorted()
-        if workspace.viewMode != .map || tiles.isEmpty, let t = model?.doc.tiles {
-            tiles = (t.y0...t.y1).flatMap { y in (t.x0...t.x1).map { TileKey(z: t.z, x: $0, y: y) } }
-        }
-        build(tiles)
+    /// The road document open saved and closed.
+    func closeRoads() {
+        model?.saveIfNeeded()
+        model = nil
+        roads = nil
+    }
+
+    /// Fetches and builds the tile picked.
+    func buildTile() {
+        if let tile = workspace.tile { build([tile]) }
     }
 }

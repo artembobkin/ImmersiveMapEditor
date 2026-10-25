@@ -15,7 +15,7 @@ struct EditorCommands: Commands {
         }
         CommandGroup(after: .pasteboard) {
             Button("Select None") {
-                if session.workspace.viewMode == .map { session.workspace.selection = [] } else { session.model?.selection = [] }
+                if session.workspace.viewMode == .map { session.workspace.tile = nil } else { session.model?.selection = [] }
             }
             .keyboardShortcut("d")
         }
@@ -28,9 +28,9 @@ struct EditorCommands: Commands {
             Divider()
         }
         CommandMenu("Tiles") {
-            Button("Fetch and Build") { session.buildPickedOrOpen() }
+            Button("Fetch and Build the Tile") { session.buildTile() }
             .keyboardShortcut("b")
-            .disabled(session.build.running)
+            .disabled(session.build.running || session.workspace.tile == nil)
             Button(session.build.shown ? "Hide Build Log" : "Show Build Log") { session.build.shown.toggle() }.keyboardShortcut("l")
         }
     }

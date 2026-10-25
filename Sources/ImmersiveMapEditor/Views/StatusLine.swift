@@ -7,7 +7,7 @@ struct StatusLine: View {
         HStack {
             switch session.workspace.viewMode {
             case .map:
-                Text("Drag to move, scroll to zoom. Click picks a tile, shift-drag a box of them, double-click shows a built one in 3D.")
+                Text("Drag to move, scroll to zoom. Click picks the tile every view works on, double-click shows it in 3D.")
                     .lineLimit(1)
                 Spacer()
             case .roads:
@@ -34,7 +34,7 @@ struct StatusLine: View {
                 Spacer()
                 Text(session.landmarkStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             case .light:
-                Text("The light maps of the tiles picked, from above. Drag to move, scroll to zoom, F frames.")
+                Text("The tile's light map, from above. Drag to move, scroll to zoom, F frames.")
                     .lineLimit(1)
                 Spacer()
             }

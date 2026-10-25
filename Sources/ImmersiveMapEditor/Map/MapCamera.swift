@@ -42,7 +42,7 @@ final class MapCamera {
 
     /// Over the tiles the workspace has, or Moscow's centre.
     func frame(_ workspace: Workspace) {
-        let tiles = workspace.selection.isEmpty ? Array(workspace.built.union(workspace.fetched)) : Array(workspace.selection)
+        let tiles = workspace.tile.map { [$0] } ?? Array(workspace.built.union(workspace.fetched))
         let n = pow(2, Double(Workspace.zoom))
         if tiles.isEmpty {
             let lat = 55.7539 * .pi / 180

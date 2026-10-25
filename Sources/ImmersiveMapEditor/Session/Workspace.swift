@@ -20,8 +20,8 @@ enum ViewMode: String, CaseIterable, Identifiable {
 
 /// What TilePipeline (the folder `root`) has of every tile: fetched OSM
 /// (data/<z>_<x>_<y>/osm.json), a built model (out/tiles/<z>/<x>/<y>/), the
-/// road document holding it (roads/). And the tiles picked on the map,
-/// which every view works on.
+/// road document holding it (roads/). And the one tile picked on the map,
+/// the app's working tile: every other view is a workspace over it alone.
 @Observable
 final class Workspace {
     static let zoom = 15
@@ -31,14 +31,14 @@ final class Workspace {
     private(set) var fetched: Set<TileKey> = []
     private(set) var built: Set<TileKey> = []
     private(set) var documents: [(url: URL, tiles: RoadPlan.Tiles)] = []
-    /// The tiles picked on the map: what every view works on.
-    var selection: Set<TileKey> = [] {
+    /// The tile picked on the map, the one every other view works on.
+    var tile: TileKey? {
         didSet {
             remember()
             follow()
         }
     }
-    /// The tiles the 3D view shows together: those picked that are built.
+    /// What the 3D view shows: the tile picked, once it is built.
     private(set) var shown: [TileKey] = [] {
         didSet { tilesRevision += 1 }
     }
@@ -50,7 +50,7 @@ final class Workspace {
     var tilesRevision = 0
     var building = false
 
-    /// Whether the tiles picked are kept for the next run: not for a run
+    /// Whether the tile picked is kept for the next run: not for a run
     /// without a window.
     private let remembers: Bool
 
@@ -58,8 +58,8 @@ final class Workspace {
         self.root = root
         self.remembers = remembers
         let d = UserDefaults.standard
-        if remembers, let data = d.data(forKey: "selection"), let s = try? JSONDecoder().decode(Set<TileKey>.self, from: data) {
-            selection = s
+        if remembers, let data = d.data(forKey: "tile"), let t = try? JSONDecoder().decode(TileKey.self, from: data) {
+            tile = t
         }
         scan()
     }
@@ -67,12 +67,12 @@ final class Workspace {
     private func remember() {
         guard remembers else { return }
         let d = UserDefaults.standard
-        d.set(try? JSONEncoder().encode(selection), forKey: "selection")
+        d.set(tile.flatMap { try? JSONEncoder().encode($0) }, forKey: "tile")
     }
 
-    /// The tiles shown, from the tiles picked and those built.
+    /// The tile shown, from the tile picked and those built.
     private func follow() {
-        let next = selection.filter { built.contains($0) }.sorted()
+        let next = tile.map { built.contains($0) ? [$0] : [] } ?? []
         if next != shown { shown = next }
     }
 
