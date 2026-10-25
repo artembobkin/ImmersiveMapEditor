@@ -22,6 +22,8 @@ final class Session {
     let camera = MapCamera()
     let raster = RasterTiles()
     let build = BuildRunner()
+    /// The camera the views over the open tile share.
+    let viewCamera = SharedCamera()
     let panels = PanelLayout()
     let lights = LightMaps()
     let lightSettings = LightSettings()
@@ -45,6 +47,7 @@ final class Session {
         workspace = Workspace(root: root)
         candidate = workspace.tile
         tiles = TileView(model: workspace)
+        tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         scanLandmarks()
     }
@@ -59,6 +62,7 @@ final class Session {
         candidate = workspace.tile
         phase = .choosing
         tiles = TileView(model: workspace)
+        tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         scanLandmarks()
     }
@@ -75,6 +79,7 @@ final class Session {
         guard !build.running else { return }
         closeRoads()
         candidate = tile
+        if workspace.tile != tile { viewCamera.forget() }
         workspace.tile = tile
         var steps: [[String]] = []
         if !workspace.fetched.contains(tile) { steps.append(["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
@@ -110,9 +115,10 @@ final class Session {
             let model = try RoadEditor(url: url)
             let view = RoadsView()
             view.model = model
+            let camera = viewCamera
+            view.cameraMoved = { t in camera.set(centre: t.centre, in: model.doc.projection, metresPerPoint: 1 / t.scale) }
             self.model = model
             roads = view
-            Task { @MainActor in view.frameAll() }
         } catch {
             problem = "Cannot open \(url.lastPathComponent): \(error.localizedDescription)"
         }
@@ -136,6 +142,10 @@ final class Session {
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
+        if phase == .working, mode == .tiles {
+            // The 3D view where the others looked, once it is laid out.
+            Task { @MainActor in self.tiles?.takeSharedCamera() }
+        }
         guard phase == .working, mode == .roads, let tile = workspace.tile else { return }
         guard let url = workspace.document(holding: tile) else {
             closeRoads()
@@ -143,7 +153,14 @@ final class Session {
         }
         if model?.url != url { open(roads: url) }
         roads?.focus = tile
-        Task { @MainActor in self.roads?.frame(tiles: [tile]) }
+        Task { @MainActor in
+            // Where the other views looked, else the tile framed.
+            if let roads = self.roads, let model = self.model, let c = self.viewCamera.centre(in: model.doc.projection) {
+                roads.look(at: c, scale: 1 / self.viewCamera.metresPerPoint)
+            } else {
+                self.roads?.frame(tiles: [tile])
+            }
+        }
     }
 
     /// The road document open saved and closed.

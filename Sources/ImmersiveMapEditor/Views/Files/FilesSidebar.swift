@@ -5,7 +5,6 @@ import SwiftUI
 /// one) and its files, fetched, seeded and built. A file opens in its app.
 struct FilesSidebar: View {
     @Environment(Session.self) private var session
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         let workspace = session.workspace
@@ -16,7 +15,7 @@ struct FilesSidebar: View {
                 let files = TileFiles(tile: tile, workspace: workspace)
                 let exists = FileManager.default.fileExists(atPath: files.folder.path)
                 Section {
-                    Button { openURL(files.folder) } label: {
+                    Button { Platform.open(files.folder) } label: {
                         Label("Open Tile Folder", systemImage: "folder")
                     }
                     .disabled(!exists)
@@ -33,10 +32,10 @@ struct FilesSidebar: View {
                         ForEach(group.files) { file in
                             FileRow(file: file, folder: group.folder)
                                 .contextMenu {
-                                    Button("Open") { openURL(file.url) }
-                                    Button("Open Its Folder") { openURL(file.url.deletingLastPathComponent()) }
+                                    Button("Open") { Platform.open(file.url) }
+                                    Button("Show in Finder") { Platform.reveal(file.url) }
                                 }
-                                .onTapGesture(count: 2) { openURL(file.url) }
+                                .onTapGesture(count: 2) { Platform.open(file.url) }
                         }
                     } header: {
                         Label(group.title, systemImage: group.systemImage)

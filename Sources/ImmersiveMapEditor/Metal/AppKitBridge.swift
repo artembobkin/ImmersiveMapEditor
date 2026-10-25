@@ -50,6 +50,19 @@ extension View {
 }
 
 enum Platform {
+    /// A folder opened in Finder, or a file in its app. SwiftUI's openURL
+    /// leaves folders under Library (the data folder) unopened.
+    @MainActor
+    static func open(_ url: URL) {
+        NSWorkspace.shared.open(url)
+    }
+
+    /// A file shown selected in its folder in Finder.
+    @MainActor
+    static func reveal(_ url: URL) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     /// Run without its app bundle (from the command line or Xcode), the
     /// executable has no activation policy of its own: it takes the regular
     /// one, a Dock icon and windows. Nor has it an icon: it takes the

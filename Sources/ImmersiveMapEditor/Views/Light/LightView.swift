@@ -53,8 +53,11 @@ struct LightView: View {
             }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
-        .onChange(of: tiles, initial: true) { frame(tiles) }
-        .onChange(of: size) { frame(tiles) }
+        // Where the other views looked, else the tile framed.
+        .onChange(of: tiles, initial: true) { take(tiles) }
+        .onChange(of: size) { take(tiles) }
+        .onChange(of: centre) { give() }
+        .onChange(of: scale) { give() }
         .task(id: [tiles.map(\.name).joined(separator: " "), "\(workspace.tilesRevision)"]) {
             lights.load(tiles, from: workspace)
         }
@@ -65,6 +68,24 @@ struct LightView: View {
         let x = (Double(t.x) - centre.x) * scale + size.width / 2
         let y = (Double(t.y) - centre.y) * scale + size.height / 2
         return CGRect(x: x, y: y, width: scale, height: scale)
+    }
+
+    /// The camera the views share, or the tile framed while it is not set.
+    private func take(_ tiles: [TileKey]) {
+        let shared = session.viewCamera
+        guard let z = tiles.first?.z, let c = shared.tileUnits(z: z) else { return frame(tiles) }
+        centre = c
+        scale = SharedCamera.tileMetres(z: z, latitude: latitudeOf(c.y, z)) / shared.metresPerPoint
+    }
+
+    /// The view given to the others as it moves.
+    private func give() {
+        guard let z = session.workspace.tile?.z else { return }
+        session.viewCamera.set(tileUnits: centre, z: z, pointsPerTile: scale)
+    }
+
+    private func latitudeOf(_ y: Double, _ z: Int) -> Double {
+        atan(sinh(.pi * (1 - 2 * y / pow(2, Double(z))))) * 180 / .pi
     }
 
     private func frame(_ tiles: [TileKey]) {

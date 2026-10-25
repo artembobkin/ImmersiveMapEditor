@@ -1,3 +1,4 @@
+import Foundation
 import QuartzCore
 import simd
 
@@ -25,9 +26,15 @@ struct CameraController {
         keys = []
     }
 
+    /// The defaults key of the app's setting: turning the other way round
+    /// (on unless turned off in Settings).
+    static let invertTurningKey = "camera.invertTurning"
+    static var invertTurning: Bool { UserDefaults.standard.object(forKey: invertTurningKey) as? Bool ?? true }
+
     mutating func drag(_ dx: Double, _ dy: Double, turning: Bool, size: SIMD2<Double>, flying: Bool) {
         if turning {
-            camera.turn(dx, dy, size: size, flying: flying)
+            let k = Self.invertTurning ? -1.0 : 1.0
+            camera.turn(dx * k, dy * k, size: size, flying: flying)
         } else {
             camera.pan(dx, dy, height: size.y)
         }

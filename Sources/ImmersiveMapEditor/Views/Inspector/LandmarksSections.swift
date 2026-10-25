@@ -4,7 +4,6 @@ import SwiftUI
 /// tile open, to pick one and look at it.
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
-    @Environment(\.openURL) private var openURL
 
     var body: some View {
         @Bindable var catalog = session.landmarks
@@ -31,7 +30,7 @@ struct LandmarksSections: View {
         }
         Section {
             if let m = catalog.selected {
-                Button("Open its folder") { openURL(m.folder) }
+                Button("Open its folder") { Platform.open(m.folder) }
             }
             Button("Read the models again") { session.scanLandmarks() }
         }

@@ -42,11 +42,44 @@ final class TileView: MTKView {
 
     private var size: SIMD2<Double> { SIMD2(Double(bounds.width), Double(bounds.height)) }
 
-    /// The tiles read again if the workspace's changed, framed when they are
-    /// another set.
+    /// The camera the views share: taken when the tiles load or the view is
+    /// shown, given back as the camera moves.
+    var sharedCamera: SharedCamera?
+    private var lastCamera: OrbitCamera?
+
+    /// The tiles read again if the workspace's changed, and the camera put
+    /// where the views share it, or over them, when they are another set.
     private func refresh() {
         guard library.isStale(model) else { return }
-        if library.reload(model, device: renderer.device) { frameTiles() }
+        if library.reload(model, device: renderer.device), !takeSharedCamera() { frameTiles() }
+    }
+
+    /// The camera where the views share it, once it is set and the tiles are
+    /// there. False when it is not.
+    @discardableResult
+    func takeSharedCamera() -> Bool {
+        guard let shared = sharedCamera, let region = model.shownProjection, let c = shared.centre(in: region),
+              bounds.height > 0 else { return false }
+        var camera = controller.camera
+        camera.target = SIMD3(c.x, 0, -c.y)
+        camera.distance = shared.metresPerPoint * Double(bounds.height) / (2 * tan(OrbitCamera.halfFov))
+        camera.yaw = shared.yaw
+        camera.pitch = shared.pitch
+        controller.camera = camera
+        lastCamera = camera
+        return true
+    }
+
+    /// The camera given to the views as it moves: the ground under its
+    /// target, the ground a point covers there, its heading and tilt.
+    private func giveSharedCamera() {
+        let camera = controller.camera
+        guard camera != lastCamera, let shared = sharedCamera, let region = model.shownProjection, bounds.height > 0 else { return }
+        lastCamera = camera
+        shared.set(centre: Vec2(camera.target.x, -camera.target.z), in: region,
+                   metresPerPoint: camera.distance * 2 * tan(OrbitCamera.halfFov) / Double(bounds.height))
+        shared.yaw = camera.yaw
+        shared.pitch = camera.pitch
     }
 
     /// The camera over the tiles shown, looking down at a slant.
@@ -144,6 +177,7 @@ extension TileView: MTKViewDelegate {
     func draw(in view: MTKView) {
         refresh()
         controller.step(flying: model.flying, fast: NSEvent.modifierFlags.contains(.shift))
+        giveSharedCamera()
         guard let pass = currentRenderPassDescriptor, let drawable = currentDrawable,
               let buffer = renderer.queue.makeCommandBuffer(),
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }

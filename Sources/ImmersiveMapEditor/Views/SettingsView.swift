@@ -5,8 +5,8 @@ import SwiftUI
 /// fetched with, kept in the user's defaults.
 struct SettingsView: View {
     @Environment(Session.self) private var session
-    @Environment(\.openURL) private var openURL
     @State private var picking = false
+    @AppStorage(CameraController.invertTurningKey) private var invertTurning = true
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
 
@@ -19,11 +19,16 @@ struct SettingsView: View {
                 Text("Every tile's folder (its OSM, roads and build), the landmarks' recipes and the exclusions.")
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
-                    Button("Show in Finder") { openURL(root) }
+                    Button("Show in Finder") { Platform.open(root) }
                     Button("Choose…") { picking = true }
                     Button("Use the Standard Folder") { use(nil) }
                         .disabled(root.standardizedFileURL == DataFolder.standard.standardizedFileURL)
                 }
+            }
+            Section("Camera") {
+                Toggle("Invert turning with the right mouse button", isOn: $invertTurning)
+                Text("Right-drag (or option-drag) turns and tilts the 3D views: the other way round while this is on.")
+                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Esri World Imagery") {
                 SecureField("ArcGIS key (optional)", text: $esri)

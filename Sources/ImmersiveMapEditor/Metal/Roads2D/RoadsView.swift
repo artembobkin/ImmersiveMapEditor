@@ -13,7 +13,11 @@ final class RoadsView: MTKView {
             frameAll()
         }
     }
-    private(set) var transform = ViewTransform2D()
+    private(set) var transform = ViewTransform2D() {
+        didSet { cameraMoved?(transform) }
+    }
+    /// Hears every move of the view, for the camera the views share.
+    var cameraMoved: ((ViewTransform2D) -> Void)?
     /// The working tile: the view shows it alone, and only what lies in it
     /// is picked and edited.
     var focus: TileKey? {
@@ -72,6 +76,14 @@ final class RoadsView: MTKView {
         }
         let t = model.doc.tiles, proj = model.doc.projection
         transform.frame(proj.tileRect(x: t.x0, y: t.y1).0, proj.tileRect(x: t.x1, y: t.y0).1, in: bounds.size)
+        needsDisplay = true
+    }
+
+    /// Looks at `centre` (the document's metres) at `scale` points a metre:
+    /// the camera the views share.
+    func look(at centre: Vec2, scale: Double) {
+        transform.centre = centre
+        transform.scale = min(max(scale, 0.05), 400)
         needsDisplay = true
     }
 

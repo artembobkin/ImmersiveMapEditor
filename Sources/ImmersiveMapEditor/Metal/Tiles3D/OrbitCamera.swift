@@ -4,7 +4,7 @@ import simd
 /// distance to it and the way it looks (yaw, pitch). World axes as the
 /// tiles': X east, Y up, -Z north. Every move here works as the engine's
 /// camera does (MapGestureControllerMac), so the two feel alike.
-struct OrbitCamera {
+struct OrbitCamera: Equatable {
     var target = SIMD3<Double>(0, 0, 0)
     var distance = 900.0
     /// Degrees from north, clockwise.
