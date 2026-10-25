@@ -1,7 +1,7 @@
 /// Adds nodes at the interior intersections only, and lists them: JTS's
 /// `InteriorIntersectionFinderAdder`.
 public final class InteriorIntersectionFinderAdder: SegmentIntersector {
-    public var li: RobustLineIntersector
+    @exclusivity(unchecked) public var li: RobustLineIntersector
     public private(set) var interiorIntersections: [Coordinate] = []
 
     public init(_ li: RobustLineIntersector) { self.li = li }

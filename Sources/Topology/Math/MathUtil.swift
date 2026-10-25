@@ -28,3 +28,16 @@ public enum MathUtil {
         return x
     }
 }
+
+extension MathUtil {
+    /// The inverse of the golden ratio, the step of `quasirandom`.
+    public static let phiInv = (5.0.squareRoot() - 1.0) / 2.0
+
+    /// The next value of a quasi-random sequence in [0, 1): an additive
+    /// recurrence with the golden ratio's inverse (JTS's `quasirandom`).
+    public static func quasirandom(_ curr: Double) -> Double {
+        let next = curr + phiInv
+        if next < 1 { return next }
+        return next - next.rounded(.down)
+    }
+}

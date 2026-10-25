@@ -116,6 +116,29 @@ public struct LineSegment: Equatable, CustomStringConvertible {
         Intersection.intersection(p0, p1, line.p0, line.p1)
     }
 
+    /// The point at a fraction along the segment, moved by a distance to its
+    /// left (right when negative). GEOS's arithmetic: the length is
+    /// `sqrt(dx * dx + dy * dy)`, the sums fused (`Fused.swift`).
+    public func pointAlongOffset(_ segmentLengthFraction: Double, _ offsetDistance: Double) throws -> Coordinate {
+        let segx = fusedAdd(segmentLengthFraction, p1.x - p0.x, p0.x)
+        let segy = fusedAdd(segmentLengthFraction, p1.y - p0.y, p0.y)
+        let dx = p1.x - p0.x
+        let dy = p1.y - p0.y
+        let len = fusedAdd(dx, dx, dy * dy).squareRoot()
+        var ux = 0.0, uy = 0.0
+        if offsetDistance != 0.0 {
+            if len <= 0.0 { throw IllegalStateException("Cannot compute offset from zero-length line segment") }
+            ux = offsetDistance * dx / len
+            uy = offsetDistance * dy / len
+        }
+        return Coordinate(segx - uy, segy + ux)
+    }
+
+    /// The segment moved by a distance to its left (right when negative).
+    public func offset(_ offsetDistance: Double) throws -> LineSegment {
+        LineSegment(try pointAlongOffset(0, offsetDistance), try pointAlongOffset(1, offsetDistance))
+    }
+
     public func compareTo(_ o: LineSegment) -> Int {
         let c = p0.compareTo(o.p0)
         if c != 0 { return c }

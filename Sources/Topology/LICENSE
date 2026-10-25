@@ -46,7 +46,10 @@ translation to Swift of std::sort and the heap
 algorithms (push_heap, pop_heap, make_heap, sort_heap and their sift helpers)
 of libc++, part of the LLVM Project, as found in the macOS SDK of Xcode
 (usr/include/c++/v1/__algorithm/sort.h, push_heap.h, pop_heap.h,
-sift_down.h, make_heap.h). That code is under the Apache License v2.0 with
+sift_down.h, make_heap.h). Index/CxxUnorderedMap.swift is a translation of
+the order libc++'s std::unordered_map keeps its elements in: its hash table
+with unique keys (usr/include/c++/v1/__hash_table: insertion, rehashing,
+bucket constraint) and the hash of a double (__functional/hash.h). That code is under the Apache License v2.0 with
 LLVM Exceptions (SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception),
 https://llvm.org/LICENSE.txt. Copyright the LLVM Project contributors.
 Its full text, as libc++ carries it (llvm-project, tag llvmorg-19.1.7,

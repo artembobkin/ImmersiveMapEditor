@@ -21,6 +21,9 @@ public final class STRtree<Item> {
     final class Node {
         let level: Int
         var children: [Boundable] = []
+        /// For a node of the lowest level, the index of its first item
+        /// among the leaves in the order the tree packed them.
+        var firstLeaf = 0
         private var cached: Envelope?
 
         init(level: Int) { self.level = level }
@@ -45,7 +48,20 @@ public final class STRtree<Item> {
     public enum TieOrder { case jts, geos }
     public let tieOrder: TieOrder
     private var itemBoundables: [Boundable] = []
+    /// The items in the order the tree packed them (sorted by x, then each
+    /// slice by y), the order GEOS keeps its leaves in.
+    private var leaves: [(Envelope, Item)] = []
     private var root: Node?
+    /// The built tree in one array for the queries: each node's children
+    /// next to each other, in their order (`flat[0]` the root). An entry
+    /// with `item >= 0` is an item, its index among `leaves`.
+    private struct FlatEntry {
+        var env: Envelope
+        var first = 0
+        var count = 0
+        var item = -1
+    }
+    private var flat: [FlatEntry] = []
 
     public init(nodeCapacity: Int = 10, tieOrder: TieOrder = .geos) {
         precondition(nodeCapacity > 1, "Node capacity must be greater than 1")
@@ -75,6 +91,30 @@ public final class STRtree<Item> {
         if root != nil { return }
         root = itemBoundables.isEmpty ? Node(level: 0) : createHigherLevels(itemBoundables, -1)
         itemBoundables = []
+        flatten()
+    }
+
+    private func flatten() {
+        let root = root!
+        flat = [FlatEntry(env: root.bounds)]
+        var queue: [(Int, Node)] = [(0, root)]
+        var head = 0
+        while head < queue.count {
+            let (idx, node) = queue[head]
+            head += 1
+            let first = flat.count
+            for (k, c) in node.children.enumerated() {
+                switch c {
+                case .node(let n):
+                    flat.append(FlatEntry(env: n.bounds))
+                    queue.append((flat.count - 1, n))
+                case .item(let e, _):
+                    flat.append(FlatEntry(env: e, item: node.firstLeaf + k))
+                }
+            }
+            flat[idx].first = first
+            flat[idx].count = node.children.count
+        }
     }
 
     public var isEmpty: Bool {
@@ -139,6 +179,12 @@ public final class STRtree<Item> {
             if parents.last!.children.count == nodeCapacity { parents.append(Node(level: newLevel)) }
             parents.last!.children.append(c)
         }
+        if newLevel == 0 {
+            for p in parents {
+                p.firstLeaf = leaves.count
+                for case .item(let e, let item) in p.children { leaves.append((e, item)) }
+            }
+        }
         return parents.map { .node($0) }
     }
 
@@ -154,19 +200,59 @@ public final class STRtree<Item> {
     public func query(_ searchEnv: Envelope, _ visit: (Item) -> Void) {
         build()
         if isEmpty { return }
-        guard root!.bounds.intersects(searchEnv) else { return }
-        queryInternal(searchEnv, root!, visit)
+        guard flat[0].env.intersects(searchEnv) else { return }
+        flat.withUnsafeBufferPointer { f in
+            leaves.withUnsafeBufferPointer { l in STRtree.queryFlat(f, l, searchEnv, 0, visit) }
+        }
     }
 
-    func queryInternal(_ searchEnv: Envelope, _ node: Node, _ visit: (Item) -> Void) {
-        for child in node.children {
-            guard child.bounds.intersects(searchEnv) else { continue }
-            switch child {
-            case .node(let n): queryInternal(searchEnv, n, visit)
-            case .item(_, let item): visit(item)
+    private static func queryFlat(_ f: UnsafeBufferPointer<FlatEntry>, _ l: UnsafeBufferPointer<(Envelope, Item)>,
+                                  _ searchEnv: Envelope, _ idx: Int, _ visit: (Item) -> Void) {
+        let e = f[idx]
+        for c in e.first..<(e.first + e.count) {
+            let ch = f[c]
+            guard ch.env.intersects(searchEnv) else { continue }
+            if ch.item >= 0 { visit(l[ch.item].1) } else { queryFlat(f, l, searchEnv, c, visit) }
+        }
+    }
+
+
+    /// The items in the order the tree packed them: sorted by the x of
+    /// their envelope's centre, then each vertical slice by the y.
+    public func itemsInPackedOrder() -> [Item] {
+        build()
+        return leaves.map(\.1)
+    }
+
+    /// Every pair of items whose envelopes meet, once: for each item in the
+    /// packed order, the items after it in that order that the tree finds
+    /// for its envelope, in the tree's depth-first order. This is the order
+    /// GEOS 3.13's STR tree reports pairs in (JTS queries the tree for each
+    /// item in insertion order instead). The visit returns false to stop.
+    public func queryPairs(_ visit: (Item, Item) -> Bool) {
+        build()
+        guard leaves.count >= 2 else { return }
+        flat.withUnsafeBufferPointer { f in
+            leaves.withUnsafeBufferPointer { l in
+                for i in l.indices where !STRtree.queryPairsFlat(f, l, i, l[i].0, 0, visit) { return }
             }
         }
     }
+
+    private static func queryPairsFlat(_ f: UnsafeBufferPointer<FlatEntry>, _ l: UnsafeBufferPointer<(Envelope, Item)>,
+                                       _ i: Int, _ queryEnv: Envelope, _ idx: Int, _ visit: (Item, Item) -> Bool) -> Bool {
+        let e = f[idx]
+        for c in e.first..<(e.first + e.count) {
+            let ch = f[c]
+            if ch.item >= 0 {
+                if ch.item > i && ch.env.intersects(queryEnv) && !visit(l[i].1, l[ch.item].1) { return false }
+            } else if ch.env.intersects(queryEnv) && !queryPairsFlat(f, l, i, queryEnv, c, visit) {
+                return false
+            }
+        }
+        return true
+    }
+
 
     // MARK: Nearest neighbour
 

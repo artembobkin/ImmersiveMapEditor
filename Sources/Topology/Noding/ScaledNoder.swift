@@ -29,7 +29,7 @@ public final class ScaledNoder: Noder {
         if isScaled {
             strings = inputSegStrings.map { ss in
                 let round = ss.getCoordinates().map {
-                    Coordinate(javaRound(($0.x - offsetX) * scaleFactor), javaRound(($0.y - offsetY) * scaleFactor))
+                    Coordinate(geosRound(($0.x - offsetX) * scaleFactor), geosRound(($0.y - offsetY) * scaleFactor))
                 }
                 return NodedSegmentString(CoordinateArrays.removeRepeatedPoints(round), ss.getData())
             }

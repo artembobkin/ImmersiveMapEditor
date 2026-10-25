@@ -6,7 +6,7 @@ public final class NodingIntersectionFinder: SegmentIntersector {
     public var isCheckEndSegmentsOnly = false
     public var keepIntersections = true
     public var isInteriorIntersectionsOnly = false
-    var li: RobustLineIntersector
+    @exclusivity(unchecked) var li: RobustLineIntersector
     public private(set) var interiorIntersection: Coordinate?
     public private(set) var intSegments: [Coordinate]?
     public private(set) var intersections: [Coordinate] = []

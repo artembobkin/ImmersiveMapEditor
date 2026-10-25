@@ -15,31 +15,52 @@
     return a >= b ? a : b
 }
 
-/// Java's `Math.round` of a double, as a double: the nearest integer, ties
-/// toward positive infinity. NaN gives 0, and values beyond the range of a
-/// `long` clamp to it, as in Java.
-@inline(__always) func javaRound(_ v: Double) -> Double {
-    if v.isNaN { return 0 }
-    let f = v.rounded(.down)
-    let r = v - f >= 0.5 ? f + 1 : f
-    if r >= 9.223372036854775807e18 { return 9.223372036854775807e18 }
-    if r <= -9.223372036854775808e18 { return -9.223372036854775808e18 }
-    return r
-}
-
 /// A stable merge sort by a JTS `compareTo`: Java's `Arrays.sort` of objects
 /// keeps equal elements in their order, so this does too.
+/// Top down (each half from `count / 2`), merging with one scratch buffer;
+/// of two elements the left one is taken unless the right one is less.
 func javaSorted<T>(_ a: [T], _ compare: (T, T) -> Int) -> [T] {
     if a.count < 2 { return a }
-    let mid = a.count / 2
-    let left = javaSorted(Array(a[..<mid]), compare), right = javaSorted(Array(a[mid...]), compare)
-    var out: [T] = []
-    out.reserveCapacity(a.count)
-    var i = 0, j = 0
-    while i < left.count && j < right.count {
-        if compare(right[j], left[i]) < 0 { out.append(right[j]); j += 1 } else { out.append(left[i]); i += 1 }
+    var out = a
+    var scratch = a
+    out.withUnsafeMutableBufferPointer { o in
+        scratch.withUnsafeMutableBufferPointer { s in
+            javaMergeSort(o, s, 0, o.count, compare)
+        }
     }
-    out.append(contentsOf: left[i...])
-    out.append(contentsOf: right[j...])
     return out
+}
+
+private func javaMergeSort<T>(_ a: UnsafeMutableBufferPointer<T>, _ s: UnsafeMutableBufferPointer<T>,
+                              _ lo: Int, _ hi: Int, _ compare: (T, T) -> Int) {
+    let n = hi - lo
+    if n < 2 { return }
+    let mid = lo + n / 2
+    javaMergeSort(a, s, lo, mid, compare)
+    javaMergeSort(a, s, mid, hi, compare)
+    var i = lo, j = mid, k = lo
+    while i < mid && j < hi {
+        if compare(a[j], a[i]) < 0 { s[k] = a[j]; j += 1 } else { s[k] = a[i]; i += 1 }
+        k += 1
+    }
+    while i < mid { s[k] = a[i]; i += 1; k += 1 }
+    while j < hi { s[k] = a[j]; j += 1; k += 1 }
+    for t in lo..<hi { a[t] = s[t] }
+}
+
+/// GEOS's rounding (`util::round`, its `java_math_round`): the nearest
+/// integer, halves toward positive infinity, as Java's `Math.round`, but
+/// from `floor` and `ceil`, so a value in (-0.5, 0] rounds to `-0.0` (Java
+/// gives `0.0`), and with no clamping to a `long`. NaN stays NaN.
+@inline(__always) func geosRound(_ val: Double) -> Double {
+    let n = val.rounded(.towardZero)
+    let f = abs(val - n)
+    if val >= 0 {
+        if f < 0.5 { return val.rounded(.down) }
+        if f > 0.5 { return val.rounded(.up) }
+        return n + 1.0
+    }
+    if f < 0.5 { return val.rounded(.up) }
+    if f > 0.5 { return val.rounded(.down) }
+    return n
 }

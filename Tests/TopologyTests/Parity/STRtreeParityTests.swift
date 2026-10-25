@@ -86,9 +86,9 @@ import geos
                 let theirs = geos.query(gq)
                 query.check(mine == theirs, "\(shapes.count) items, query \(q): \(mine.count) vs \(theirs.count)")
                 if q.isEmpty { continue }
-                let n = port.nearestNeighbour(q.topology().getEnvelopeInternal(), -1) { i, _ in
-                    geos.items[i].measure(gq, GEOSDistance_r) ?? .nan
-                }
+                // The port's own distance (phase 4) on the port's side.
+                let items = shapes.map { $0.topology() }, qt = q.topology()
+                let n = port.nearestNeighbour(qt.getEnvelopeInternal(), -1) { i, _ in items[i].distance(qt) }
                 let g = geos.nearest(gq)
                 nearest.check(n == g, "\(shapes.count) items, \(q): \(String(describing: n)) vs \(String(describing: g))")
             }

@@ -9,7 +9,7 @@ public final class IntersectionAdder: SegmentIntersector {
     public private(set) var hasProperInterior = false
     public private(set) var hasInterior = false
     public private(set) var properIntersectionPoint: Coordinate?
-    public var li: RobustLineIntersector
+    @exclusivity(unchecked) public var li: RobustLineIntersector
     public var numIntersections = 0
     public var numInteriorIntersections = 0
     public var numProperIntersections = 0

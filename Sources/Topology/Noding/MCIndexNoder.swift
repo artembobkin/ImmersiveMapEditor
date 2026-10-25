@@ -1,7 +1,11 @@
 /// Nodes segment strings by their monotone chains, found overlapping through
 /// a spatial index: JTS's `MCIndexNoder`. The index is the STR tree (JTS 1.20
-/// uses a Hilbert R-tree here: the pairs found are the same, only their order
-/// may differ, and the STR tree is GEOS's choice).
+/// uses a Hilbert R-tree here), and the pairs of chains are taken in the
+/// order GEOS 3.13 takes them: every chain against the chains after it in
+/// the tree's packed order (`STRtree.queryPairs`), the earlier one first.
+/// JTS takes each chain in insertion order against the chains of a higher
+/// id. The pairs are the same; their order decides which of two equal
+/// coordinates (`0.0` and `-0.0`) a node gets, and GEOS's order gives GEOS's.
 public final class MCIndexNoder: Noder {
     public private(set) var monoChains: [MonotoneChain] = []
     let index = STRtree<MonotoneChain>()
@@ -21,22 +25,18 @@ public final class MCIndexNoder: Noder {
     public func computeNodes(_ inputSegStrings: [SegmentString]) {
         nodedSegStrings = inputSegStrings
         for s in inputSegStrings { add(s) }
+        for mc in monoChains { index.insert(mc.getEnvelope(overlapTolerance), mc) }
         intersectChains()
     }
 
     func intersectChains() {
         guard let segInt else { return }
-        for queryChain in monoChains {
-            let queryEnv = queryChain.getEnvelope(overlapTolerance)
-            for testChain in index.query(queryEnv) {
-                if testChain.id > queryChain.id {
-                    queryChain.computeOverlaps(testChain, overlapTolerance) { mc1, start1, mc2, start2 in
-                        segInt.processIntersections(mc1.context!, start1, mc2.context!, start2)
-                    }
-                    nOverlaps += 1
-                }
-                if segInt.isDone() { return }
+        index.queryPairs { queryChain, testChain in
+            queryChain.computeOverlaps(testChain, overlapTolerance) { mc1, start1, mc2, start2 in
+                segInt.processIntersections(mc1.context!, start1, mc2.context!, start2)
             }
+            nOverlaps += 1
+            return !segInt.isDone()
         }
     }
 
@@ -44,7 +44,6 @@ public final class MCIndexNoder: Noder {
         for mc in MonotoneChainBuilder.getChains(segStr.getCoordinates(), segStr) {
             mc.id = idCounter
             idCounter += 1
-            index.insert(mc.getEnvelope(overlapTolerance), mc)
             monoChains.append(mc)
         }
     }

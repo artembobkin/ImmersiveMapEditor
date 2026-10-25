@@ -2,7 +2,13 @@ import Darwin
 
 /// The precision of coordinates: JTS's `PrecisionModel`. Floating (doubles,
 /// the default), floating single (floats) or fixed: a grid of `1 / scale`,
-/// or of `gridSize` when made from a negative scale.
+/// or of the grid size given as a negative scale.
+///
+/// A fixed model is GEOS 3.13's, which differs from JTS 1.20's: a scale (or
+/// grid size) within 1e-5 of an integer is made that integer, the grid size
+/// is always kept beside the scale, and a value is rounded on the grid size
+/// when it is above 1, else by the scale, with GEOS's rounding (`geosRound`,
+/// which keeps the sign of a zero, JTS's `Math.round` does not).
 public struct PrecisionModel: Equatable, Sendable {
     public enum Kind: Sendable { case fixed, floating, floatingSingle }
 
@@ -12,6 +18,7 @@ public struct PrecisionModel: Equatable, Sendable {
 
     /// The largest integer a double holds exactly.
     public static let maximumPreciseValue = 9007199254740992.0
+    static let gridSizeIntegerTolerance = 1e-5
 
     public static let floating = PrecisionModel()
 
@@ -44,27 +51,38 @@ public struct PrecisionModel: Equatable, Sendable {
 
     public var gridSize: Double {
         if isFloating { return .nan }
-        if storedGridSize != 0 { return storedGridSize }
-        return 1.0 / scale
+        return storedGridSize
     }
 
-    private mutating func setScale(_ s: Double) {
-        if s < 0 {
-            storedGridSize = abs(s)
-            scale = 1.0 / storedGridSize
-        } else {
-            scale = abs(s)
+    private mutating func setScale(_ newScale: Double) {
+        if newScale == 0 {
+            scale = 0
             storedGridSize = 0
+        }
+        scale = newScale < 0 ? 1.0 / abs(newScale) : newScale
+        // A nearly integral scale or grid size is made exact: the common
+        // case of fractional powers of ten.
+        if scale < 1 {
+            storedGridSize = PrecisionModel.snapToInt(1.0 / scale, PrecisionModel.gridSizeIntegerTolerance)
+        } else {
+            scale = PrecisionModel.snapToInt(scale, PrecisionModel.gridSizeIntegerTolerance)
+            storedGridSize = 1.0 / scale
         }
     }
 
+    private static func snapToInt(_ val: Double, _ tolerance: Double) -> Double {
+        let valInt = val.rounded(.toNearestOrAwayFromZero)
+        if abs(val - valInt) < tolerance { return valInt }
+        return val
+    }
+
     public func makePrecise(_ v: Double) -> Double {
-        if v.isNaN { return v }
         switch kind {
         case .floatingSingle: return Double(Float(v))
         case .fixed:
-            if storedGridSize > 0 { return javaRound(v / storedGridSize) * storedGridSize }
-            return javaRound(v * scale) / scale
+            if storedGridSize > 1 { return geosRound(v / storedGridSize) * storedGridSize }
+            if scale != 0 { return geosRound(v * scale) / scale }
+            return v
         case .floating: return v
         }
     }

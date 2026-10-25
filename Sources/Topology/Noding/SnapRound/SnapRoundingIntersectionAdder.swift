@@ -1,7 +1,7 @@
 /// Finds the intersections of segments, and the vertices nearly on a
 /// segment, for snap rounding: JTS's `SnapRoundingIntersectionAdder`.
 public final class SnapRoundingIntersectionAdder: SegmentIntersector {
-    var li = RobustLineIntersector()
+    @exclusivity(unchecked) var li = RobustLineIntersector()
     public private(set) var intersections: [Coordinate] = []
     let nearnessTol: Double
 

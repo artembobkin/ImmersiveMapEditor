@@ -110,8 +110,8 @@ struct ReplayTests {
 }
 
 /// The recorded trees (`STRtree.init`) rebuilt on both sides, their
-/// recorded queries and nearest searches replayed. The nearest item is found
-/// with GEOS's distance on both sides (the port's comes in phase 4).
+/// recorded queries and nearest searches replayed, the nearest item found
+/// by each side's own distance (`GEOSDistance`, the port's `distance`).
 @Suite(.enabled(if: Recording.available, "no recordings in .build/recording (see Docs/PortingTopologyProgress.md)"))
 struct STRtreeReplayTests {
     @Test func treesQueriesAndNearest() {
@@ -121,12 +121,14 @@ struct STRtreeReplayTests {
         for r in (try? Recording.load()) ?? [] {
             let inputs = ReplayTests.Inputs(r, o)
             var trees: [Double: (STRtree<Int>, STRtreeParityTests.GEOSTree)] = [:]
+            var ports: [Double: [Topology.Geometry]] = [:]
             for c in r.calls {
                 switch c.name {
                 case "STRtree.init":
                     let port = STRtree<Int>(nodeCapacity: 10, tieOrder: .geos)
                     for (i, id) in c.geometries.enumerated() { port.insert(inputs.port(id).getEnvelopeInternal(), i) }
                     trees[c.numbers[0]] = (port, STRtreeParityTests.GEOSTree(o, c.geometries.map { inputs.geos($0) }))
+                    ports[c.numbers[0]] = c.geometries.map { inputs.port($0) }
                 case "STRtree.query":
                     guard let (port, geos) = trees[c.numbers[0]] else { continue }
                     let g = inputs.geos(c.geometries[0])
@@ -136,8 +138,9 @@ struct STRtreeReplayTests {
                     guard let (port, geos) = trees[c.numbers[0]] else { continue }
                     let g = inputs.geos(c.geometries[0])
                     let p = inputs.port(c.geometries[0])
+                    let items = ports[c.numbers[0]] ?? []
                     let mine = geos.items.isEmpty ? nil : port.nearestNeighbour(p.getEnvelopeInternal(), -1) { i, _ in
-                        geos.items[i].measure(g, GEOSDistance_r) ?? .nan
+                        items[i].distance(p)
                     }
                     nearest.check(mine == geos.nearest(g), "\(r.name) #\(c.geometries[0]): \(String(describing: mine)) vs \(String(describing: geos.nearest(g)))")
                 default: break

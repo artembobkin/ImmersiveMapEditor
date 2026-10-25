@@ -76,12 +76,12 @@ public final class MonotoneChain {
     }
 
     static func overlaps(_ p1: Coordinate, _ p2: Coordinate, _ q1: Coordinate, _ q2: Coordinate, _ tolerance: Double) -> Bool {
-        var minq = javaMin(q1.x, q2.x), maxq = javaMax(q1.x, q2.x)
-        var minp = javaMin(p1.x, p2.x), maxp = javaMax(p1.x, p2.x)
+        var minq = cxxMin(q1.x, q2.x), maxq = cxxMax(q1.x, q2.x)
+        var minp = cxxMin(p1.x, p2.x), maxp = cxxMax(p1.x, p2.x)
         if minp > maxq + tolerance { return false }
         if maxp < minq - tolerance { return false }
-        minq = javaMin(q1.y, q2.y); maxq = javaMax(q1.y, q2.y)
-        minp = javaMin(p1.y, p2.y); maxp = javaMax(p1.y, p2.y)
+        minq = cxxMin(q1.y, q2.y); maxq = cxxMax(q1.y, q2.y)
+        minp = cxxMin(p1.y, p2.y); maxp = cxxMax(p1.y, p2.y)
         if minp > maxq + tolerance { return false }
         if maxp < minq - tolerance { return false }
         return true

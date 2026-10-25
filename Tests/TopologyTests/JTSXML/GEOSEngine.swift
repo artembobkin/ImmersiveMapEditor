@@ -15,8 +15,19 @@ struct GEOSEngine: JTSTestEngine {
         let isHex = !hex.isEmpty && hex.allSatisfy { (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }
         guard let g = isHex ? oracle.read(hex: wkt) : oracle.read(wkt: wkt) else { throw JTSEngineError("unreadable: \(oracle.takeError() ?? wkt)") }
         guard let scale else { return g }
-        // JTS's WKTReader makes every coordinate precise to the model.
-        let precise = { (v: Double) in (v * scale + 0.5).rounded(.down) / scale }
+        // JTS's WKTReader makes every coordinate precise to the model, here as
+        // GEOS 3.13's fixed model rounds: a scale within 1e-5 of an integer
+        // made that integer, on the grid size above 1, by the scale below,
+        // with GEOS's rounding of `floor` and `ceil` (`-0.0` kept).
+        func geosRound(_ v: Double) -> Double {
+            let n = v.rounded(.towardZero), f = abs(v - n)
+            if v >= 0 { return f < 0.5 ? v.rounded(.down) : (f > 0.5 ? v.rounded(.up) : n + 1) }
+            return f < 0.5 ? v.rounded(.up) : (f > 0.5 ? v.rounded(.down) : n)
+        }
+        func snap(_ v: Double) -> Double { abs(v - v.rounded()) < 1e-5 ? v.rounded() : v }
+        let s = scale < 1 ? scale : snap(scale)
+        let grid = scale < 1 ? snap(1 / scale) : 1 / s
+        let precise = { (v: Double) in grid > 1 ? geosRound(v / grid) * grid : geosRound(v * s) / s }
         guard let p = oracle.transformed(g, { (precise($0), precise($1)) }) else { throw JTSEngineError("transform failed") }
         return p
     }
