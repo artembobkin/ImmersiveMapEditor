@@ -1,8 +1,11 @@
 /// Parity of the Swift osm2streets with the Rust binary on osm2streets's own
 /// test cases and on the Moscow data of the pipeline. Skips when the binary
-/// or the cases are missing. Each case's summary is printed.
+/// or the cases are missing. Each case's summary is printed. Also the committed
+/// `geometry.json` of osm2streets's tests, against the port alone.
 
 import Foundation
+import StreetGeom
+import Streets
 import Testing
 
 @Suite(.serialized, .enabled(if: Oracle.available, "the Rust osm2streets-cli is not built"))
@@ -19,6 +22,29 @@ struct StreetsParityTests {
                                     clip: FileManager.default.fileExists(atPath: clip.path) ? clip : nil)
         print("PARITY \(run.summary)")
         #expect(run.allMatch, "\(run.summary)")
+    }
+
+    /// The committed `geometry.json` of osm2streets's tests, made as its
+    /// tests make it: the default configuration (no inferred sidewalks),
+    /// invariants checked, the transformations for clipped areas.
+    @Test(arguments: cases)
+    func committedGeometry(_ name: String) throws {
+        let dir = Oracle.testsDir.appendingPathComponent(name)
+        let expectedURL = dir.appendingPathComponent("geometry.json")
+        guard FileManager.default.fileExists(atPath: expectedURL.path) else { return }
+        let clipURL = dir.appendingPathComponent("boundary.json")
+        let clip = try FileManager.default.fileExists(atPath: clipURL.path)
+            ? LonLat.parseGeoJSONPolygons(String(contentsOf: clipURL, encoding: .utf8))[0].0 : nil
+        var streets = try StreetNetwork.fromOSM(Array(try Data(contentsOf: dir.appendingPathComponent("input.osm"))),
+                                                clip: clip, config: MapConfig())
+        streets.checkInvariants()
+        streets.applyTransformationsWithInvariantChecks(Transformation.standardForClippedAreas())
+        let actual = streets.toGeoJSON(.all)
+        let expected = try String(contentsOf: expectedURL, encoding: .utf8)
+        let c = GeoJSONComparison.compare(expected: expected, actual: actual)
+        print("GEOMETRY \(name): \(c.featuresActual)/\(c.featuresExpected) features, "
+              + (c.identicalText ? "identical" : (c.matches ? "equal within 1e-9" : "differs at \(c.firstDifference!)")))
+        #expect(c.identicalText, "\(c.firstDifference ?? "")")
     }
 
     static let region = Oracle.tilePipelineData.appendingPathComponent("regions/15_19808_10242_19809_10243")

@@ -7,5 +7,5 @@ Docs/PortingParity.md of this package.
 It also translates abstutil's `Tags` and `wraparound_get`
 (https://github.com/a-b-street/abstreet, revision ca1fb9a), used under the
 Apache License, Version 2.0. It does not contain any part of Muv
-(muv-osm, MPL-2.0): the reading of lanes from tags, which osm2lanes does
-through Muv, is left to a `LaneSpecSource`.
+(muv-osm, MPL-2.0): osm2lanes reads lanes from tags through Muv, which is
+the separate target MuvLanes, under its own licence.

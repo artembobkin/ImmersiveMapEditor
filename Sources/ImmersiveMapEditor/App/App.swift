@@ -14,10 +14,13 @@ import SwiftUI
 /// ~/Desktop/TilePipeline.
 @main
 enum Entry {
-    static func main() async {
-        if let code = await Headless.run(CommandLine.arguments) { exit(code) }
-        Platform.activateBareExecutable()
-        EditorApp.main()
+    /// Synchronous on purpose: see `Platform.runMain`.
+    static func main() {
+        Platform.runMain {
+            if let code = await Headless.run(CommandLine.arguments) { exit(code) }
+            Platform.activateBareExecutable()
+            EditorApp.main()
+        }
     }
 }
 

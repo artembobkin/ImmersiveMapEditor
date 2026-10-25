@@ -1,21 +1,9 @@
-/// Lanes recorded per tag set, a `LaneSpecSource` for when the lanes were
-/// worked out elsewhere (the parity tests record them from the Rust
-/// osm2streets). Also: the tag sets of the ways of an OSM file that become
-/// roads, which is what such a record has to cover.
+/// The tag sets of the ways of an OSM file that streets_reader turns into
+/// roads, each once in the order first met (the parity tests report how
+/// many a case has).
 
 import OSMReader
 import StreetGeom
-
-public struct RecordedLaneSpecs: LaneSpecSource {
-    public var lanes: [Tags: [LaneSpec]]
-
-    public init(_ lanes: [Tags: [LaneSpec]]) { self.lanes = lanes }
-
-    public func laneSpecsLTR(_ tags: Tags, _ config: MapConfig) -> [LaneSpec] {
-        guard let specs = lanes[tags] else { fatalError("No recorded lanes for the tags \(tags.inner())") }
-        return specs
-    }
-}
 
 extension Tags: Hashable {
     public func hash(into hasher: inout Hasher) { hasher.combine(map) }

@@ -57,4 +57,16 @@ enum Platform {
     static func activateBareExecutable() {
         if Bundle.main.bundleIdentifier == nil { NSApplication.shared.setActivationPolicy(.regular) }
     }
+
+    /// Runs `body` on the main actor and serves the main queue for good: the
+    /// entry point of the executable, which must not be an `async` main. An
+    /// async `@main` here emits its entry thunk under the same name as the
+    /// test runner's (`async_Main`), and in an optimised build of the tests
+    /// (`swift test -c release`) the linker keeps this module's copy, so the
+    /// test process started the editor instead of the tests and waited for
+    /// window events at no CPU.
+    static func runMain(_ body: @escaping @MainActor () async -> Void) -> Never {
+        Task { @MainActor in await body() }
+        dispatchMain()
+    }
 }

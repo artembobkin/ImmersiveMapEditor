@@ -9,7 +9,7 @@ extension StreetNetwork {
     /// streets_reader's `osm_to_street_network`. `clipPts` is the boundary
     /// polygon in longitude and latitude, or nil to use the file's bounds.
     public static func fromOSM(_ input: [UInt8], clip clipPts: [LonLat]?, config: MapConfig,
-                               laneSpecs: LaneSpecSource) throws -> StreetNetwork {
+                               laneSpecs: LaneSpecSource = MuvLaneSpecs()) throws -> StreetNetwork {
         var streets = StreetNetwork.blank(laneSpecs: laneSpecs)
         streets.config = config
         let extract = try streets.extractOSM(input, clipPts)

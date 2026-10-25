@@ -11,7 +11,7 @@ import Foundation
 ///   landmarks/               recipes, the landmark registry, downloaded models
 ///   config/                  what OSM shows but the place does not have
 ///   out/tiles/<z>/<x>/<y>/   the built tiles
-///   tools/osm2streets_cli/   the one tool not in Swift
+///   tools/osm2streets_cli/   the Rust osm2streets, only the oracle of the Streets tests
 public struct WorkspacePaths: Sendable {
     public let root: URL
     /// Hand-made models of ~/Desktop/Modeling, read only.
@@ -30,7 +30,6 @@ public struct WorkspacePaths: Sendable {
     public var landmarks: URL { root.appendingPathComponent("landmarks") }
     public var config: URL { root.appendingPathComponent("config") }
     public var tilesOut: URL { root.appendingPathComponent("out/tiles") }
-    public var osm2streets: URL { root.appendingPathComponent("tools/osm2streets_cli/target/release/osm2streets-cli") }
 
     /// A tile's raw sources.
     public func tileData(z: Int, x: Int, y: Int) -> URL { data.appendingPathComponent("\(z)_\(x)_\(y)") }

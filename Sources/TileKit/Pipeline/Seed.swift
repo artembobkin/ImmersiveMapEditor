@@ -1,5 +1,7 @@
 import Foundation
 import Geometry
+import StreetGeom
+import Streets
 
 /// Seeds the road document of a range of tiles from osm2streets and OSM,
 /// and writes what the editor shows under it. Every tile of the range must
@@ -15,8 +17,8 @@ import Geometry
 ///   roads/<range>.json                 the road document
 ///
 /// A road document holds hand edits: it is not overwritten unless forced.
-/// osm2streets is the one tool that is not Swift: a small Rust program in
-/// tools/osm2streets_cli, built once with `cargo build --release`.
+/// osm2streets runs in process, the Swift port of the `Streets` target (the
+/// Rust binary in tools/osm2streets_cli is only the oracle of its tests).
 public enum Seed {
     static let margin = 80.0        // metres of streets around the range, within the fetched margin
 
@@ -29,12 +31,9 @@ public enum Seed {
         if FileManager.default.fileExists(atPath: path.path) && !force {
             throw PipelineError("roads/\(region.name).json exists and may hold hand edits: seed it again only when forced")
         }
-        guard FileManager.default.isExecutableFile(atPath: paths.osm2streets.path) else {
-            throw PipelineError("build the osm2streets CLI first: (cd tools/osm2streets_cli && cargo build --release)")
-        }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let elements = try merge(region, folder, paths)
-        let streets = try streets(region, elements, folder, cli: paths.osm2streets)
+        let streets = try streets(region, elements, folder)
         let osm = try Osm(region)
         let work = region.bounds.buffer(margin, join: .mitre)
         let doc = Roads.document(try Roads.seed(osm, streets: streets, work: work), region: region)
@@ -97,32 +96,36 @@ public enum Seed {
         return out + "</osm>\n"
     }
 
-    /// osm2streets over the merged OSM, clipped to the range plus `margin`.
-    static func streets(_ region: Region, _ elements: [[String: Any]], _ folder: URL, cli: URL) throws -> URL {
+    /// osm2streets over the merged OSM, clipped to the range plus `margin`:
+    /// the Swift port (`Streets`), in process, with the pipeline's
+    /// configuration (sidewalks and kerbs inferred) and the transformations
+    /// for clipped areas. Writes its four GeoJSON outputs and the clip.
+    static func streets(_ region: Region, _ elements: [[String: Any]], _ folder: URL) throws -> URL {
         let out = folder.appendingPathComponent("streets")
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-        let input = out.appendingPathComponent("input.osm")
-        try osmXML(elements).write(to: input, atomically: true, encoding: .utf8)
+        let input = Array(osmXML(elements).utf8)
         let (x0, y0, x1, y1) = region.bounds.buffer(margin, join: .mitre).bounds
         let (w, s) = region.lonLat(P2(x0, y0)), (e, n) = region.lonLat(P2(x1, y1))
         let clip: [String: Any] = ["type": "Feature", "properties": [String: Any](),
                                    "geometry": ["type": "Polygon", "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]]]]
         let clipURL = out.appendingPathComponent("clip.geojson")
         try JSONSerialization.data(withJSONObject: clip).write(to: clipURL)
-        let p = Process()
-        p.executableURL = cli
-        p.arguments = [input.path, clipURL.path, out.path]
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        try p.run()
-        let log = pipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        guard p.terminationStatus == 0 else {
-            throw PipelineError("osm2streets failed: \(String(decoding: log.suffix(4000), as: UTF8.self))")
-        }
-        print(String(decoding: log, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-        try? FileManager.default.removeItem(at: input)
+        // The clip is read back from its file, as the Rust binary read it.
+        let polygons = try LonLat.parseGeoJSONPolygons(String(contentsOf: clipURL, encoding: .utf8))
+        guard polygons.count == 1 else { throw PipelineError("the clip GeoJSON must hold exactly one polygon") }
+        var config = MapConfig()
+        config.inferredSidewalks = true
+        config.inferredKerbs = true
+        var network = try StreetNetwork.fromOSM(input, clip: polygons[0].0, config: config)
+        network.applyTransformations(Transformation.standardForClippedAreas())
+        try network.toGeoJSON(.all).write(to: out.appendingPathComponent("plain.geojson"), atomically: true, encoding: .utf8)
+        try network.toLanePolygonsGeoJSON(.all)
+            .write(to: out.appendingPathComponent("lanes.geojson"), atomically: true, encoding: .utf8)
+        try network.toLaneMarkingsGeoJSON(.all)
+            .write(to: out.appendingPathComponent("lane_markings.geojson"), atomically: true, encoding: .utf8)
+        try network.toIntersectionMarkingsGeoJSON(.all)
+            .write(to: out.appendingPathComponent("intersection_markings.geojson"), atomically: true, encoding: .utf8)
+        print("\(network.roads.count) roads, \(network.intersections.count) intersections")
         return out
     }
 

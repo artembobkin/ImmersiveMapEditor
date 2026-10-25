@@ -16,7 +16,7 @@ struct ParityRun {
     /// The port's time, from reading the OSM to the four outputs.
     var seconds = 0.0
     var comparisons: [String: GeoJSONComparison] = [:]
-    var lanesRecorded = 0
+    var tagSets = 0
     var roads = 0
     var intersections = 0
     /// Distinct Rust results seen, when the first one did not match.
@@ -44,10 +44,10 @@ struct ParityRun {
             return polygons[0].0
         }
         let config = pipelineConfig()
-        let lanes = try LaneHarvest.record(input: bytes, clip: clipPts, config: config, work: work)
+        let tagSets = try RoadWays.collect(bytes, clip: clipPts, config: config).tagSets.count
         let clock = ContinuousClock()
         let started = clock.now
-        var streets = try StreetNetwork.fromOSM(bytes, clip: clipPts, config: config, laneSpecs: lanes)
+        var streets = try StreetNetwork.fromOSM(bytes, clip: clipPts, config: config)
         streets.applyTransformations(Transformation.standardForClippedAreas())
         let actual = [
             "plain": streets.toGeoJSON(.all),
@@ -59,7 +59,7 @@ struct ParityRun {
         let swiftDir = work.appendingPathComponent("swift")
         try FileManager.default.createDirectory(at: swiftDir, withIntermediateDirectories: true)
         var result = ParityRun(name: name, seconds: Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) * 1e-18,
-                               lanesRecorded: lanes.lanes.count, roads: streets.roads.count,
+                               tagSets: tagSets, roads: streets.roads.count,
                                intersections: streets.intersections.count)
         for k in Oracle.outputs {
             try actual[k]!.write(to: swiftDir.appendingPathComponent("\(k).geojson"), atomically: true, encoding: .utf8)
@@ -79,7 +79,7 @@ struct ParityRun {
     }
 
     var summary: String {
-        var s = "\(name) (\(String(format: "%.2f", seconds)) s): \(roads) roads, \(intersections) intersections, \(lanesRecorded) tag sets"
+        var s = "\(name) (\(String(format: "%.2f", seconds)) s): \(roads) roads, \(intersections) intersections, \(tagSets) tag sets"
         for k in Oracle.outputs {
             let c = comparisons[k]!
             s += "; \(k) \(c.featuresActual)/\(c.featuresExpected) features, "

@@ -1,9 +1,10 @@
 /// Where a road's lanes come from. osm2lanes's `get_lane_specs_ltr` reads
-/// them from the OSM tags through Muv's `lanes` (MPL-2.0), which this package
-/// may not port, so the reading is a seam: a `LaneSpecSource` gives the lanes
-/// for a way's tags. The parts of `get_lane_specs_ltr` that are osm2lanes's
-/// own (sidewalk inference, the kerbs, the direction of lanes on the centre
-/// line) are here for an implementation to use.
+/// them from the OSM tags through Muv's `lanes` (the `MuvLanes` target):
+/// that is `MuvLaneSpecs`, the default. The reading stays a seam, a
+/// `LaneSpecSource` giving the lanes for a way's tags, so that tests can
+/// run on made-up lanes. Also the parts of `get_lane_specs_ltr` that are
+/// osm2lanes's own (sidewalk inference, the direction of lanes on the
+/// centre line).
 
 import StreetGeom
 
