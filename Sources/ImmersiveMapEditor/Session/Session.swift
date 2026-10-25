@@ -137,6 +137,7 @@ final class Session {
             return
         }
         if model?.url != url { open(roads: url) }
+        roads?.focus = tile
         Task { @MainActor in self.roads?.frame(tiles: [tile]) }
     }
 

@@ -46,9 +46,12 @@ struct RoadsSections: View {
             Toggle("OSM centre lines, crossings, stops", isOn: $model.layers.centreLines)
             Toggle("Markings", isOn: $model.layers.markings)
             Toggle("Satellite (Mapbox)  I", isOn: $model.layers.satellite)
-            if model.layers.satellite { MapboxToken(map: map) }
+            if model.layers.satellite {
+                opacity("Satellite", $model.layers.satelliteOpacity)
+                opacity("Roadway", $model.layers.roadwayOpacity)
+            }
             Toggle("Point handles  H", isOn: $model.layers.handles)
-            Button("Frame the tiles  F") { map.frameAll() }
+            Button("Frame the tile  F") { map.frameAll() }
         }
         Section("Document") {
             Text(model.url.lastPathComponent).font(.callout.monospaced())
@@ -57,24 +60,13 @@ struct RoadsSections: View {
             Text("Seeded \(model.doc.seededDate)").font(.callout).foregroundStyle(.secondary)
         }
     }
-}
 
-/// The Mapbox token the satellite imagery is fetched with, kept in the
-/// user's defaults. A public token (pk.) of a free Mapbox account will do.
-struct MapboxToken: View {
-    let map: RoadsView
-    @AppStorage(SatelliteTiles.tokenKey) private var token = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SecureField("Mapbox token", text: $token)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { map.satelliteTokenChanged() }
-            if token.isEmpty {
-                Link("Get a token at mapbox.com", destination: URL(string: "https://account.mapbox.com/access-tokens/")!)
-                    .font(.callout)
-            }
+    /// A layer's opacity, as a percentage slider.
+    func opacity(_ label: String, _ value: Binding<Double>) -> some View {
+        HStack {
+            Text(label)
+            Slider(value: value, in: 0...1)
+            Text("\(Int((value.wrappedValue * 100).rounded())) %").monospacedDigit().frame(width: 44, alignment: .trailing)
         }
-        .onChange(of: token) { map.satelliteTokenChanged() }
     }
 }

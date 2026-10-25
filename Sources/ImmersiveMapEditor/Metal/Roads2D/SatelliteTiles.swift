@@ -3,8 +3,8 @@ import MetalKit
 
 /// Mapbox's satellite imagery under the road document, so a road can be
 /// checked against where it really is: the tiles in view at the zoom that
-/// matches the screen, fetched with the user's token (Settings, or the
-/// Roads panel) and kept in URLSession's cache, as Mapbox's terms allow.
+/// matches the screen, fetched with the user's token (the app's Settings)
+/// and kept in URLSession's cache, as Mapbox's terms allow.
 @MainActor
 final class SatelliteTiles {
     static let tokenKey = "mapbox.token"
@@ -17,6 +17,8 @@ final class SatelliteTiles {
     private var textures: [Tile: MTLTexture] = [:]
     private var loading = Set<Tile>()
     private var failed = Set<Tile>()
+    /// The token the failures were met with: a new one tries them again.
+    private var failedWith = ""
     /// Called when a tile arrives, to draw again.
     var arrived: () -> Void = {}
     private let session: URLSession = {
@@ -38,6 +40,10 @@ final class SatelliteTiles {
     func texture(_ t: Tile) -> MTLTexture? {
         if let tex = textures[t] { return tex }
         let token = Self.token
+        if token != failedWith {
+            failed.removeAll()
+            failedWith = token
+        }
         guard !token.isEmpty, !loading.contains(t), !failed.contains(t) else { return nil }
         loading.insert(t)
         Task { await load(t, token: token) }
@@ -58,10 +64,5 @@ final class SatelliteTiles {
         if textures.count > 400 { textures.removeAll() }
         textures[t] = tex
         arrived()
-    }
-
-    /// Forgets the tiles that failed, so a new token tries them again.
-    func retry() {
-        failed.removeAll()
     }
 }

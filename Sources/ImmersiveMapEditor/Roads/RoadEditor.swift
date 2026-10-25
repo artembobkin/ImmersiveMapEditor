@@ -33,8 +33,11 @@ final class RoadEditor {
         var centreLines = true
         var markings = true
         var handles = true
-        /// Mapbox's satellite imagery under the document.
+        /// Mapbox's satellite imagery under the document, over the working
+        /// tile, and how opaque it is and the roadway over it.
         var satellite = false
+        var satelliteOpacity = 1.0
+        var roadwayOpacity = 0.5
     }
 
     init(url: URL) throws {

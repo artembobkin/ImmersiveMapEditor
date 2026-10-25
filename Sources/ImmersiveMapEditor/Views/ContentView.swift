@@ -51,7 +51,8 @@ struct ContentView: View {
             Inspector()
                 .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
         }
-        .navigationTitle(title)
+        // No title: the working tile is named in the inspector.
+        .navigationTitle("")
         .onChange(of: workspace.viewMode) { session.follow(workspace.viewMode) }
         .onChange(of: undoManager, initial: true) { session.model?.undo = undoManager }
         .onChange(of: session.model.map { ObjectIdentifier($0) }) { session.model?.undo = undoManager }
@@ -66,13 +67,6 @@ struct ContentView: View {
         } message: {
             Text(session.problem ?? "")
         }
-    }
-
-    /// The window is named by its working tile, the road document's edits
-    /// marked.
-    private var title: String {
-        let name = session.workspace.tile?.name ?? "No tile picked"
-        return session.model?.dirty == true ? name + " (roads edited)" : name
     }
 
     /// The view of the mode.

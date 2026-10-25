@@ -60,5 +60,7 @@ struct EditorApp: App {
         }
         .defaultSize(width: 1400, height: 900)
         .commands { EditorCommands(session: session) }
+
+        Settings { SettingsView() }
     }
 }

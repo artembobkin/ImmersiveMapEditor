@@ -14,6 +14,10 @@ final class RoadsView: MTKView {
         }
     }
     private(set) var transform = ViewTransform2D()
+    /// The working tile: the satellite imagery covers it alone.
+    var focus: TileKey? {
+        didSet { needsDisplay = true }
+    }
     private var renderer: RoadsRenderer?
     private var tool: RoadToolHandler = SelectTool()
     private var toolKind = Tool.select
@@ -40,7 +44,8 @@ final class RoadsView: MTKView {
         guard let model else { return }
         withObservationTracking {
             _ = (model.revision, model.selection, model.tool, model.layers.buildings, model.layers.centreLines,
-                 model.layers.markings, model.layers.handles, model.layers.satellite)
+                 model.layers.markings, model.layers.handles, model.layers.satellite,
+                 model.layers.satelliteOpacity, model.layers.roadwayOpacity)
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.needsDisplay = true
@@ -49,16 +54,15 @@ final class RoadsView: MTKView {
         }
     }
 
+    /// Frames the working tile, or the document's tiles with none.
     func frameAll() {
         guard let model else { return }
+        if let focus, (model.doc.tiles.x0...model.doc.tiles.x1).contains(focus.x),
+           (model.doc.tiles.y0...model.doc.tiles.y1).contains(focus.y) {
+            return frame(tiles: [focus])
+        }
         let t = model.doc.tiles, proj = model.doc.projection
         transform.frame(proj.tileRect(x: t.x0, y: t.y1).0, proj.tileRect(x: t.x1, y: t.y0).1, in: bounds.size)
-        needsDisplay = true
-    }
-
-    /// The imagery tried again with a new token.
-    func satelliteTokenChanged() {
-        renderer?.retrySatellite()
         needsDisplay = true
     }
 
