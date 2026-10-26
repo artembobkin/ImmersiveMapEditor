@@ -41,7 +41,7 @@ struct LandmarksSections: View {
                     Text("Normal").tag("normal")
                     Text("Detailed").tag("detailed")
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("How far Claude goes: the masses and roofs alone, the facades with their windows, doors and relief, or every element that reads from across the street.")
                 Picker("Model", selection: $model) {
