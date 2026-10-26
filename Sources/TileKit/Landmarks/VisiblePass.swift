@@ -33,15 +33,23 @@ public enum VisiblePass {
         guard count > 0, let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
               let library = try? device.makeLibrary(source: source, options: nil),
               let vs = library.makeFunction(name: "vs"), let fs = library.makeFunction(name: "fs") else { return nil }
+        // Two passes a view: the depth of what is in front, then the marks
+        // by the fragments at exactly that depth. (A fragment that passes
+        // the test as it is drawn may yet be covered by one drawn after it.)
         let d = MTLRenderPipelineDescriptor()
         d.vertexFunction = vs
-        d.fragmentFunction = fs
+        d.fragmentFunction = nil
         d.depthAttachmentPixelFormat = .depth32Float
-        guard let pipeline = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
+        guard let depthPipeline = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
+        d.fragmentFunction = fs
+        guard let markPipeline = try? device.makeRenderPipelineState(descriptor: d) else { return nil }
         let ds = MTLDepthStencilDescriptor()
         ds.depthCompareFunction = .less
         ds.isDepthWriteEnabled = true
-        guard let depthState = device.makeDepthStencilState(descriptor: ds) else { return nil }
+        guard let depthWrite = device.makeDepthStencilState(descriptor: ds) else { return nil }
+        ds.depthCompareFunction = .equal
+        ds.isDepthWriteEnabled = false
+        guard let depthMatch = device.makeDepthStencilState(descriptor: ds) else { return nil }
         // The model's corners as the view's floats: X east, Y up, -Z north.
         var floats: [Float] = []
         floats.reserveCapacity(tris.count * 3)
@@ -102,17 +110,28 @@ public enum VisiblePass {
             pass.depthAttachment.texture = depth
             pass.depthAttachment.loadAction = .clear
             pass.depthAttachment.clearDepth = 1
-            pass.depthAttachment.storeAction = .dontCare
+            pass.depthAttachment.storeAction = .store
             guard let cmd = queue.makeCommandBuffer(), let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return nil }
-            enc.setRenderPipelineState(pipeline)
-            enc.setDepthStencilState(depthState)
+            enc.setRenderPipelineState(depthPipeline)
+            enc.setDepthStencilState(depthWrite)
             enc.setFrontFacing(.counterClockwise)
             enc.setCullMode(.back)
             enc.setVertexBuffer(vbuf, offset: 0, index: 0)
             enc.setVertexBytes(&vp, length: MemoryLayout<simd_float4x4>.stride, index: 1)
-            enc.setFragmentBuffer(flags, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tris.count)
             enc.endEncoding()
+            pass.depthAttachment.loadAction = .load
+            pass.depthAttachment.storeAction = .dontCare
+            guard let mark = cmd.makeRenderCommandEncoder(descriptor: pass) else { return nil }
+            mark.setRenderPipelineState(markPipeline)
+            mark.setDepthStencilState(depthMatch)
+            mark.setFrontFacing(.counterClockwise)
+            mark.setCullMode(.back)
+            mark.setVertexBuffer(vbuf, offset: 0, index: 0)
+            mark.setVertexBytes(&vp, length: MemoryLayout<simd_float4x4>.stride, index: 1)
+            mark.setFragmentBuffer(flags, offset: 0, index: 0)
+            mark.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: tris.count)
+            mark.endEncoding()
             cmd.commit()
             cmd.waitUntilCompleted()
         }
