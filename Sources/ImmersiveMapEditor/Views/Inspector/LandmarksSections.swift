@@ -9,6 +9,7 @@ struct LandmarksSections: View {
     /// The model the agent runs on: Claude Code's default, or one by name.
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
+    @AppStorage(ClaudeSettings.physicalChecksKey) private var physicalChecks = false
     @State private var forgetting = false
 
     private var runner: BuildRunner { session.build }
@@ -66,6 +67,9 @@ struct LandmarksSections: View {
                 .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("How hard Claude thinks before each step (Claude Code's --effort): more is slower and dearer, and steadier on the geometry.")
+                Toggle("Physical checks", isOn: $physicalChecks)
+                    .disabled(session.agent.running)
+                    .help("After each build, tell Claude what floats and what leads nowhere (a colonnade with nothing under it, steps with no landing), to fix before going on. Off: Claude judges by the photos alone.")
                 if session.agent.running {
                     Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
                 } else {

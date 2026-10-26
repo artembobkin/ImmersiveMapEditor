@@ -194,7 +194,7 @@ final class LandmarkAgent {
         render_from for a look from any place. Correct the recipe and compare again, until the shapes agree.
         4. Before you finish, walk the building: render_from 15 m before each entrance at eye level (height 2, looking at \
         it, hfov 70) and check that the steps lead onto a floor that reaches the doors, that the columns stand on it, that \
-        nothing floats; set_recipe's NOT PHYSICAL lines must all be gone. Then check from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
+        nothing floats\(ClaudeSettings.physicalChecks ? "; set_recipe's NOT PHYSICAL lines must all be gone" : ""). Then check from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
         fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
         the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
         the colours of the photos in the palette's words. Fix what is missing.
@@ -205,8 +205,11 @@ final class LandmarkAgent {
     /// The MCP server of the modelling tools: the editor itself, for this folder.
     static func mcpConfig(_ folder: URL) -> String {
         var server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": ["landmark-mcp", folder.path]]
+        var env: [String: String] = [:]
         let token = ClaudeSettings.mapillaryToken
-        if !token.isEmpty { server["env"] = ["MAPILLARY_TOKEN": token] }
+        if !token.isEmpty { env["MAPILLARY_TOKEN"] = token }
+        if ClaudeSettings.physicalChecks { env["LANDMARK_PHYSICAL_CHECKS"] = "1" }
+        if !env.isEmpty { server["env"] = env }
         let data = try! JSONSerialization.data(withJSONObject: ["mcpServers": ["landmark": server]], options: [.withoutEscapingSlashes])
         return String(data: data, encoding: .utf8)!
     }

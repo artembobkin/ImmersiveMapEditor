@@ -193,7 +193,11 @@ enum LandmarkMCP {
                              + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
                              + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
             }
-            return lines.joined(separator: "\n") + "\n\n" + LandmarkRecipe.guide
+            var guide = LandmarkRecipe.guide
+            if ProcessInfo.processInfo.environment["LANDMARK_PHYSICAL_CHECKS"] != "1" {
+                guide = guide.replacingOccurrences(of: " set_recipe says what floats or leads nowhere: fix it before going on.", with: "")
+            }
+            return lines.joined(separator: "\n") + "\n\n" + guide
         }
 
         /// Tags that say how a building looks, not where it is or who mapped it.
@@ -254,7 +258,8 @@ enum LandmarkMCP {
             try recipe.write(recipeURL)
             let model = LandmarkGenerator.build(recipe, source)
             try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
-            let warnings = LandmarkGenerator.warnings(recipe, source)
+            // The physical checks, when the user has them on.
+            let warnings = ProcessInfo.processInfo.environment["LANDMARK_PHYSICAL_CHECKS"] == "1" ? LandmarkGenerator.warnings(recipe, source) : []
             return "Built model.glb: \(model.summary)" + (warnings.isEmpty ? "" : "\nNOT PHYSICAL, fix before going on:\n" + warnings.joined(separator: "\n"))
         }
 

@@ -16,6 +16,11 @@ enum ClaudeSettings {
     /// How hard the agents think: Claude Code's --effort (low, medium, high,
     /// xhigh, max), or its default when empty.
     static let effortKey = "claude.effort"
+    /// Whether the generator's physical checks (what floats, what leads
+    /// nowhere) are given to the agent after each build. Off by default:
+    /// the user found the models better without them (2026-10-26).
+    static let physicalChecksKey = "landmark.physicalChecks"
+    static var physicalChecks: Bool { UserDefaults.standard.bool(forKey: physicalChecksKey) }
 
     /// The `claude` to run: the one picked, else the first installed.
     static var executable: URL? {
