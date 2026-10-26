@@ -77,6 +77,24 @@
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
+      <PostActions>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
+               title = "Sign with the Apple Development certificate (Scripts/sign.sh)"
+               scriptText = "BIN=&quot;$BUILT_PRODUCTS_DIR/$FULL_PRODUCT_NAME&quot;; [ -x &quot;$BIN&quot; ] || BIN=&quot;$BUILT_PRODUCTS_DIR/ImmersiveMapEditor&quot;&#10;ID=$(security find-identity -v -p codesigning | grep -o '&quot;Apple Development: [^&quot;]*&quot;' | head -1 | tr -d '&quot;')&#10;if [ -n &quot;$ID&quot; ] &amp;&amp; [ -x &quot;$BIN&quot; ]; then /usr/bin/codesign --force --sign &quot;$ID&quot; --identifier com.artembobkin.ImmersiveMapEditor &quot;$BIN&quot;; fi&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "ImmersiveMapEditor"
+                     BuildableName = "ImmersiveMapEditor"
+                     BlueprintName = "ImmersiveMapEditor"
+                     ReferencedContainer = "container:">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+      </PostActions>
    </BuildAction>
    <TestAction
       buildConfiguration = "Debug"
