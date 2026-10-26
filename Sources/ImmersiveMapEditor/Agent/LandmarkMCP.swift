@@ -33,7 +33,23 @@ enum LandmarkMCP {
     final class Server {
         let folder: URL
         var references: URL { folder.appendingPathComponent("references") }
-        var viewsFolder: URL { folder.appendingPathComponent("views") }
+        /// The data folder, for the caches every landmark shares.
+        var root: URL { (0..<6).reduce(folder) { url, _ in url.deletingLastPathComponent() } }
+        var cacheFolder: URL { root.appendingPathComponent("cache") }
+        /// What the agent searched through: the candidates it was shown.
+        var searchFolder: URL { folder.appendingPathComponent("search") }
+        /// The rounds of the work: one a set_recipe, each with its recipe,
+        /// its model and every picture made of that model. Before the first
+        /// recipe, round 00.
+        var roundsFolder: URL { folder.appendingPathComponent("rounds") }
+        var currentRound: URL {
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: roundsFolder.path)) ?? []).filter { Int($0) != nil }.sorted()
+            return roundsFolder.appendingPathComponent(names.last ?? "00")
+        }
+        func nextRound() -> URL {
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: roundsFolder.path)) ?? []).compactMap { Int($0) }
+            return roundsFolder.appendingPathComponent(String(format: "%02d", (names.max() ?? 0) + 1))
+        }
 
         init(folder: URL) { self.folder = folder }
 
@@ -265,7 +281,14 @@ enum LandmarkMCP {
             try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
             // The physical checks, when the user has them on.
             let warnings = ProcessInfo.processInfo.environment["LANDMARK_PHYSICAL_CHECKS"] == "1" ? LandmarkGenerator.warnings(recipe, source) : []
-            return "Built model.glb: \(model.summary)" + (warnings.isEmpty ? "" : "\nNOT PHYSICAL, fix before going on:\n" + warnings.joined(separator: "\n"))
+            let said = "Built model.glb: \(model.summary)" + (warnings.isEmpty ? "" : "\nNOT PHYSICAL, fix before going on:\n" + warnings.joined(separator: "\n"))
+            // A round of the work: this recipe and model, and the pictures made of them after.
+            let round = nextRound()
+            try FileManager.default.createDirectory(at: round, withIntermediateDirectories: true)
+            try? FileManager.default.copyItem(at: recipeURL, to: round.appendingPathComponent("recipe.json"))
+            try? FileManager.default.copyItem(at: folder.appendingPathComponent("model.glb"), to: round.appendingPathComponent("model.glb"))
+            try? (said + "\n").write(to: round.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
+            return said + " (round \(round.lastPathComponent))"
         }
 
         func render(_ args: [String: Any]) throws -> [[String: Any]] {
@@ -274,7 +297,7 @@ enum LandmarkMCP {
             // No model yet (none built, or a new attempt): its OSM boxes, and say so.
             let hasModel = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).contains { $0.hasSuffix(".glb") }
             let boxes = (args["boxes"] as? Bool ?? false) || !hasModel
-            let out = viewsFolder.appendingPathComponent(boxes ? "boxes" : "model")
+            let out = currentRound.appendingPathComponent(boxes ? "boxes" : "views")
             var command = ["--landmark-views", folder.path, out.path]
             if boxes { command.append("--boxes") }
             let (status, said) = Self.run(URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, command)
@@ -333,7 +356,7 @@ enum LandmarkMCP {
 
         /// A coverage tile of Mapillary's, kept for a day.
         func coverage(x: Int, y: Int) throws -> Data {
-            let dir = viewsFolder.appendingPathComponent("street/tiles")
+            let dir = cacheFolder.appendingPathComponent("mapillary")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let file = dir.appendingPathComponent("\(CoverageTile.zoom)_\(x)_\(y).mvt")
             if let age = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
@@ -415,7 +438,7 @@ enum LandmarkMCP {
             let (report, picks) = StreetPicks.report(views, limit: limit)
             guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
             // The contact sheet: a small thumbnail of each pick, framed.
-            let dir = viewsFolder.appendingPathComponent("street")
+            let dir = searchFolder.appendingPathComponent("street")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             // Each pick at a size its eyes can read, framed; the sheet of them
             // all for the user's panel.
@@ -454,7 +477,7 @@ enum LandmarkMCP {
             let where_ = category.map { "its category \"\($0)\" and " } ?? "no category of its own (no wikimedia_commons or wikidata tag): "
             guard !photos.isEmpty else { return [text("Commons has no freely licensed photos in \(where_)within \(Int(radius)) m.")] }
             let picks = Array(photos.prefix(limit))
-            let dir = viewsFolder.appendingPathComponent("commons")
+            let dir = searchFolder.appendingPathComponent("commons")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let cells = picks.enumerated().map { k, p -> ContactSheet.Cell in
                 let file = dir.appendingPathComponent("\(k + 1).jpg")
@@ -555,7 +578,7 @@ enum LandmarkMCP {
             try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
             let file = references.appendingPathComponent("satellite.jpg")
             let (mpp, missing, roofs) = try SatelliteView.make(folder: folder, radius: radius, to: file,
-                                                               cache: viewsFolder.appendingPathComponent("satellite"), run: Self.run)
+                                                               cache: cacheFolder.appendingPathComponent("imagery"), run: Self.run)
             let taken = SatelliteView.capture(folder: folder, run: Self.run)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             list.removeAll { $0["file"] as? String == "satellite.jpg" }
@@ -564,7 +587,8 @@ enum LandmarkMCP {
                          "author": SatelliteView.source.attribution, "licence": "Esri World Imagery terms, a reference",
                          "shows": "from above, north up, " + (taken.map { "taken \($0), " } ?? "") + "\(Int(radius)) m around the centre"])
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
-            let small = viewsFolder.appendingPathComponent("satellite/view.jpg")
+            let small = searchFolder.appendingPathComponent("satellite/view.jpg")
+            try FileManager.default.createDirectory(at: small.deletingLastPathComponent(), withIntermediateDirectories: true)
             _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1280", "-s", "format", "jpeg", file.path, "--out", small.path])
             var content: [[String: Any]] = [text("satellite.jpg: the landmark from above, north up, \(Int(radius)) m around its centre, \(String(format: "%.2f", mpp)) m a pixel"
                 + (taken.map { ", imagery taken \($0)" } ?? "") + (missing > 0 ? " (\(missing) tiles did not come)" : "")
@@ -597,7 +621,7 @@ enum LandmarkMCP {
             let size = Self.size(of: photo) ?? (1024, 768)
             let scale = min(1, 1024.0 / Double(size.0))
             let w = Int(Double(size.0) * scale), h = Int(Double(size.1) * scale)
-            let dir = viewsFolder.appendingPathComponent("compare")
+            let dir = currentRound.appendingPathComponent("compare")
             let render = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".render.png")
             try look(eye: (x, y, pose["z"] as? Double ?? 2), heading: heading, pitch: pose["pitch"] as? Double ?? 0, hfov: hfov,
                      width: w, height: h, to: render)
@@ -611,8 +635,8 @@ enum LandmarkMCP {
         func renderFrom(_ args: [String: Any]) throws -> [[String: Any]] {
             func num(_ k: String, _ d: Double) -> Double { (args[k] as? NSNumber)?.doubleValue ?? d }
             guard args["x"] != nil, args["y"] != nil, args["heading"] != nil else { throw Failure("give x, y (metres east and north of the centre) and heading (a compass bearing)") }
-            let dir = viewsFolder.appendingPathComponent("look")
-            let n = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).count + 1
+            let dir = currentRound.appendingPathComponent("look")
+            let n = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".png") }.count + 1
             let out = dir.appendingPathComponent("look-\(n).png")
             try look(eye: (num("x", 0), num("y", 0), num("height", 2)), heading: num("heading", 0), pitch: num("pitch", 0),
                      hfov: max(20, min(120, num("hfov", 65))), width: 1024, height: 768, to: out)

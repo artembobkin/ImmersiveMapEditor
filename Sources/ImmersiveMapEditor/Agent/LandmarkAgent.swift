@@ -31,7 +31,7 @@ final class LandmarkAgent {
     static func hasConversation(_ folder: URL) -> Bool { conversation(folder) != nil }
 
     /// What the agent makes in a landmark's folder, besides the photos.
-    static let work = ["views", "recipe.json", "model.glb", "agent.json"]
+    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json"]
 
     /// Whether the agent has made anything in `folder`.
     static func hasWork(_ folder: URL) -> Bool {
@@ -45,8 +45,9 @@ final class LandmarkAgent {
         for name in work + ["references"] { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
     }
 
-    /// A new attempt starts from OSM again: the renders, recipe, model and
-    /// conversation of the last one go, the photos stay to be used again.
+    /// A new attempt starts from OSM again: the rounds, the searches, the
+    /// recipe, model and conversation of the last one go, the photos stay
+    /// to be used again.
     static func startOver(_ folder: URL) {
         for name in work { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
     }
