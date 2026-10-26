@@ -176,11 +176,11 @@ final class LandmarkAgent {
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
         2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then the \
         references, in this order:
-           a. find_commons_photos (Wikimedia Commons, its category and around it, on a contact sheet): keep one or two \
+           a. find_commons_photos (Wikimedia Commons, its category and around it): keep one or two \
         classic views of the whole with save_commons_photo, to know the building and to judge the street photos by.
-           b. find_street_photos (Mapillary, street level all around it): the best candidates a track at a time, and a \
-        contact sheet with the landmark framed in red on each by the camera's pose, the rest dimmed. Poses are sometimes \
-        wrong: judge from the sheet which frames really hold the landmark, keep those (one or two a side, the main facade \
+           b. find_street_photos (Mapillary, street level all around it): the best candidates a track at a time, each \
+        with the landmark framed in red by the camera's pose, the rest dimmed. Poses are sometimes wrong: judge from the \
+        pictures which frames really hold the landmark, keep those (one or two a side, the main facade \
         and the entrances first) with save_street_photo; a kept photo comes back with everything outside the frame painted \
         black, so look at it and drop_reference any whose frame holds another building.
            c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \

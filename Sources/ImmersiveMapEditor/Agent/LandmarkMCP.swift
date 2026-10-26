@@ -416,11 +416,13 @@ enum LandmarkMCP {
             // The contact sheet: a small thumbnail of each pick, framed.
             let dir = viewsFolder.appendingPathComponent("street")
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            // Each pick at a size its eyes can read, framed; the sheet of them
+            // all for the user's panel.
             let thumbs: [URL?] = picks.map { pick in
                 let file = dir.appendingPathComponent("\(pick.photo.id).jpg")
                 if FileManager.default.fileExists(atPath: file.path) { return file }
-                guard let json = try? mapillary(pick.photo.id, ["fields": pick.photo.pano ? "thumb_1024_url" : "thumb_256_url"]),
-                      let url = (json["thumb_1024_url"] ?? json["thumb_256_url"]) as? String else { return nil }
+                guard let json = try? mapillary(pick.photo.id, ["fields": pick.photo.pano ? "thumb_2048_url" : "thumb_1024_url"]),
+                      let url = (json["thumb_2048_url"] ?? json["thumb_1024_url"]) as? String else { return nil }
                 let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--max-time", "30", "-o", file.path, url])
                 return status == 0 ? file : nil
             }
@@ -429,8 +431,13 @@ enum LandmarkMCP {
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m, \(views.count) show the landmark. The best, a track (one pass of a car or a walker) at a time:\n"
                 + report
-                + "\nThe contact sheet shows them, numbered, the landmark framed in red by Mapillary's camera poses, which are sometimes wrong: look, and keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
-            if let img = image(sheet) { content.append(img) }
+                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+            for (k, pick) in picks.enumerated() {
+                let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
+                try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
+                content.append(text("#\(k + 1) " + pick.line))
+                if let img = image(framed) { content.append(img) }
+            }
             return content
         }
 
@@ -452,17 +459,18 @@ enum LandmarkMCP {
                 var image: URL? = nil
                 if let thumb = p.thumb {
                     let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "60", "-A", CommonsPhotos.agent, "-o", file.path, thumb])
-                    _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "400", "-s", "format", "jpeg", file.path, "--out", file.path])
+                    _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "640", "-s", "format", "jpeg", file.path, "--out", file.path])
                     if status == 0 { image = file }
                 }
                 return ContactSheet.Cell(image: image, box: nil, cut: false, label: "#\(k + 1)  \(String(p.title.dropFirst("File:".count).prefix(40)))")
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try ContactSheet.draw(cells, to: sheet)
-            var content: [[String: Any]] = [text("Commons: \(photos.count) freely licensed photos in \(where_)within \(Int(radius)) m; the \(picks.count) best:\n"
-                + picks.enumerated().map { "#\($0 + 1) " + $1.line }.joined(separator: "\n")
-                + "\nThe contact sheet shows them numbered. Keep one with save_commons_photo(file, shows).")]
-            if let img = image(sheet) { content.append(img) }
+            var content: [[String: Any]] = [text("Commons: \(photos.count) freely licensed photos in \(where_)within \(Int(radius)) m; the \(picks.count) best follow, numbered. Keep one with save_commons_photo(file, shows).")]
+            for (k, p) in picks.enumerated() {
+                content.append(text("#\(k + 1) " + p.line))
+                if let file = cells[k].image, let img = image(file) { content.append(img) }
+            }
             return content
         }
 

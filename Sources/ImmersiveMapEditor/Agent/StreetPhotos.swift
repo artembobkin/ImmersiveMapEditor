@@ -335,8 +335,38 @@ enum SideBySide {
 }
 
 /// A grid of pictures with a label each, and a red frame where one is
-/// given: what the agent looks at to choose.
+/// given: what the user looks at. The agent gets each picture by itself
+/// (`one`), larger, since its eyes need the pixels.
 enum ContactSheet {
+    /// One picture with its frame (the outside dimmed), a panorama cut to
+    /// it first, at most `maxSide` across, to a JPEG.
+    static func one(_ cell: Cell, maxSide: Int, to file: URL) throws {
+        guard let url = cell.image, let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return }
+        var shown = image
+        var box = cell.box
+        if cell.cut, let b = box, let (part, inner) = StreetMarking.cut(image, b) {
+            shown = part
+            box = inner
+        }
+        let scale = min(1, Double(maxSide) / Double(max(shown.width, shown.height)))
+        let w = Int(Double(shown.width) * scale), h = Int(Double(shown.height) * scale)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        let full = CGRect(x: 0, y: 0, width: w, height: h)
+        ctx.draw(shown, in: full)
+        if let box {
+            let frame = CGRect(x: box.minX * Double(w), y: (1 - box.maxY) * Double(h), width: box.width * Double(w), height: box.height * Double(h))
+            StreetMarking.mask(ctx, outside: frame, in: full, alpha: 0.55)
+            ctx.setStrokeColor(CGColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.95))
+            ctx.setLineWidth(max(3, Double(w) * 0.004))
+            ctx.stroke(frame.insetBy(dx: -2, dy: -2))
+        }
+        guard let out = ctx.makeImage(), let dest = CGImageDestinationCreateWithURL(file as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, out, [kCGImageDestinationLossyCompressionQuality: 0.82] as CFDictionary)
+        CGImageDestinationFinalize(dest)
+    }
+
     struct Cell {
         let image: URL?
         /// The frame, as fractions of the picture (from the top left).
