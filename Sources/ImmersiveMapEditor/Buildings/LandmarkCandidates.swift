@@ -18,6 +18,8 @@ struct TileLandmark: Identifiable {
     let name: String
     let folder: URL
     let buildings: [String]
+    /// How detailed its model is to be: simple, normal or detailed.
+    let detail: String
     var model: URL? {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
@@ -64,8 +66,17 @@ enum LandmarkCandidates {
             guard let data = try? Data(contentsOf: f.appendingPathComponent("landmark.json")),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             let osm = (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
-            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm)
+            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm,
+                                detail: json["detail"] as? String ?? "normal")
         }
+    }
+
+    /// Sets how detailed a landmark's model is to be, in its landmark.json.
+    static func setDetail(_ folder: URL, _ detail: String) {
+        let url = folder.appendingPathComponent("landmark.json")
+        guard let data = try? Data(contentsOf: url), var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+        json["detail"] = detail
+        try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]).write(to: url)
     }
 
     /// Writes a candidate of `buildings` named `name`, in `tile` projected by

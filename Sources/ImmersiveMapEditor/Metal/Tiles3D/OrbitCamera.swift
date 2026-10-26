@@ -12,8 +12,11 @@ struct OrbitCamera: Equatable {
     /// Degrees, down is negative.
     var pitch = -45.0
 
-    /// The half of the vertical field of view, in radians.
+    /// The half of the vertical field of view, in radians: the view's own.
     static let halfFov = 25.0 * .pi / 180
+    /// The vertical field of view in degrees: the view's 50, or a photo's
+    /// camera's for a render from its place.
+    var fovDegrees = 50.0
 
     var forward: SIMD3<Double> {
         let p = pitch * .pi / 180, y = yaw * .pi / 180
@@ -37,7 +40,7 @@ struct OrbitCamera: Equatable {
             SIMD4(0, 0, 0, 1),
         ])
         let near = max(0.1, min(5, max(e.y, 1) * 0.02)), far = max(20000, distance * 10)
-        let ys = 1 / tan(Self.halfFov), xs = ys / aspect, zs = far / (near - far)
+        let ys = 1 / tan(fovDegrees / 2 * .pi / 180), xs = ys / aspect, zs = far / (near - far)
         let projection = simd_double4x4(rows: [
             SIMD4(xs, 0, 0, 0),
             SIMD4(0, ys, 0, 0),

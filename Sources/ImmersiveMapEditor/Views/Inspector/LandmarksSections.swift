@@ -32,6 +32,16 @@ struct LandmarksSections: View {
         }
         if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
             Section("Model with Claude") {
+                Picker("Detail", selection: Binding(
+                    get: { landmark.detail },
+                    set: { LandmarkCandidates.setDetail(landmark.folder, $0); session.readCandidates() })) {
+                    Text("Simple").tag("simple")
+                    Text("Normal").tag("normal")
+                    Text("Detailed").tag("detailed")
+                }
+                .pickerStyle(.segmented)
+                .disabled(session.agent.running)
+                .help("How far Claude goes: the masses and roofs alone, the facades with their windows, doors and relief, or every element that reads from across the street.")
                 if session.agent.running {
                     Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
                 } else {

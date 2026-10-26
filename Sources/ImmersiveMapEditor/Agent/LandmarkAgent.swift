@@ -69,7 +69,7 @@ final class LandmarkAgent {
             return
         }
         guard console.begin("Claude: \(name)", stage: "Claude is modelling \(name)") else { return }
-        var args = ["-p", request ?? Self.firstRequest(name), "--output-format", "stream-json", "--verbose",
+        var args = ["-p", request ?? Self.firstRequest(name, detail: Self.detail(of: folder)), "--output-format", "stream-json", "--verbose",
                     "--tools", "WebSearch,WebFetch",
                     "--allowedTools", "WebSearch,WebFetch,mcp__landmark",
                     "--permission-mode", "dontAsk",
@@ -89,7 +89,8 @@ final class LandmarkAgent {
                                                    options: [.prettyPrinted, .sortedKeys])
             try? json?.write(to: folder.appendingPathComponent("agent.json"))
         }
-        if let request { console.append("> \(request)") }
+        let detail = Self.detail(of: folder)
+        if let request { console.append("> \(request)") } else { console.append("Detail: \(detail)") }
         let p = Process()
         p.executableURL = claude
         p.arguments = args
@@ -133,9 +134,41 @@ final class LandmarkAgent {
 
     func stop() { process?.terminate() }
 
-    static func firstRequest(_ name: String) -> String {
-        """
+    /// How detailed the landmark's model is to be (landmark.json's detail).
+    static func detail(of folder: URL) -> String {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("landmark.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "normal" }
+        return json["detail"] as? String ?? "normal"
+    }
+
+    static func firstRequest(_ name: String, detail: String) -> String {
+        let level: String
+        switch detail {
+        case "simple":
+            level = """
+            DETAIL: simple. The masses, their roofs, the main colours and the one or two things that make it recognisable \\
+            (a portico, a dome, a tower). No windows, no small relief. Two rounds. Under 5 000 triangles.
+            """
+        case "detailed":
+            level = """
+            DETAIL: detailed. Everything that reads from across the street: every mass of the building with its own roof, \\
+            the windows with the real storeys and rhythm of each facade (arched where they are arched), every entrance with \\
+            its portal, the plinth, string courses, the cornice with its depth, pilasters and columns where the facade has \\
+            them, balustrades and parapets, the sculpture, chimneys and roof lanterns, the attic and its windows. Model from \\
+            shapes what the words do not cover (a balustrade of cylinders in a row, a rusticated base as thin boxes, a \\
+            moulding as a loft). Six to eight rounds, each on one facade or one part, checked with compare_with_photo. \\
+            Up to 60 000 triangles (set_recipe tells the count).
+            """
+        default:
+            level = """
+            DETAIL: normal. The masses with their roofs, the windows of every facade in their rhythm, the entrances, the \\
+            cornice, the plinth, the relief the facade has (pilasters, bands) and the sculpture that makes it recognisable. \\
+            Three to five rounds. Under 25 000 triangles (set_recipe tells the count).
+            """
+        }
+        return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
+        \(level)
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
         2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then the \
         references, in this order:
@@ -149,8 +182,10 @@ final class LandmarkAgent {
            c. find_commons_photos again for what the street does not show: the roofs from above (aerial, drone), the \
         whole from afar, the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
-        3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Three to five rounds, until the \
-        silhouette, proportions, colours and main details agree.
+        3. Write its recipe with set_recipe, then compare: compare_with_photo for each kept street photo shows the model \
+        rendered from the photo's own camera beside it, so what differs is plain (count the columns and the windows, \
+        check the roof's shape and height, the entrances, the colours); render_views for the whole and from above; \
+        render_from for a look from any place. Correct the recipe and compare again, until the shapes agree.
         4. Before you finish, check from eye level in front of the main facade (render_views from the side it faces) and \
         from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
         fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \

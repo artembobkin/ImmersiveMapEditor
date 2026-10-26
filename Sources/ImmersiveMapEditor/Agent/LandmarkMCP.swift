@@ -1,5 +1,6 @@
 import Foundation
 import Geometry
+import ImageIO
 import simd
 import TileKit
 
@@ -91,6 +92,14 @@ enum LandmarkMCP {
              "inputSchema": ["type": "object", "properties": [
                 "views": ["type": "array", "items": ["type": "string"], "description": "Which views; four by default: from-south-west, from-north-east, from-south, from-above."],
                 "boxes": ["type": "boolean", "description": "The OSM buildings as boxes instead of the model."]]]],
+            ["name": "compare_with_photo",
+             "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
+             "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
+            ["name": "render_from",
+             "description": "The model as seen from a place of your choice: x and y metres east and north of the landmark's centre, height metres up (2 by default: eye level), heading (a compass bearing: 0 north, 90 east), pitch (degrees, up positive, 0 by default), hfov (degrees wide, 65 by default). For a look from where a Commons photo was taken, or from the square before the entrance.",
+             "inputSchema": ["type": "object", "properties": ["x": ["type": "number"], "y": ["type": "number"], "height": ["type": "number"],
+                                                              "heading": ["type": "number"], "pitch": ["type": "number"], "hfov": ["type": "number"]],
+                             "required": ["x", "y", "heading"]]],
             ["name": "save_reference_photo",
              "description": "Downloads a photo of the landmark into its references and returns it to look at. Only freely licensed photos (Wikimedia Commons: CC BY, CC BY-SA, CC0, public domain) or the user's own: give the direct image URL (upload.wikimedia.org, a thumbnail of about 1280 px is enough), its page, author and licence, and what it shows (which side, from where).",
              "inputSchema": ["type": "object", "properties": [
@@ -135,6 +144,8 @@ enum LandmarkMCP {
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)
+            case "compare_with_photo": return try compare(args)
+            case "render_from": return try renderFrom(args)
             case "find_commons_photos": return try commonsPhotos(args)
             case "save_commons_photo": return try saveCommonsPhoto(args)
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
@@ -470,9 +481,81 @@ enum LandmarkMCP {
             if let name = (kept.first?["text"] as? String)?.split(separator: " ").last {
                 let file = references.appendingPathComponent(String(name))
                 try StreetMarking.mark(file, view)
-                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line)")] + (image(file).map { [$0] } ?? [])
+                // The camera's place and look, for a render from the same place.
+                let pose = view.pose
+                var entry: [String: Any] = ["x": r1(photo.at.x), "y": r1(photo.at.y), "z": 2.0, "heading": r1(pose.heading),
+                                            "pitch": r1(pose.pitch), "hfov": r1(pose.hfov)]
+                if let size = Self.size(of: file) { entry["width"] = size.0; entry["height"] = size.1 }
+                try credit(String(name), set: "pose", to: entry)
+                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line). compare_with_photo(\"\(name)\") shows the model from the same place.")]
+                    + (image(file).map { [$0] } ?? [])
             }
             return kept
+        }
+
+        func r1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
+
+        static func size(of file: URL) -> (Int, Int)? {
+            guard let src = CGImageSourceCreateWithURL(file as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [String: Any],
+                  let w = props[kCGImagePropertyPixelWidth as String] as? Int, let h = props[kCGImagePropertyPixelHeight as String] as? Int else { return nil }
+            return (w, h)
+        }
+
+        /// Adds a field to a kept photo's credit.
+        func credit(_ file: String, set key: String, to value: Any) throws {
+            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            guard let k = list.firstIndex(where: { $0["file"] as? String == file }) else { return }
+            list[k][key] = value
+            try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
+        }
+
+        // MARK: The model from a camera's place
+
+        /// The model as a camera at `eye` (metres east, north, up of the
+        /// centre) sees it, to a PNG.
+        func look(eye: (Double, Double, Double), heading: Double, pitch: Double, hfov: Double, width: Int, height: Int, to out: URL) throws {
+            let args = ["--landmark-look", folder.path, out.path] + [eye.0, eye.1, eye.2, heading, pitch, hfov, Double(width), Double(height)].map { "\($0)" }
+            let (status, said) = Self.run(URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, args)
+            guard status == 0 else { throw Failure("cannot render: \(said)") }
+        }
+
+        /// A kept street photo beside the model from its camera's place.
+        func compare(_ args: [String: Any]) throws -> [[String: Any]] {
+            let name = ((args["file"] as? String ?? "") as NSString).lastPathComponent
+            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            guard let entry = list.first(where: { $0["file"] as? String == name }) else { throw Failure("no reference \(name)") }
+            guard let pose = entry["pose"] as? [String: Any], let x = pose["x"] as? Double, let y = pose["y"] as? Double,
+                  let heading = pose["heading"] as? Double, let hfov = pose["hfov"] as? Double else {
+                throw Failure("\(name) has no camera pose (only street photos have one): render_from a place of your choice instead")
+            }
+            let photo = references.appendingPathComponent(name)
+            let size = Self.size(of: photo) ?? (1024, 768)
+            let scale = min(1, 1024.0 / Double(size.0))
+            let w = Int(Double(size.0) * scale), h = Int(Double(size.1) * scale)
+            let dir = viewsFolder.appendingPathComponent("compare")
+            let render = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".render.png")
+            try look(eye: (x, y, pose["z"] as? Double ?? 2), heading: heading, pitch: pose["pitch"] as? Double ?? 0, hfov: hfov,
+                     width: w, height: h, to: render)
+            let both = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".compare.jpg")
+            try SideBySide.draw(photo, render, to: both)
+            var content: [[String: Any]] = [text("\(name) and the model from its camera's place (\(Int(x)) m east, \(Int(y)) m north of the centre, looking \(Int(heading))°, \(Int(hfov))° wide): the photo on the left, the model on the right. Mapillary's pose can be some metres and degrees off, and a panorama's cut is not a perspective picture, so judge the shapes and the counts (columns, windows, storeys), not the exact overlap or size.")]
+            if let img = image(both) { content.append(img) }
+            return content
+        }
+
+        func renderFrom(_ args: [String: Any]) throws -> [[String: Any]] {
+            func num(_ k: String, _ d: Double) -> Double { (args[k] as? NSNumber)?.doubleValue ?? d }
+            guard args["x"] != nil, args["y"] != nil, args["heading"] != nil else { throw Failure("give x, y (metres east and north of the centre) and heading (a compass bearing)") }
+            let dir = viewsFolder.appendingPathComponent("look")
+            let n = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).count + 1
+            let out = dir.appendingPathComponent("look-\(n).png")
+            try look(eye: (num("x", 0), num("y", 0), num("height", 2)), heading: num("heading", 0), pitch: num("pitch", 0),
+                     hfov: max(20, min(120, num("hfov", 65))), width: 1024, height: 768, to: out)
+            let small = dir.appendingPathComponent("look-\(n).small.jpg")
+            _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "900", "-s", "format", "jpeg", out.path, "--out", small.path])
+            return [text("The model from \(Int(num("x", 0))) m east, \(Int(num("y", 0))) m north, \(num("height", 2)) m up, looking \(Int(num("heading", 0)))°")]
+                + (image(FileManager.default.fileExists(atPath: small.path) ? small : out).map { [$0] } ?? [])
         }
 
         /// Downloads a photo into the references with its credit.

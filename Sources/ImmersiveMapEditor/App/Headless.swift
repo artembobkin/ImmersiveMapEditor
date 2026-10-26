@@ -9,7 +9,7 @@ import SwiftUI
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--erase-people"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--erase-people"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -58,7 +58,7 @@ enum Headless {
             // above, a PNG each, into a folder.
             let folder = URL(fileURLWithPath: arguments[i + 1])
             guard let view = LandmarkView.make() else { return fail("no Metal device") }
-            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [])
+            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [], detail: "normal")
             let source: LandmarkView.Source
             if arguments.contains("--boxes") {
                 source = .boxes(id: landmark.id, landmark.boxes)
@@ -68,6 +68,27 @@ enum Headless {
             }
             do {
                 for url in try view.views(source, to: URL(fileURLWithPath: arguments[i + 2])) { print(url.path) }
+                return 0
+            } catch {
+                return fail(error.localizedDescription)
+            }
+        }
+        if let i = arguments.firstIndex(of: "--landmark-look"), arguments.count > i + 10 {
+            // A landmark's model (its OSM boxes with --boxes) as a photo's
+            // camera saw it: FOLDER OUT.png X Y Z HEADING PITCH HFOV W H.
+            let folder = URL(fileURLWithPath: arguments[i + 1])
+            let n = arguments[(i + 3)...(i + 10)].compactMap(Double.init)
+            guard n.count == 8, let view = LandmarkView.make() else { return fail("--landmark-look FOLDER OUT.png X Y Z HEADING PITCH HFOV W H [--boxes]") }
+            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [], detail: "normal")
+            let source: LandmarkView.Source
+            if arguments.contains("--boxes") || landmark.model == nil {
+                source = .boxes(id: landmark.id, landmark.boxes)
+            } else {
+                source = .model(landmark.model!)
+            }
+            do {
+                try view.look(source, to: URL(fileURLWithPath: arguments[i + 2]), eye: SIMD3(n[0], n[1], n[2]), heading: n[3], pitch: n[4],
+                              hfov: n[5], width: Int(n[6]), height: Int(n[7]))
                 return 0
             } catch {
                 return fail(error.localizedDescription)

@@ -142,6 +142,18 @@ struct StreetView {
     let share: Double
     let hidden: Double
     let score: Double
+    /// Where the camera looks (a compass bearing) and how wide (degrees).
+    let heading: Double
+    let hfov: Double
+
+    /// The camera of the kept picture (a panorama's cut, or the photo as it
+    /// is): heading, pitch (up positive) and horizontal field of view, to
+    /// render the model from the same place.
+    var pose: (heading: Double, pitch: Double, hfov: Double) {
+        guard photo.pano else { return (heading, 0, hfov) }
+        let (cx0, cx1, cy0, cy1) = StreetMarking.cutBounds(box)
+        return (heading + ((cx0 + cx1) / 2 - 0.5) * 360, (0.5 - (cy0 + cy1) / 2) * 180, (cx1 - cx0) * 360)
+    }
 
     static let sides = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
     static func side(_ bearing: Double) -> String { sides[Int(((bearing + 22.5).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) / 45) % 8] }
@@ -198,6 +210,8 @@ struct StreetView {
             x0 = x(span.lowerBound); x1 = x(span.upperBound)
             y0 = 0.5 - photo.focal * l / h * tan(min(top, 80) * .pi / 180); y1 = 0.5 - photo.focal * l / h * tan(bottom * .pi / 180)
         }
+        heading = look
+        hfov = min(360, 2 * half)
         let visible = max(0, min(span.upperBound, half) - max(span.lowerBound, -half))
         coverage = visible / max(span.upperBound - span.lowerBound, 1)
         guard coverage > 0.15 else { return nil }
@@ -291,6 +305,35 @@ enum StreetPicks {
     }
 }
 
+/// A photo and the model from the photo's place, side by side, the same
+/// height: what the agent compares.
+enum SideBySide {
+    static func draw(_ left: URL, _ right: URL, to file: URL) throws {
+        func read(_ url: URL) -> CGImage? {
+            CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
+        }
+        guard let a = read(left), let b = read(right) else { return }
+        let h = 640, gap = 8, label = 24
+        let wa = a.width * h / a.height, wb = b.width * h / b.height
+        let w = wa + gap + wb
+        guard let ctx = CGContext(data: nil, width: w, height: h + label, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        ctx.setFillColor(CGColor(gray: 0.12, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h + label))
+        ctx.draw(a, in: CGRect(x: 0, y: label, width: wa, height: h))
+        ctx.draw(b, in: CGRect(x: wa + gap, y: label, width: wb, height: h))
+        for (text, x) in [("photo", 4), ("model, from the same place", wa + gap + 4)] {
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+                .font: CTFontCreateWithName("Helvetica" as CFString, 14, nil), .foregroundColor: CGColor(gray: 0.95, alpha: 1)]))
+            ctx.textPosition = CGPoint(x: Double(x), y: 6)
+            CTLineDraw(line, ctx)
+        }
+        guard let out = ctx.makeImage(), let dest = CGImageDestinationCreateWithURL(file as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, out, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+        CGImageDestinationFinalize(dest)
+    }
+}
+
 /// A grid of pictures with a label each, and a red frame where one is
 /// given: what the agent looks at to choose.
 enum ContactSheet {
@@ -364,10 +407,14 @@ enum StreetMarking {
 
     /// A panorama cut around the landmark's box: the part, and the box
     /// within it.
+    /// The cut around a panorama's box, as fractions: west, east, top, bottom.
+    static func cutBounds(_ box: CGRect) -> (Double, Double, Double, Double) {
+        (max(0, box.minX - 0.03), min(1, box.maxX + 0.03), max(0, box.minY - 0.04), min(1, box.maxY + 0.03))
+    }
+
     static func cut(_ image: CGImage, _ box: CGRect) -> (CGImage, CGRect)? {
         let w = Double(image.width), h = Double(image.height)
-        let cx0 = max(0, box.minX - 0.03), cx1 = min(1, box.maxX + 0.03)
-        let cy0 = max(0, box.minY - 0.04), cy1 = min(1, box.maxY + 0.03)
+        let (cx0, cx1, cy0, cy1) = cutBounds(box)
         let rect = CGRect(x: cx0 * w, y: cy0 * h, width: (cx1 - cx0) * w, height: (cy1 - cy0) * h).integral
         guard rect.width > 50, rect.height > 50, let part = image.cropping(to: rect) else { return nil }
         return (part, CGRect(x: (box.minX - cx0) / (cx1 - cx0), y: (box.minY - cy0) / (cy1 - cy0),

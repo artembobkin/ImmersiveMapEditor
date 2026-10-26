@@ -138,6 +138,32 @@ final class LandmarkView: MTKView {
         return out
     }
 
+    /// The model (or the boxes) seen as a photo's camera saw it: from `eye`
+    /// (metres east, north and up of the landmark's centre), along `heading`
+    /// (a compass bearing) tipped by `pitch` (degrees, up positive), `hfov`
+    /// degrees wide, to a PNG of `width` by `height` without a window.
+    func look(_ next: Source, to out: URL, eye: SIMD3<Double>, heading: Double, pitch: Double, hfov: Double,
+              width: Int, height: Int) throws {
+        source = next
+        switch next {
+        case .model(let url): mesh = try LandmarkRenderer.Model.load(url, device: renderer.device)
+        case .boxes(_, let boxes): mesh = try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
+        }
+        let aspect = Double(width) / Double(height)
+        controller.camera.yaw = heading
+        controller.camera.pitch = pitch
+        controller.camera.fovDegrees = 2 * atan(tan(hfov / 2 * .pi / 180) / aspect) * 180 / .pi
+        controller.camera.distance = 100
+        let e = SIMD3(eye.x, eye.z, -eye.y)
+        controller.camera.target = e + controller.camera.forward * 100
+        let vp = controller.camera.viewProjection(aspect: aspect)
+        try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: out, width: width, height: height) { enc in
+            renderer.encode(enc, model: mesh, viewProjection: vp)
+        }
+        controller.camera.fovDegrees = 50
+    }
+
     func frameModel() {
         guard let mesh else { return }
         let c = mesh.centre, s = mesh.size
