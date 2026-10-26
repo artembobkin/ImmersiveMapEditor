@@ -1158,7 +1158,7 @@ public enum LandmarkGenerator {
     /// that neighbour (where their heights overlap). Two masses built
     /// edge to edge, or with a slot between them, would stay two shells,
     /// with windows cut in walls no one sees.
-    static func sink(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.1) {
+    static func sink(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.3) {
         let polygons = rings.map { $0.map { Geometry.polygon($0 + [$0[0]]) } }
         for i in rings.indices {
             guard var ring = rings[i] else { continue }
@@ -1190,10 +1190,13 @@ public enum LandmarkGenerator {
     /// A wall running along a neighbour's wall within `near` of it (a
     /// slot between two masses, or two walls flush) pushed `into` metres
     /// into the neighbour along the stretch they share: the wall is split
-    /// where the stretch begins and ends, and that piece moves. Corners far
+    /// where the stretch begins and ends, and that piece moves. Deeper
+    /// than a window's recess, so the windows of both walls end up inside
+    /// the other mass and go with the union, instead of staying as sealed
+    /// pockets in the wall. Corners far
     /// from the neighbour (a wider block beside a narrower one) leave `sink`
     /// nothing to do; this closes the slot itself.
-    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.1) {
+    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.3) {
         let original = rings
         for i in rings.indices {
             guard let ring = original[i] else { continue }
