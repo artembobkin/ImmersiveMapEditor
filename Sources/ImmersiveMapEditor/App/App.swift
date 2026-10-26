@@ -21,6 +21,9 @@ import TileKit
 enum Entry {
     /// Synchronous on purpose: see `Platform.runMain`.
     static func main() {
+        // Signed with the user's certificate first, so the keychain and the
+        // folders know the app from build to build (CodeSigning).
+        CodeSigning.signAndRelaunchIfAdHoc()
         let arguments = CommandLine.arguments
         // The pipeline's commands, run by the editor as a process of its own
         // build, so the pipeline is never older than the editor.

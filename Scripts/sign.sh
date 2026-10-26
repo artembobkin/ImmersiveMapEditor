@@ -4,8 +4,9 @@
 # the same app from build to build (the proxy, the tokens: allowed once with
 # "Always Allow", never asked again). An ad hoc signature, what a plain
 # build leaves, changes with every build and is asked about every time.
-# Xcode runs this after every build (the shared scheme's post action); for
-# a command line build: Scripts/sign.sh .build/debug/ImmersiveMapEditor
+# The editor does this to itself at launch (CodeSigning); this script is
+# for a binary that is not going to be run first, such as one to copy:
+# Scripts/sign.sh .build/release/ImmersiveMapEditor
 set -e
 BIN="${1:?usage: sign.sh BINARY}"
 ID=$(security find-identity -v -p codesigning | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')

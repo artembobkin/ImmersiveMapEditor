@@ -90,7 +90,7 @@ Keep the code clean as it grows (the user asked for it, 2026-10-24):
 
 ```sh
 swift build -c release            # or open the folder (Package.swift) in Xcode: there is no .xcodeproj
-Scripts/sign.sh .build/release/ImmersiveMapEditor   # the user's Apple Development certificate, one stable identity: the keychain (proxy, tokens) trusts it once and for good. Xcode's shared scheme runs it after every build
+# The editor signs itself at launch (App/CodeSigning) with the user's Apple Development certificate under one identifier, then runs again: the keychain (proxy, tokens) and the folder permissions trust it once and for good. Scripts/sign.sh signs a binary by hand
 ./make_app.sh                     # build/Immersive Map Editor.app
 tp() { .build/release/ImmersiveMapEditor pipeline "$@"; }   # the pipeline's commands: tp COMMAND, in the data folder or with --root
 tp build 15 --tiles 19808/10243 19810/10243     # fetch, seed roads, build, validate (or Z X Y, or Z X0 Y0 X1 Y1)
