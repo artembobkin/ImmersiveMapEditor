@@ -84,6 +84,12 @@ enum LandmarkMCP {
         func image(_ url: URL) -> [String: Any]? {
             guard let data = try? Data(contentsOf: url) else { return nil }
             let mime = url.pathExtension.lowercased() == "png" ? "image/png" : "image/jpeg"
+            // A screenshot can be large: shrunk to what the agent needs.
+            if data.count > 900_000, url.pathExtension.lowercased() == "png" {
+                let small = url.deletingPathExtension().appendingPathExtension("small.jpg")
+                _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1400", "-s", "format", "jpeg", url.path, "--out", small.path])
+                if let d = try? Data(contentsOf: small) { return ["type": "image", "data": d.base64EncodedString(), "mimeType": "image/jpeg"] }
+            }
             return ["type": "image", "data": data.base64EncodedString(), "mimeType": mime]
         }
 
@@ -154,6 +160,9 @@ enum LandmarkMCP {
             ["name": "drop_reference",
              "description": "Removes a kept reference photo that turned out not to show the landmark (its credit too).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
+            ["name": "show_user_picture",
+             "description": "A picture the user attached to a request (a screenshot of the model or of the building, to show what to change), by its file name.",
+             "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
             ["name": "list_references",
              "description": "The reference photos kept, with their credits and what they show.",
              "inputSchema": ["type": "object", "properties": [:]]],
@@ -201,6 +210,11 @@ enum LandmarkMCP {
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
             case "list_references": return [text((String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]") + "\n" + coverage())]
+            case "show_user_picture":
+                let file = (args["file"] as? String ?? "") as NSString
+                let url = folder.appendingPathComponent("requests").appendingPathComponent(file.lastPathComponent)
+                guard let shown = image(url) else { throw Failure("no picture \(file) in the requests") }
+                return [text("The user's picture \(file.lastPathComponent)"), shown]
             case "show_reference":
                 let file = (args["file"] as? String ?? "") as NSString
                 guard let shown = image(references.appendingPathComponent(file.lastPathComponent)) else { throw Failure("no reference \(file)") }

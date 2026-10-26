@@ -255,6 +255,7 @@ public enum LandmarkGenerator {
         }
         for f in r.features { m.feature(f) }
         for s in r.shapes { m.shape(s, source) }
+        m.separate()
         return m
     }
 
@@ -277,8 +278,60 @@ public enum LandmarkGenerator {
     public final class Model {
         /// Triangles by colour name, three corners each, X east, Y north, Z up.
         var tris: [String: [V3]] = [:]
+        /// Every triangle in the order it was made, with its colour: what
+        /// `separate` works on.
+        var faces: [(a: V3, b: V3, c: V3, colour: String)] = []
 
         public var triangles: Int { tris.values.reduce(0) { $0 + $1.count } / 3 }
+
+        /// Two faces on one plane, one over the other, fight for the
+        /// pixels (a landing's top on a stylobate's, a box flush with a
+        /// wall): the one made later (the detail, not the wall) moves 2 cm
+        /// out along its normal. Called once the model is whole.
+        func separate() {
+            // A face's own normal, and the plane's (the same for a face
+            // looking the other way: a box's bottom on a mass's top).
+            struct Face { let i: Int; let n: V3; let d: Double; let lo: V3; let hi: V3 }
+            var planes: [String: [Face]] = [:]
+            for (i, f) in faces.enumerated() {
+                var n = simd_cross(f.b - f.a, f.c - f.a)
+                let len = simd_length(n)
+                guard len > 1e-9 else { continue }
+                n /= len
+                var plane = n
+                if plane.z < -1e-6 || (abs(plane.z) <= 1e-6 && (plane.y < -1e-6 || (abs(plane.y) <= 1e-6 && plane.x < 0))) { plane = -plane }
+                let key = String(format: "%.2f,%.2f,%.2f", plane.x, plane.y, plane.z)
+                planes[key, default: []].append(Face(i: i, n: n, d: simd_dot(plane, f.a), lo: simd_min(simd_min(f.a, f.b), f.c), hi: simd_max(simd_max(f.a, f.b), f.c)))
+            }
+            var moved = Set<Int>()
+            for group in planes.values where group.count > 1 {
+                let sorted = group.sorted { $0.d < $1.d }
+                for k in 0..<sorted.count {
+                    let f = sorted[k]
+                    guard !moved.contains(f.i) else { continue }
+                    var j = k + 1
+                    while j < sorted.count, sorted[j].d - f.d < 0.02 {
+                        let g = sorted[j]
+                        j += 1
+                        guard !moved.contains(g.i), f.i != g.i,
+                              f.lo.x < g.hi.x + 0.01, g.lo.x < f.hi.x + 0.01, f.lo.y < g.hi.y + 0.01, g.lo.y < f.hi.y + 0.01,
+                              f.lo.z < g.hi.z + 0.01, g.lo.z < f.hi.z + 0.01 else { continue }
+                        let later = max(f.i, g.i)
+                        let t = faces[later]
+                        var nn = simd_cross(t.b - t.a, t.c - t.a)
+                        nn /= max(simd_length(nn), 1e-9)
+                        let push = nn * 0.02
+                        faces[later].a += push
+                        faces[later].b += push
+                        faces[later].c += push
+                        moved.insert(later)
+                    }
+                }
+            }
+            guard !moved.isEmpty else { return }
+            tris = [:]
+            for f in faces { tris[f.colour, default: []] += [f.a, f.b, f.c] }
+        }
 
         public var summary: String {
             let all = tris.values.flatMap { $0 }
@@ -303,7 +356,9 @@ public enum LandmarkGenerator {
         func tri(_ a: V3, _ b: V3, _ c: V3, _ hint: V3, _ colour: String) {
             let n = simd_cross(b - a, c - a)
             guard simd_length(n) > 1e-9 else { return }
-            tris[colour, default: []] += simd_dot(n, hint) >= 0 ? [a, b, c] : [a, c, b]
+            let (p, q, r) = simd_dot(n, hint) >= 0 ? (a, b, c) : (a, c, b)
+            tris[colour, default: []] += [p, q, r]
+            faces.append((p, q, r, colour))
         }
 
         /// A convex planar polygon, fanned.

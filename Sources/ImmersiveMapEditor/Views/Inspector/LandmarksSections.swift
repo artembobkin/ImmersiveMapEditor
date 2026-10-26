@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Landmarks view's sections: the tile's landmarks (made in the
 /// Buildings view, each a folder of the tile's landmarks/), to pick one and
@@ -78,14 +80,7 @@ struct LandmarksSections: View {
                         .help("A new attempt from OSM: Claude Code looks for freely licensed photos (the ones kept are used again), writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
                 }
                 if LandmarkAgent.hasConversation(landmark.folder) {
-                    HStack {
-                        TextField("Ask Claude to change it…", text: $request, axis: .vertical)
-                            .lineLimit(1...4)
-                            .onSubmit(send)
-                        Button("Send", systemImage: "paperplane", action: send)
-                            .labelStyle(.iconOnly)
-                            .disabled(request.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || runner.running)
-                    }
+                    RequestField(landmark: landmark)
                 }
             }
             if LandmarkAgent.hasWork(landmark.folder) {
@@ -110,11 +105,112 @@ struct LandmarksSections: View {
             }
         }
     }
+}
+
+/// A request to Claude about the landmark, with screenshots: typed, with
+/// pictures attached by a button, dropped on it, or pasted (⌘V after a
+/// screenshot to the clipboard). Enter sends.
+private struct RequestField: View {
+    let landmark: TileLandmark
+    @Environment(Session.self) private var session
+    @State private var text = ""
+    @State private var pictures: [URL] = []
+    @State private var dropping = false
+
+    private var busy: Bool { session.build.running || session.agent.running }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                TextField("Ask Claude to change it…", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(send)
+                Button("Send", systemImage: "paperplane", action: send)
+                    .labelStyle(.iconOnly)
+                    .disabled(busy || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && pictures.isEmpty))
+            }
+            HStack(spacing: 8) {
+                Button("Attach Screenshot…", systemImage: "photo.badge.plus") { pick() }
+                    .controlSize(.small)
+                ForEach(pictures, id: \.self) { url in
+                    HStack(spacing: 2) {
+                        if let image = NSImage(contentsOf: url) {
+                            Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 28)
+                        }
+                        Button("", systemImage: "xmark.circle.fill") { pictures.removeAll { $0 == url } }
+                            .buttonStyle(.plain).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if busy {
+                Text(session.agent.running ? "Claude is still working: wait, or Stop Claude." : "A build is running: wait for it.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if !pictures.isEmpty {
+                Text("\(pictures.count) picture\(pictures.count == 1 ? "" : "s") go with the request.").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text("Drop or paste a screenshot here to show Claude a detail.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(6)
+        .background(dropping ? Color.accentColor.opacity(0.15) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        .onDrop(of: [.fileURL, .image], isTargeted: $dropping) { providers in
+            for p in providers {
+                if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                    p.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { item, _ in
+                        if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) { Task { @MainActor in self.add(url) } }
+                    }
+                } else if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                    p.loadDataRepresentation(forTypeIdentifier: UTType.png.identifier) { data, _ in
+                        if let data { Task { @MainActor in self.add(data: data) } }
+                    }
+                }
+            }
+            return true
+        }
+        .onPasteCommand(of: [.image, .png, .fileURL]) { providers in
+            for p in providers {
+                p.loadDataRepresentation(forTypeIdentifier: UTType.png.identifier) { data, _ in
+                    if let data { Task { @MainActor in self.add(data: data) } }
+                }
+            }
+        }
+    }
+
+    /// The requests' pictures live in the landmark's folder, requests/.
+    private var folder: URL { landmark.folder.appendingPathComponent("requests") }
+
+    private func pick() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.message = "Pictures to show Claude: screenshots of what to change."
+        if panel.runModal() == .OK { for url in panel.urls { add(url) } }
+    }
+
+    private func add(_ url: URL) {
+        guard let image = NSImage(contentsOf: url), let tiff = image.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
+        add(data: png)
+    }
+
+    private func add(data: Data) {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let url = folder.appendingPathComponent("\(stamp)-\(pictures.count + 1).png")
+        guard (try? data.write(to: url)) != nil else { return }
+        pictures.append(url)
+    }
 
     private func send() {
-        let text = request.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !runner.running else { return }
-        request = ""
-        session.modelLandmark(request: text)
+        guard !busy else { return }
+        var request = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !request.isEmpty || !pictures.isEmpty else { return }
+        if !pictures.isEmpty {
+            request += (request.isEmpty ? "" : "\n") + "The user attached \(pictures.count) picture\(pictures.count == 1 ? "" : "s") (screenshots of the model or of the building) to show what to change: look at each first with show_user_picture: "
+                + pictures.map(\.lastPathComponent).joined(separator: ", ") + "."
+        }
+        text = ""
+        pictures = []
+        session.modelLandmark(request: request)
     }
 }
