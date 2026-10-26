@@ -190,10 +190,11 @@ final class LandmarkAgent {
            d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \
         drone), the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
-        3. Write its recipe with set_recipe, then compare: compare_with_photo for each kept street photo shows the model \
-        rendered from the photo's own camera beside it, so what differs is plain (count the columns and the windows, \
-        check the roof's shape and height, the entrances, the colours); render_views for the whole and from above; \
-        render_from for a look from any place. Correct the recipe and compare again, until the shapes agree.
+        3. Write its recipe with set_recipe: every build comes back with the model rendered from each kept street \
+        photo's own camera beside that photo (one a side), so what differs is plain: count the columns and the windows, \
+        check the roof's shape and height, the entrances, the relief of the walls, the colours; compare_with_photo for \
+        the other kept photos, render_views for the whole and from above, render_from for a look from any place. \
+        Correct the recipe and build again, until the shapes agree.
         4. Before you finish, walk the building: render_from 15 m before each entrance at eye level (height 2, looking at \
         it, hfov 70) and check that the steps lead onto a floor that reaches the doors, that the columns stand on it, that \
         nothing floats\(ClaudeSettings.physicalChecks ? "; set_recipe's NOT PHYSICAL lines must all be gone" : ""). Then check from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \

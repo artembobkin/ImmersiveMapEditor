@@ -164,7 +164,27 @@ enum LandmarkMCP {
             case "get_landmark": return [text(try landmark())]
             case "get_outlines": return [text(try outlines(args["ids"] as? [String] ?? []))]
             case "get_recipe": return [text(try recipeText())]
-            case "set_recipe": return [text(try setRecipe(args["recipe"]))]
+            case "set_recipe":
+                let said = try setRecipe(args["recipe"])
+                guard said.hasPrefix("Built") else { return [text(said)] }
+                // The build, and at once the model beside every kept street
+                // photo from that photo's place (one a side, four at most):
+                // what to judge the round by.
+                var content: [[String: Any]] = [text(said)]
+                let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+                var sides = Set<String>()
+                var picked: [String] = []
+                for e in list {
+                    guard let file = e["file"] as? String, let pose = e["pose"] as? [String: Any],
+                          let x = pose["x"] as? Double, let y = pose["y"] as? Double else { continue }
+                    let side = StreetView.side((atan2(x, y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360))
+                    if sides.insert(side).inserted { picked.append(file) }
+                }
+                for file in picked.prefix(4) {
+                    if let shown = try? compare(["file": file]) { content += shown }
+                }
+                if picked.isEmpty { content.append(text("No street photo with a camera pose is kept yet: save some with save_street_photo, and every build will come back beside them.")) }
+                return content
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)

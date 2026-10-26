@@ -372,17 +372,21 @@ public enum LandmarkGenerator {
                 var openings: [Opening] = []
                 var spans: [(Double, Double, Double)] = []   // a door's t0, t1, top
                 for at in doors where at.edge == i {
-                    let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
+                    // A door stands on the wall's foot; a window (sill, glass) where it is told.
+                    let window = at.door.glass == true || (at.door.sill ?? 0) > 0.01
+                    let sill = max(0, min(at.door.sill ?? 0, z1 - z0 - 1))
+                    let w = min(at.door.width ?? (window ? 1.6 : 2.4), len * 0.6), h = min(at.door.height ?? (window ? 2.4 : 4), (z1 - z0 - sill) * 0.95)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
-                    guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
-                    openings.append(Opening(ring: opening(t, z0, w, h, arched: at.door.arched == true),
-                                            depth: at.door.depth ?? 0.6, back: at.door.colour ?? "lm_dark"))
-                    spans.append((t - w / 2, t + w / 2, z0 + h))
+                    guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 0.5 else { continue }
+                    openings.append(Opening(ring: opening(t, z0 + sill, w, h, arched: at.door.arched == true),
+                                            depth: window ? LandmarkGenerator.windowDepth : (at.door.depth ?? 0.6),
+                                            back: window ? (at.door.colour ?? "\(colour).glass") : (at.door.colour ?? "lm_dark")))
+                    spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
                 if let w = windows {
                     for ring in self.openings(len, z0, z1, w) {
                         let t0 = ring.map(\.x).min()!, t1 = ring.map(\.x).max()!, bottom = ring.map(\.y).min()!
-                        // Not over a door.
+                        // Not over a door, nor on a window placed by hand.
                         guard !spans.contains(where: { t1 > $0.0 - 0.5 && t0 < $0.1 + 0.5 && bottom < $0.2 + 0.3 }) else { continue }
                         openings.append(Opening(ring: ring, depth: LandmarkGenerator.windowDepth, back: "\(colour).glass"))
                     }
@@ -408,7 +412,7 @@ public enum LandmarkGenerator {
                     face(hole.map { p($0.x, $0.y, op.depth) }, o, op.back)
                 }
                 // Portals: jambs and a lintel standing proud around each door.
-                for at in doors where at.edge == i {
+                for at in doors where at.edge == i && at.door.glass != true && (at.door.sill ?? 0) <= 0.01 {
                     let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = at.door.portal ?? 0.35
                     guard pw > 0.01, t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
