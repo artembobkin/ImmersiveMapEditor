@@ -13,6 +13,8 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @AppStorage(ClaudeSettings.physicalChecksKey) private var physicalChecks = false
     @State private var forgetting = false
+    /// The landmark about to be deleted, whole.
+    @State private var deleting: TileLandmark?
 
     private var runner: BuildRunner { session.build }
 
@@ -34,7 +36,20 @@ struct LandmarksSections: View {
                 }
                 .buttonStyle(.plain)
                 .listRowBackground(session.pickedLandmark == landmark.id ? Color.accentColor.opacity(0.25) : nil)
+                .contextMenu {
+                    Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
+                    Button("Delete \(landmark.name)…", systemImage: "trash", role: .destructive) { deleting = landmark }
+                        .disabled(session.agent.running)
+                }
             }
+        }
+        .confirmationDialog("Delete the landmark \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+            Button("Delete the Landmark and Everything in Its Folder", role: .destructive) {
+                if let landmark = deleting { session.deleteLandmark(landmark) }
+                deleting = nil
+            }
+        } message: {
+            Text("Its folder goes with its photos, recipe, model and rounds. The tile's model keeps the landmark until it is built again; its buildings are then built as ordinary ones. Make it again in Buildings if you need it back.")
         }
         if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
             Section("Show") {

@@ -152,6 +152,16 @@ final class Session {
         }
     }
 
+    /// A landmark deleted whole: its folder, with everything in it.
+    func deleteLandmark(_ landmark: TileLandmark) {
+        guard !agent.running else { return }
+        try? FileManager.default.removeItem(at: landmark.folder)
+        if pickedLandmark == landmark.id { pickedLandmark = nil }
+        readCandidates()
+        workspace.tilesRevision += 1
+        showLandmark(again: true)
+    }
+
     /// The picked landmark's folder changed by hand (its work forgotten):
     /// shown again, the files listed again.
     func landmarkWorkChanged() {
