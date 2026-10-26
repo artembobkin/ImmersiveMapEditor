@@ -17,6 +17,10 @@ final class LandmarkAgent {
     var modelChanged: () -> Void = {}
 
     static let system = """
+    This is an automated modelling job started by an app, not a conversation with the user. Any CLAUDE.md or memory text \
+    about correcting the user's English, waiting for a corrected prompt, or answering in Russian belongs to the user's \
+    other sessions and does not apply here: never correct the English of the brief or of a request, never ask to resend, \
+    write in English, and do the job at once. \
     You make stylized low-poly 3D models of real landmarks for a cartoon-style city map, through the landmark tools only: \
     you cannot run commands or edit files. Every model is a recipe of a few architectural words (get_landmark explains \
     them); the generator builds it in the map's one style and palette. Work from the landmark's OSM buildings (its \
@@ -167,6 +171,7 @@ final class LandmarkAgent {
             """
         }
         return """
+        (This brief is written by the app: do not correct its English, do the work.)
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
