@@ -80,6 +80,10 @@ public enum VisiblePass {
             let eye = SIMD3<Float>(target.x + Float(sin(a)) * dist, ground + 1.7, target.z - Float(cos(a)) * dist)
             views.append((eye, SIMD3<Float>(target.x, ground + (top - ground) * 0.6, target.z), 0.9))
         }
+        if let only = ProcessInfo.processInfo.environment["LANDMARK_VIS_VIEWS"], let n = Int(only) {
+            // One view alone, to see what it sees.
+            views = [views[min(n, views.count - 1)]]
+        }
         for view in views {
             let eye = view.eye, half = view.half, dist = simd_length(view.at - eye)
             let f = simd_normalize(view.at - eye)

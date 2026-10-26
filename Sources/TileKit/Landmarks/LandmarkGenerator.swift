@@ -317,9 +317,20 @@ public enum LandmarkGenerator {
             hidden = owner.count - seen.filter { $0 }.count
             if ProcessInfo.processInfo.environment["LANDMARK_UNION_DEBUG"] != nil {
                 var dropped: [String: Int] = [:]
-                for (k, (c, _)) in owner.enumerated() where !seen[k] { dropped[c, default: 0] += 1 }
+                var shown = 0
+                for (k, (c, _)) in owner.enumerated() where !seen[k] {
+                    dropped[c, default: 0] += 1
+                    if c == "rim", shown < 6 {
+                        shown += 1
+                        let (a, b, cc) = (flat[3 * k], flat[3 * k + 1], flat[3 * k + 2])
+                        let n = simd_cross(b - a, cc - a)
+                        FileHandle.standardError.write(Data(String(format: "  hidden rim: centre (%.1f, %.1f, %.1f), normal (%.2f, %.2f, %.2f), area %.3f\n",
+                            (a.x + b.x + cc.x) / 3, (a.y + b.y + cc.y) / 3, (a.z + b.z + cc.z) / 3, n.x / simd_length(n), n.y / simd_length(n), n.z / simd_length(n), simd_length(n) / 2).utf8))
+                    }
+                }
                 FileHandle.standardError.write(Data("hidden by colour: \(dropped.sorted { $0.value > $1.value })\n".utf8))
             }
+            if ProcessInfo.processInfo.environment["LANDMARK_NO_CULL"] != nil { return }
             tris = out
         }
 
