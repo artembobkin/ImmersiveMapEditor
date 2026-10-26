@@ -98,7 +98,7 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept): the ones within `radius` metres of its centre that look at it, nearest first, each with its id, where it stands (metres and the side), which way it looks, its date and author. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's outlines: the best looks, a track (one pass) at a time, for every side it is seen from, each with its id, distance, side, how much of it and of the frame it fills, date and author; and a contact sheet of them, the landmark framed in red on each, to see which really show it. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
                 "limit": ["type": "integer", "description": "How many, 15 by default."]]]],
@@ -106,6 +106,9 @@ enum LandmarkMCP {
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
                              "required": ["id", "shows"]]],
+            ["name": "drop_reference",
+             "description": "Removes a kept reference photo that turned out not to show the landmark (its credit too).",
+             "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
             ["name": "list_references",
              "description": "The reference photos kept, with their credits and what they show.",
              "inputSchema": ["type": "object", "properties": [:]]],
@@ -122,7 +125,8 @@ enum LandmarkMCP {
             case "set_recipe": return [text(try setRecipe(args["recipe"]))]
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
-            case "find_street_photos": return [text(try streetPhotos(args))]
+            case "find_street_photos": return try streetPhotos(args)
+            case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
             case "list_references": return [text(String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]")]
             case "show_reference":
@@ -260,81 +264,154 @@ enum LandmarkMCP {
             items.append(URLQueryItem(name: "access_token", value: try mapillaryToken))
             var c = URLComponents(string: "https://graph.mapillary.com/" + path)!
             c.queryItems = items
-            // Without -f: Mapillary explains an error in its JSON body.
-            let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-sSL", "--max-time", "60", c.url!.absoluteString])
-            guard status == 0 else { throw Failure("Mapillary did not answer: \(said.prefix(300))") }
-            guard let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any] else {
-                throw Failure("Mapillary answered with something else: \(said.prefix(300))")
+            // Without -f: Mapillary explains an error in its JSON body. Over
+            // HTTP/1.1, and twice: the proxy drops an HTTP/2 stream now and then.
+            var last = ""
+            for _ in 0..<2 {
+                let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-sSL", "--http1.1", "--max-time", "60", c.url!.absoluteString])
+                last = said
+                guard status == 0 else { continue }
+                guard let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any] else {
+                    throw Failure("Mapillary answered with something else: \(said.prefix(300))")
+                }
+                return json
             }
-            return json
+            throw Failure("Mapillary did not answer: \(last.prefix(300))")
         }
 
-        /// The photos around the landmark's centre that look at it.
-        func streetPhotos(_ args: [String: Any]) throws -> String {
-            let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
-            let (lon, lat) = source.centre
+        /// A coverage tile of Mapillary's, kept for a day.
+        func coverage(x: Int, y: Int) throws -> Data {
+            let dir = viewsFolder.appendingPathComponent("street/tiles")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let file = dir.appendingPathComponent("\(CoverageTile.zoom)_\(x)_\(y).mvt")
+            if let age = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
+               Date().timeIntervalSince(age) < 86_400, let data = try? Data(contentsOf: file), !data.isEmpty { return data }
+            let url = "https://tiles.mapillary.com/maps/vtp/mly1_public/2/\(CoverageTile.zoom)/\(x)/\(y)?access_token=\(try mapillaryToken)"
+            var last = ""
+            for _ in 0..<2 {
+                let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"),
+                                              ["-fsSL", "--http1.1", "--compressed", "--max-time", "120", "-o", file.path, url])
+                last = said
+                if status == 0, let data = try? Data(contentsOf: file), !data.isEmpty { return data }
+            }
+            throw Failure("Mapillary's coverage tile did not come: \(last.prefix(200))")
+        }
+
+        /// The photos around the landmark that look at it, judged by
+        /// geometry (StreetView), the best track by track (StreetPicks).
+        func streetPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
+            let scene = try StreetScene(folder: folder)
             let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
-            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 15))
-            let kx = cos(lat * .pi / 180) * 111_320.0, ky = 110_574.0
-            // Mapillary refuses a box with too many photos in it (central
-            // Moscow: anything over about 80 m around), so the area is asked
-            // for in cells of 150 m, the answers merged by id.
-            let cell = 75.0, n = Int((radius / cell).rounded(.up))
+            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 16))
+            // Every photo around, from Mapillary's coverage tiles (the Graph
+            // API's box search answers with a different sample every time),
+            // judged first by its raw pose, then the best few dozen asked for
+            // in full (camera, computed pose, quality) and judged again.
+            let kx = scene.kx, ky = scene.ky
+            let corners = [(scene.lon - radius / kx, scene.lat - radius / ky), (scene.lon + radius / kx, scene.lat - radius / ky),
+                           (scene.lon - radius / kx, scene.lat + radius / ky), (scene.lon + radius / kx, scene.lat + radius / ky)]
+            var tiles = Set<String>()
+            var points: [CoverageTile.Point] = []
+            for (lon, lat) in corners {
+                let t = CoverageTile.tile(lon: lon, lat: lat)
+                guard tiles.insert("\(t.x)/\(t.y)").inserted else { continue }
+                points += CoverageTile.points(try coverage(x: t.x, y: t.y), x: t.x, y: t.y)
+            }
+            var rough: [(Double, [String: Any])] = []
+            for p in points {
+                let at = scene.metres(lon: p.lon, lat: p.lat)
+                guard simd_length(at) <= radius, let id = p.props["id"].map({ "\($0)" }), !id.isEmpty else { continue }
+                var e: [String: Any] = ["id": id, "computed_geometry": ["coordinates": [p.lon, p.lat]],
+                                        "is_pano": (p.props["is_pano"] as? Bool) ?? ((p.props["is_pano"] as? UInt64).map { $0 != 0 } ?? false),
+                                        "sequence": p.props["sequence_id"].map { "\($0)" } ?? id]
+                if let a = p.props["compass_angle"] as? Double { e["computed_compass_angle"] = a }
+                else if let a = p.props["compass_angle"] as? Int64 { e["computed_compass_angle"] = Double(a) }
+                else if let a = p.props["compass_angle"] as? UInt64 { e["computed_compass_angle"] = Double(a) }
+                if let t = p.props["captured_at"] as? Int64 { e["captured_at"] = Double(t) }
+                else if let t = p.props["captured_at"] as? UInt64 { e["captured_at"] = Double(t) }
+                else if let t = p.props["captured_at"] as? Double { e["captured_at"] = t }
+                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene, quick: true) else { continue }
+                rough.append((view.score, e))
+            }
+            let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
+            // The best few hundred judged with what hides them, then the best
+            // of every side, a hundred in all, asked for in full, thirty ids
+            // a call.
+            var judged: [(Double, String, [String: Any])] = []
+            for (_, e) in rough.sorted(by: { $0.0 > $1.0 }).prefix(500) {
+                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene) else { continue }
+                judged.append((view.score, StreetView.side(view.from), e))
+            }
+            var perSide: [String: Int] = [:]
+            var asked: [String] = []
+            for (_, side, e) in judged.sorted(by: { $0.0 > $1.0 }) where asked.count < 100 && perSide[side, default: 0] < 16 {
+                perSide[side, default: 0] += 1
+                asked.append(e["id"] as! String)
+            }
             var photos: [String: [String: Any]] = [:]
-            for i in 0..<n {
-                for j in 0..<n {
-                    let cx = lon + (Double(i) * 2 + 1 - Double(n)) * cell / kx, cy = lat + (Double(j) * 2 + 1 - Double(n)) * cell / ky
-                    let bbox = [cx - cell / kx, cy - cell / ky, cx + cell / kx, cy + cell / ky].map { String(format: "%.6f", $0) }
-                    let json = try mapillary("images", ["fields": "id,computed_geometry,computed_compass_angle,captured_at,creator,is_pano",
-                                                        "bbox": bbox.joined(separator: ","), "limit": "100"])
-                    if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
-                    for e in json["data"] as? [[String: Any]] ?? [] { if let id = e["id"] as? String { photos[id] = e } }
-                }
+            for chunk in stride(from: 0, to: asked.count, by: 30).map({ Array(asked[$0..<min($0 + 30, asked.count)]) }) {
+                let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields])
+                for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
             }
-            var found: [(Double, String)] = []
-            let sides = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
-            for e in photos.values {
-                guard let id = e["id"] as? String,
-                      let c = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double], c.count == 2 else { continue }
-                let dx = (c[0] - lon) * kx, dy = (c[1] - lat) * ky, dist = hypot(dx, dy)
-                guard dist <= radius, dist > 8 else { continue }
-                // Where the camera stands from the centre, and whether it looks back at it.
-                let from = (atan2(dx, dy) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
-                let toCentre = (from + 180).truncatingRemainder(dividingBy: 360)
-                let pano = e["is_pano"] as? Bool ?? false
-                let looks = (e["computed_compass_angle"] as? NSNumber)?.doubleValue
-                var away = 0.0
-                if let looks, !pano {
-                    away = abs((looks - toCentre + 540).truncatingRemainder(dividingBy: 360) - 180)
-                    guard away <= 55 else { continue }
-                }
-                let side = sides[Int((from + 22.5) / 45) % 8]
-                var date = "?"
-                if let ms = (e["captured_at"] as? NSNumber)?.doubleValue {
-                    let f = DateFormatter()
-                    f.dateFormat = "yyyy-MM"
-                    date = f.string(from: Date(timeIntervalSince1970: ms / 1000))
-                }
-                let author = (e["creator"] as? [String: Any])?["username"] as? String ?? "?"
-                let line = "\(id): \(Int(dist)) m to the \(side) of the centre, "
-                    + (pano ? "a panorama" : "looking \(sides[Int((toCentre + 22.5) / 45) % 8]) at it (\(Int(away))° off)")
-                    + ", \(date), by \(author)"
-                found.append((dist + away * 0.5, line))
+            func text(_ s: String) -> [String: Any] { self.text(s) }
+            let photosCount = total
+            let views = photos.values.compactMap { StreetPhoto($0, scene) }.filter { simd_length($0.at) <= radius }
+                .compactMap { StreetView($0, in: scene) }
+            guard !views.isEmpty else {
+                return [text("Of \(photosCount) street photos within \(Int(radius)) m none shows the landmark well. Try a larger radius.")]
             }
-            guard !found.isEmpty else { return "No street photos within \(Int(radius)) m look at it. Try a larger radius." }
-            let lines = found.sorted { $0.0 < $1.0 }.prefix(limit).map(\.1)
-            return "\(found.count) photos look at it; the \(lines.count) best:\n" + lines.joined(separator: "\n")
-                + "\nKeep one with save_street_photo(id, shows). Licence CC BY-SA 4.0, credited to Mapillary and its author."
+            let (report, picks) = StreetPicks.report(views, limit: limit)
+            guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
+            // The contact sheet: a small thumbnail of each pick, framed.
+            let dir = viewsFolder.appendingPathComponent("street")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let thumbs: [URL?] = picks.map { pick in
+                let file = dir.appendingPathComponent("\(pick.photo.id).jpg")
+                if FileManager.default.fileExists(atPath: file.path) { return file }
+                guard let json = try? mapillary(pick.photo.id, ["fields": pick.photo.pano ? "thumb_1024_url" : "thumb_256_url"]),
+                      let url = (json["thumb_1024_url"] ?? json["thumb_256_url"]) as? String else { return nil }
+                let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--max-time", "30", "-o", file.path, url])
+                return status == 0 ? file : nil
+            }
+            let sheet = dir.appendingPathComponent("sheet.jpg")
+            try StreetPicks.sheet(picks, thumbs: thumbs, to: sheet)
+            var content: [[String: Any]] = [text(
+                "\(photosCount) street photos within \(Int(radius)) m, \(views.count) show the landmark. The best, a track (one pass of a car or a walker) at a time:\n"
+                + report
+                + "\nThe contact sheet shows them, numbered, the landmark framed in red by Mapillary's camera poses, which are sometimes wrong: look, and keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back framed (a panorama cut to it): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+            if let img = image(sheet) { content.append(img) }
+            return content
+        }
+
+        /// A kept photo that turned out not to show the landmark: gone, with
+        /// its credit.
+        func dropReference(_ name: String) throws -> String {
+            let file = references.appendingPathComponent((name as NSString).lastPathComponent)
+            guard file.pathExtension == "jpg", FileManager.default.fileExists(atPath: file.path) else { throw Failure("no reference \(name)") }
+            try FileManager.default.removeItem(at: file)
+            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            list.removeAll { $0["file"] as? String == file.lastPathComponent }
+            try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
+            return "Dropped \(file.lastPathComponent)"
         }
 
         func saveStreetPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
             guard let id = args["id"] as? String, !id.isEmpty, id.allSatisfy(\.isNumber) else { throw Failure("give the photo's id from find_street_photos") }
             guard let shows = args["shows"] as? String, !shows.isEmpty else { throw Failure("say what it shows") }
-            let json = try mapillary(id, ["fields": "thumb_1024_url,creator"])
-            guard let url = json["thumb_1024_url"] as? String else { throw Failure("Mapillary has no picture for \(id)") }
-            let author = (json["creator"] as? [String: Any])?["username"] as? String ?? "unknown"
-            return try keep(url, page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(author) (Mapillary)",
-                            licence: "CC BY-SA 4.0", shows: shows)
+            let scene = try StreetScene(folder: folder)
+            let json = try mapillary(id, ["fields": StreetPhoto.fields + ",thumb_2048_url,thumb_original_url"])
+            if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
+            guard let photo = StreetPhoto(json, scene), let url = photo.thumb else { throw Failure("Mapillary has no picture for \(id)") }
+            guard let view = StreetView(photo, in: scene) else { throw Failure("that photo does not show the landmark") }
+            let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
+                                page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(photo.author) (Mapillary)",
+                                licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red)")
+            if let name = (kept.first?["text"] as? String)?.split(separator: " ").last {
+                let file = references.appendingPathComponent(String(name))
+                try StreetMarking.mark(file, view)
+                return [text("Kept as \(name): the landmark is framed in red, \(view.line)")] + (image(file).map { [$0] } ?? [])
+            }
+            return kept
         }
 
         /// Downloads a photo into the references with its credit.
