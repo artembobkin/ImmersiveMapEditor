@@ -17,6 +17,7 @@ enum LandmarkMCP {
         var root = folder.standardizedFileURL
         for _ in 0..<6 { root = root.deletingLastPathComponent() }
         Palette.load(WorkspacePaths(root: root))
+        Segmenter.folder = root.appendingPathComponent("config/models")
         let server = Server(folder: folder.standardizedFileURL)
         while let line = readLine(strippingNewline: true) {
             guard let data = line.data(using: .utf8),
@@ -435,6 +436,7 @@ enum LandmarkMCP {
             for (k, pick) in picks.enumerated() {
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
                 try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
+                PeopleMask.erase(framed)
                 content.append(text("#\(k + 1) " + pick.line))
                 if let img = image(framed) { content.append(img) }
             }
@@ -460,7 +462,7 @@ enum LandmarkMCP {
                 if let thumb = p.thumb {
                     let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "60", "-A", CommonsPhotos.agent, "-o", file.path, thumb])
                     _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "640", "-s", "format", "jpeg", file.path, "--out", file.path])
-                    if status == 0 { image = file }
+                    if status == 0 { PeopleMask.erase(file); image = file }
                 }
                 return ContactSheet.Cell(image: image, box: nil, cut: false, label: "#\(k + 1)  \(String(p.title.dropFirst("File:".count).prefix(40)))")
             }

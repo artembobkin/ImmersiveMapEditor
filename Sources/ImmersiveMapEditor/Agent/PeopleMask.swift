@@ -1,11 +1,13 @@
 import CoreGraphics
+import CoreML
 import Foundation
 import ImageIO
 import Vision
 
-/// The people in a reference photo painted black, with Vision's person
-/// segmentation (the Mac's own model, on the device, no network): a
-/// reference is the building, and a crowd before it only distracts.
+/// The people, cars and buses in a reference photo painted black: Vision's
+/// person segmentation (the Mac's own model) and DeepLabV3 (Segmenter,
+/// fetched once), both on the device. A reference is the building, and a
+/// crowd or the traffic before it only distracts.
 enum PeopleMask {
     /// Paints the people of a JPEG black, in place. Leaves it as it is when
     /// the model finds none or fails. Returns whether it painted.
@@ -38,6 +40,16 @@ enum PeopleMask {
             let crop = box.insetBy(dx: -box.width * 0.4, dy: -box.height * 0.3).intersection(full).integral
             guard crop.width >= 8, crop.height >= 8, let part = image.cropping(to: crop) else { continue }
             if let mask = segmentation(of: part), canvas.paint(mask, in: crop) { painted = true }
+        }
+        // Then everything in the way by class: the whole picture, and its
+        // quarters for the small and far.
+        var windows = [full]
+        for i in 0..<2 {
+            for j in 0..<2 { windows.append(CGRect(x: Double(w) * 0.5 * Double(i), y: Double(h) * 0.5 * Double(j), width: Double(w) * 0.5, height: Double(h) * 0.5)) }
+        }
+        for window in windows {
+            guard let part = window == full ? image : image.cropping(to: window.integral), let labels = Segmenter.labels(of: part) else { continue }
+            if canvas.paint(labels: labels, in: window.integral) { painted = true }
         }
         return painted ? ctx.makeImage() : nil
     }
@@ -108,6 +120,28 @@ enum PeopleMask {
             for y in y0..<y1 {
                 let my = min(mh - 1, (y - y0) * mh / (y1 - y0))
                 for x in x0..<x1 where m[my * mstride + min(mw - 1, (x - x0) * mw / (x1 - x0))] >= 128 {
+                    let k = y * stride + x * 4
+                    p[k] = 0; p[k + 1] = 0; p[k + 2] = 0
+                    any = true
+                }
+            }
+            return any
+        }
+
+        /// Paints black where the class map says something is in the way.
+        func paint(labels: MLMultiArray, in region: CGRect) -> Bool {
+            guard labels.shape.count == 2 else { return false }
+            let mh = labels.shape[0].intValue, mw = labels.shape[1].intValue
+            let x0 = max(0, Int(region.minX)), x1 = min(w, Int(region.maxX)), y0 = max(0, Int(region.minY)), y1 = min(h, Int(region.maxY))
+            guard x1 > x0, y1 > y0, mw > 0, mh > 0 else { return false }
+            let values = labels.dataPointer.assumingMemoryBound(to: Int32.self)
+            let rowStride = labels.strides[0].intValue, colStride = labels.strides[1].intValue
+            var any = false
+            for y in y0..<y1 {
+                let my = min(mh - 1, (y - y0) * mh / (y1 - y0))
+                for x in x0..<x1 {
+                    let mx = min(mw - 1, (x - x0) * mw / (x1 - x0))
+                    guard Segmenter.inTheWay.contains(values[my * rowStride + mx * colStride]) else { continue }
                     let k = y * stride + x * 4
                     p[k] = 0; p[k + 1] = 0; p[k + 2] = 0
                     any = true

@@ -95,7 +95,8 @@ enum Headless {
             }
         }
         if let i = arguments.firstIndex(of: "--erase-people"), arguments.count > i + 2 {
-            // A photo's people painted black, to check the model.
+            // A photo's people and traffic painted black, to check the models.
+            Segmenter.folder = DataFolder.current.appendingPathComponent("config/models")
             let out = URL(fileURLWithPath: arguments[i + 2])
             try? FileManager.default.copyItem(at: URL(fileURLWithPath: arguments[i + 1]), to: out)
             print(PeopleMask.erase(out) ? "people painted" : "no people found")
