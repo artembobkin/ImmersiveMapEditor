@@ -100,6 +100,30 @@ public struct LandmarkRecipe: Codable {
         public var cornice: Band?
         public var windows: Windows?
         public var roof: Roof?
+        /// Entrances: recesses cut in the wall nearest each, with a portal.
+        public var doors: [Door]?
+        /// Vertical strips standing proud of the walls, between the windows.
+        public var pilasters: Pilasters?
+        /// String courses: a band standing proud at every storey line.
+        public var bands: Band?
+    }
+
+    public struct Door: Codable {
+        public var at: [Double]
+        public var width: Double?
+        public var height: Double?
+        public var depth: Double?
+        public var arched: Bool?
+        /// A frame around it standing proud, this wide; 0 for none.
+        public var portal: Double?
+        public var colour: String?
+    }
+
+    public struct Pilasters: Codable {
+        public var spacing: Double
+        public var width: Double?
+        public var depth: Double?
+        public var colour: String?
     }
 
     public struct Band: Codable {
@@ -121,6 +145,11 @@ public struct LandmarkRecipe: Codable {
         public var shape: String
         public var height: Double?
         public var colour: String?
+        /// A pitched roof's eaves beyond the wall (0.6 m unless given), with
+        /// a fascia under them.
+        public var overhang: Double?
+        /// A flat roof's low wall around its edge.
+        public var parapet: Double?
     }
 
     public struct Feature: Codable {
@@ -163,7 +192,11 @@ public struct LandmarkRecipe: Codable {
                  "plinth": {"height": 1.5, "depth": 0.15, "colour": "lm_stone"},
                  "cornice": {"height": 0.8, "depth": 0.4, "colour": "lm_white"},
                  "windows": {"storeys": 3, "spacing": 3.5, "width": 1.4, "height": 2.4, "arched": false},
-                 "roof": {"shape": "flat|gabled|skillion|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green"}}],
+                 "doors": [{"at": [x, y], "width": 2.4, "height": 4, "depth": 0.6, "arched": true, "portal": 0.35, "colour": "lm_dark"}],
+                 "pilasters": {"spacing": 3.5, "width": 1.0, "depth": 0.3, "colour": "lm_white"},
+                 "bands": {"height": 0.3, "depth": 0.15, "colour": "lm_white"},
+                 "roof": {"shape": "flat|gabled|skillion|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_green",
+                          "overhang": 0.6, "parapet": 1.0}}],
      "features": [{"kind": "colonnade", "from": [x, y], "to": [x, y], "base": 1.5, "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
                   {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18, "height": 4, "depth": 2, "colour": "lm_cream"},
                   {"kind": "statue", "shape": "quadriga", "at": [x, y], "heading": 180, "base": 23, "pedestal": 1, "height": 5, "width": 8, "colour": "lm_dark"},
@@ -173,7 +206,13 @@ public struct LandmarkRecipe: Codable {
     - A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
     standing proud, windows storey by storey on every wall long enough, and a roof on its top. A window is a recess cut \
     into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
-    reads as storeys of windows, with the storeys and spacing the photos show. Gabled, skillion (one slope, \
+    reads as storeys of windows, with the storeys and spacing the photos show. A door is an entrance cut into the wall \
+    nearest its `at` (a point on or by that wall), deeper than a window, its leaf at the back and a portal standing proud \
+    around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
+    proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
+    A pitched roof has eaves 0.6 m beyond the walls with a fascia (`overhang` to change), a flat roof a `parapet` when \
+    the photos show one. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \
+    pitched roof with its eaves, so the roof reads as a volume of its own. Gabled, skillion (one slope, \
     rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
     outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.
     - A statue is a sculpture by its shape: figure (a standing person), horse, quadriga (a chariot drawn by four horses, \

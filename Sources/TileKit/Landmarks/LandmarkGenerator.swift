@@ -59,6 +59,21 @@ public enum LandmarkGenerator {
             colour(m.cornice?.colour, at + ".cornice")
             colour(m.windows?.colour, at + ".windows")
             if let w = m.windows, w.storeys < 1 || w.spacing <= 0 { out.append("\(at).windows: storeys and spacing must be positive") }
+            for (k, d) in (m.doors ?? []).enumerated() {
+                if d.at.count != 2 { out.append("\(at).doors[\(k)]: needs at, [x, y], a point on or by the wall") }
+                colour(d.colour, at + ".doors[\(k)]")
+            }
+            if let p = m.pilasters {
+                if p.spacing <= 0.5 { out.append("\(at).pilasters: spacing must be over 0.5 m") }
+                colour(p.colour, at + ".pilasters")
+            }
+            if let b = m.bands {
+                if b.height <= 0 { out.append("\(at).bands: needs a height") }
+                if m.windows == nil || m.windows!.storeys < 2 { out.append("\(at).bands: bands lie between storeys, so the mass needs windows of 2 storeys at least") }
+                colour(b.colour, at + ".bands")
+            }
+            colour(m.roof?.colour, at + ".roof")
+            if let p = m.roof?.parapet, p < 0 { out.append("\(at).roof: parapet below zero") }
         }
         for (i, s) in r.shapes.enumerated() {
             let at = "shapes[\(i)] (\(s.kind))"
@@ -184,11 +199,45 @@ public enum LandmarkGenerator {
             }
         }
 
+        /// An opening cut into a wall, in (along, up): its ring, how deep,
+        /// and what is at its back (glass, a door).
+        struct Opening {
+            let ring: [P2]
+            let depth: Double
+            let back: String
+        }
+
+        /// A door's place on a ring: the edge nearest it and where along.
+        struct DoorAt {
+            let edge: Int
+            let t: Double
+            let door: LandmarkRecipe.Door
+        }
+
+        func place(_ doors: [LandmarkRecipe.Door], on ring: [P2]) -> [DoorAt] {
+            doors.compactMap { d -> DoorAt? in
+                guard d.at.count == 2 else { return nil }
+                let p = P2(d.at[0], d.at[1])
+                var best: (Int, Double, Double)?
+                for i in ring.indices {
+                    let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
+                    guard len > 1e-6 else { continue }
+                    let t = max(0, min(len, simd_dot(p - a, b - a) / len))
+                    let dist = simd_length(a + (b - a) * (t / len) - p)
+                    if best == nil || dist < best!.2 { best = (i, t, dist) }
+                }
+                return best.map { DoorAt(edge: $0.0, t: $0.1, door: d) }
+            }
+        }
+
         /// Walls of a ring from `z0` to `z1`, looking out (a counter-clockwise
-        /// ring's right), with their windows cut in: a recess of windowDepth,
-        /// reveals a tone darker than the wall, the glass darker still, the
-        /// sill light, as an ordinary building's.
-        func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String, windows: LandmarkRecipe.Windows? = nil) {
+        /// ring's right), with their windows and doors cut in: a window a
+        /// recess of windowDepth, reveals a tone darker than the wall, the
+        /// glass darker still, the sill light, as an ordinary building's; a
+        /// door a deeper recess with its leaf at the back and a portal
+        /// standing proud around it.
+        func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String, windows: LandmarkRecipe.Windows? = nil,
+                   doors: [DoorAt] = []) {
             guard z1 > z0 else { return }
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
@@ -199,58 +248,56 @@ public enum LandmarkGenerator {
                     let q = a + d * t - o2 * depth
                     return V3(q.x, q.y, z)
                 }
-                let holes = windows.map { openings(len, z0, z1, $0) } ?? []
-                guard !holes.isEmpty else {
+                var openings: [Opening] = []
+                var spans: [(Double, Double, Double)] = []   // a door's t0, t1, top
+                for at in doors where at.edge == i {
+                    let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
+                    let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
+                    guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
+                    openings.append(Opening(ring: opening(t, z0, w, h, arched: at.door.arched == true),
+                                            depth: at.door.depth ?? 0.6, back: at.door.colour ?? "lm_dark"))
+                    spans.append((t - w / 2, t + w / 2, z0 + h))
+                }
+                if let w = windows {
+                    for ring in self.openings(len, z0, z1, w) {
+                        let t0 = ring.map(\.x).min()!, t1 = ring.map(\.x).max()!, bottom = ring.map(\.y).min()!
+                        // Not over a door.
+                        guard !spans.contains(where: { t1 > $0.0 - 0.5 && t0 < $0.1 + 0.5 && bottom < $0.2 + 0.3 }) else { continue }
+                        openings.append(Opening(ring: ring, depth: LandmarkGenerator.windowDepth, back: "\(colour).glass"))
+                    }
+                }
+                guard !openings.isEmpty else {
                     face([p(0, z0), p(len, z0), p(len, z1), p(0, z1)], o, colour)
                     continue
                 }
                 let shape = Geometry.polygon([P2(0, z0), P2(len, z0), P2(len, z1), P2(0, z1), P2(0, z0)],
-                                             holes: holes.map { $0 + [$0[0]] })
+                                             holes: openings.map { $0.ring + [$0.ring[0]] })
                 for t in shape.constrainedDelaunay() where t.count == 3 {
                     tri(p(t[0].x, t[0].y), p(t[1].x, t[1].y), p(t[2].x, t[2].y), o, colour)
                 }
-                for hole in holes {
-                    let c = hole.reduce(P2.zero, +) / Double(hole.count)
+                for op in openings {
+                    let hole = op.ring, c = hole.reduce(P2.zero, +) / Double(hole.count)
                     for k in hole.indices {
                         let e0 = hole[k], e1 = hole[(k + 1) % hole.count]
                         let sill = abs(e0.y - e1.y) < 1e-9 && e0.y < c.y
                         let dir = c - (e0 + e1) / 2
-                        face([p(e0.x, e0.y), p(e1.x, e1.y), p(e1.x, e1.y, LandmarkGenerator.windowDepth), p(e0.x, e0.y, LandmarkGenerator.windowDepth)],
+                        face([p(e0.x, e0.y), p(e1.x, e1.y), p(e1.x, e1.y, op.depth), p(e0.x, e0.y, op.depth)],
                              V3(d.x * dir.x, d.y * dir.x, dir.y), sill ? "rim" : "\(colour).reveal")
                     }
-                    face(hole.map { p($0.x, $0.y, LandmarkGenerator.windowDepth) }, o, "\(colour).glass")
+                    face(hole.map { p($0.x, $0.y, op.depth) }, o, op.back)
+                }
+                // Portals: jambs and a lintel standing proud around each door.
+                for at in doors where at.edge == i {
+                    let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
+                    let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = at.door.portal ?? 0.35
+                    guard pw > 0.01, t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
+                    let top = min(z0 + h + pw, z1)
+                    let portal = at.door.colour.map { _ in "\(colour)" } ?? colour
+                    proud(a, d, o2, t - w / 2 - pw, t - w / 2, z0, top, 0.25, portal)
+                    proud(a, d, o2, t + w / 2, t + w / 2 + pw, z0, top, 0.25, portal)
+                    proud(a, d, o2, t - w / 2, t + w / 2, z0 + h, top, 0.25, portal)
                 }
             }
-        }
-
-        /// The openings of a wall `len` long from `lo` to `hi`, in (along,
-        /// up): a row a storey, spaced along the wall, never at its ends, an
-        /// arched one topped by a half circle.
-        func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
-            guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
-            let storey = (hi - lo) / Double(w.storeys)
-            let height = min(w.height, storey * 0.65), width = min(w.width, w.spacing * 0.7), h = width / 2
-            let n = Int((len - 1) / w.spacing)
-            guard n >= 1, height > 0.3 else { return [] }
-            var out: [[P2]] = []
-            for k in 0..<n {
-                let t = len / 2 + (Double(k) - Double(n - 1) / 2) * w.spacing
-                for s in 0..<w.storeys {
-                    let zc = lo + storey * (Double(s) + 0.5), zb = zc - height / 2
-                    if w.arched == true, height > width {
-                        let zt = zb + height - h
-                        var ring = [P2(t - h, zb), P2(t + h, zb), P2(t + h, zt)]
-                        for j in 1..<6 {
-                            let a = Double.pi * Double(j) / 6
-                            ring.append(P2(t + h * cos(a), zt + h * sin(a)))
-                        }
-                        out.append(ring + [P2(t - h, zt)])
-                    } else {
-                        out.append([P2(t - h, zb), P2(t + h, zb), P2(t + h, zb + height), P2(t - h, zb + height)])
-                    }
-                }
-            }
-            return out
         }
 
         func prism(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
@@ -259,13 +306,82 @@ public enum LandmarkGenerator {
             if z0 > 0.01 { cap(ring, z0, up: false, colour) }
         }
 
+        /// A block standing proud of a wall (from `a` along `d`, looking
+        /// `o`), from `t0` to `t1` along it and `z0` to `z1` up, `depth` out,
+        /// sunk 2 cm in so no face coincides with the wall's.
+        func proud(_ a: P2, _ d: P2, _ o: P2, _ t0: Double, _ t1: Double, _ z0: Double, _ z1: Double, _ depth: Double, _ colour: String) {
+            guard t1 > t0, z1 > z0 else { return }
+            let ring = [a + d * t0 - o * 0.02, a + d * t1 - o * 0.02, a + d * t1 + o * depth, a + d * t0 + o * depth]
+            prism(ccw(ring), z0, z1, colour)
+        }
+
+        /// One opening `w` wide and `h` tall standing on `z0` at `t`, in
+        /// (along, up), arched or not.
+        func opening(_ t: Double, _ z0: Double, _ w: Double, _ h: Double, arched: Bool) -> [P2] {
+            let hw = w / 2
+            if arched, h > w {
+                let zt = z0 + h - hw
+                var ring = [P2(t - hw, z0), P2(t + hw, z0), P2(t + hw, zt)]
+                for j in 1..<6 {
+                    let a = Double.pi * Double(j) / 6
+                    ring.append(P2(t + hw * cos(a), zt + hw * sin(a)))
+                }
+                return ring + [P2(t - hw, zt)]
+            }
+            return [P2(t - hw, z0), P2(t + hw, z0), P2(t + hw, z0 + h), P2(t - hw, z0 + h)]
+        }
+
+        /// The window openings of a wall `len` long from `lo` to `hi`: a row
+        /// a storey, spaced along the wall, never at its ends.
+        func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
+            guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
+            let storey = (hi - lo) / Double(w.storeys)
+            let height = min(w.height, storey * 0.65), width = min(w.width, w.spacing * 0.7)
+            let n = Int((len - 1) / w.spacing)
+            guard n >= 1, height > 0.3 else { return [] }
+            var out: [[P2]] = []
+            for k in 0..<n {
+                let t = len / 2 + (Double(k) - Double(n - 1) / 2) * w.spacing
+                for s in 0..<w.storeys {
+                    let zc = lo + storey * (Double(s) + 0.5)
+                    out.append(opening(t, zc - height / 2, width, height, arched: w.arched == true))
+                }
+            }
+            return out
+        }
+
+        /// Pilasters along every wall long enough: between the windows when
+        /// they share the spacing, else spaced from the middle.
+        func pilasters(_ ring: [P2], _ lo: Double, _ hi: Double, _ p: LandmarkRecipe.Pilasters, windows: LandmarkRecipe.Windows?, wall: String) {
+            guard p.spacing > 0.5 else { return }
+            let width = p.width ?? 1.0, depth = p.depth ?? 0.3, colour = p.colour ?? wall
+            for i in ring.indices {
+                let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
+                guard len > p.spacing + width else { continue }
+                let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
+                let n = Int((len - 1) / p.spacing)
+                let between = windows.map { abs($0.spacing - p.spacing) < 1e-6 && n >= 1 } ?? false
+                var positions: [Double] = []
+                if between {
+                    for k in 0...n { positions.append(len / 2 + (Double(k) - Double(n) / 2) * p.spacing) }
+                } else {
+                    let m = max(n, 1)
+                    for k in 0..<m { positions.append(len / 2 + (Double(k) - Double(m - 1) / 2) * p.spacing) }
+                }
+                for t in positions where t - width / 2 > 0.2 && t + width / 2 < len - 0.2 {
+                    proud(a, d, o2, t - width / 2, t + width / 2, lo, hi, depth, colour)
+                }
+            }
+        }
+
         // MARK: A mass
 
         func mass(_ ring: [P2], _ m: LandmarkRecipe.Mass) {
             let plinth = m.plinth.map { min($0.height, (m.top - m.base) * 0.4) } ?? 0
             let cornice = m.cornice.map { min($0.height, (m.top - m.base) * 0.3) } ?? 0
             let lo = m.base + plinth, hi = m.top - cornice
-            walls(ring, lo, hi, m.colour, windows: m.windows)
+            let doors = place(m.doors ?? [], on: ring)
+            walls(ring, lo, hi, m.colour, windows: m.windows, doors: doors)
             if m.base > 0.01 { cap(ring, m.base, up: false, m.colour) }
             if let p = m.plinth, plinth > 0 {
                 let out = grown(ring, p.depth ?? 0.15)
@@ -273,19 +389,49 @@ public enum LandmarkGenerator {
                 cap(out, holes: [ring], lo, up: true, p.colour ?? "lm_stone")
                 if m.base > 0.01 { cap(out, holes: [ring], m.base, up: false, p.colour ?? "lm_stone") }
             }
+            var eave = ring
             if let c = m.cornice, cornice > 0 {
                 let out = grown(ring, c.depth ?? 0.4)
                 walls(out, hi, m.top, c.colour ?? "lm_white")
                 cap(out, holes: [ring], hi, up: false, c.colour ?? "lm_white")
                 cap(out, holes: [ring], m.top, up: true, c.colour ?? "lm_white")
+                eave = out
             }
-            roof(ring, m.top, m.roof)
+            if let p = m.pilasters { pilasters(ring, lo, hi, p, windows: m.windows, wall: m.colour) }
+            if let band = m.bands, let w = m.windows, w.storeys >= 2 {
+                let storey = (hi - lo) / Double(w.storeys), out = grown(ring, band.depth ?? 0.15), colour = band.colour ?? "lm_white"
+                for k in 1..<w.storeys {
+                    let z = lo + storey * Double(k) - band.height / 2
+                    walls(out, z, z + band.height, colour)
+                    cap(out, holes: [ring], z + band.height, up: true, colour)
+                    cap(out, holes: [ring], z, up: false, colour)
+                }
+            }
+            roof(ring, m.top, m.roof, under: eave, wall: m.colour)
         }
 
         // MARK: Roofs
 
-        func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?) {
-            guard let roof, roof.shape != "flat" else { return cap(ring, top, up: true, "lm_stone") }
+        /// The roof over a mass: flat (with a parapet when asked), a loft
+        /// (dome, onion, spire, pyramid), or planes with eaves reaching
+        /// `overhang` beyond the walls, a fascia under them and a soffit back
+        /// to `under` (the cornice's outer ring, or the wall).
+        func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?, under: [P2], wall: String) {
+            guard let roof, roof.shape != "flat" else {
+                cap(ring, top, up: true, "lm_stone")
+                if let p = roof?.parapet, p > 0.05 {
+                    let colour = roof?.colour ?? wall
+                    let inner = grown(ring, -0.3)
+                    walls(ring, top, top + p, colour)
+                    if inner.count >= 3, inner != ring {
+                        walls(inner.reversed(), top, top + p, colour)
+                        cap(ring, holes: [inner], top + p, up: true, colour)
+                    } else {
+                        cap(ring, top + p, up: true, colour)
+                    }
+                }
+                return
+            }
             let colour = roof.colour ?? "lm_green"
             let c = Geometry.polygon(ring + [ring[0]]).centroid.xy
             let r = ring.map { simd_length($0 - c) }.reduce(0, +) / Double(ring.count)
@@ -301,7 +447,12 @@ public enum LandmarkGenerator {
             case "pyramidal":
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 0.8)], colour)
             default:
-                planes(ring, top, roof.shape, roof.height, colour)
+                let over = roof.overhang ?? 0.6
+                guard over > 0.05 else { return planes(ring, top, roof.shape, roof.height, colour, wall: wall) }
+                let eave = grown(ring, over), fascia = 0.35
+                walls(eave, top, top + fascia, colour)
+                cap(eave, holes: [under], top, up: false, colour)
+                planes(eave, top + fascia, roof.shape, roof.height, colour, wall: wall)
             }
         }
 
@@ -328,7 +479,7 @@ public enum LandmarkGenerator {
         /// rectangle: planes rising from its sides, each clipped to the
         /// outline, with gable walls where the roof rises over the outline's
         /// edge.
-        func planes(_ ring: [P2], _ top: Double, _ shape: String, _ height: Double?, _ colour: String) {
+        func planes(_ ring: [P2], _ top: Double, _ shape: String, _ height: Double?, _ colour: String, wall: String) {
             let outline = Geometry.polygon(ring + [ring[0]])
             let rect = Array(outline.minimumRotatedRectangle.exterior.dropLast())
             guard rect.count == 4 else { return cap(ring, top, up: true, colour) }
@@ -377,7 +528,7 @@ public enum LandmarkGenerator {
                         let a = r[i], b = r[(i + 1) % r.count]
                         guard edge.distance(.point((a + b) / 2)) < 1e-4, z(a) > top + 1e-3 || z(b) > top + 1e-3 else { continue }
                         let o = outwardOf(outline, a, b)
-                        face([V3(a.x, a.y, top), V3(b.x, b.y, top), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))], o, "lm_cream")
+                        face([V3(a.x, a.y, top), V3(b.x, b.y, top), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))], o, wall)
                     }
                 }
             }

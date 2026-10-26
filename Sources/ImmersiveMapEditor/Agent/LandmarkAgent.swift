@@ -140,9 +140,14 @@ final class LandmarkAgent {
         2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Search the \
         web for more freely licensed photos of it (Wikimedia Commons) only if they do not show it from enough sides, and \
         from above if there are any. Keep 3 to 6 good ones in all with save_reference_photo.
-        3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Two to four rounds, until the \
+        3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Three to five rounds, until the \
         silhouette, proportions, colours and main details agree.
-        4. End with a short summary: what the model has, and what you were not sure of.
+        4. Before you finish, check from eye level in front of the main facade (render_views from the side it faces) and \
+        from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
+        fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
+        the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
+        the colours of the photos in the palette's words. Fix what is missing.
+        5. End with a short summary: what the model has, and what you were not sure of.
         """
     }
 
