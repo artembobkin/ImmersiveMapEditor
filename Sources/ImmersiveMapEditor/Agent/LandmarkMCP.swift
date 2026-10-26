@@ -193,6 +193,44 @@ enum LandmarkMCP {
                              + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
                              + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
             }
+            // The parts easy to miss in a long list, each a volume of its own
+            // the model must keep: galleries and canopies hanging off a side,
+            // slabs, lanterns and chimneys high up, towers.
+            // Alike parts (the dormers of a roof) are told once, with their count.
+            struct Note { let kind: String; let key: String; var count = 0; var at: [String] = []; var area = 0.0; var size = "" }
+            var notes: [String: Note] = [:]
+            var order: [String] = []
+            for b in source.buildings where b.part {
+                let pts = b.polygons.flatMap { $0.first ?? [] }
+                guard let first = pts.first, let h = b.height else { continue }
+                let lo = pts.reduce(first) { simd_min($0, $1) }, hi = pts.reduce(first) { simd_max($0, $1) }
+                let area = b.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) }, thick = h - b.base
+                guard area >= 8, thick > 0 else { continue }
+                let kind: String
+                if b.base >= 12 && area < 80 {
+                    kind = "a small part high up: a dormer, a roof lantern, a chimney, a dome's drum" + (b.tags["roof:shape"].map { ", \($0) roof" } ?? "")
+                } else if thick <= 1.2 && b.base >= 2 {
+                    kind = "a slab: the floor or roof plate of a gallery, a balcony, a canopy"
+                } else if thick <= 4 && b.base >= 2 && area >= 30 {
+                    kind = "a low part off the ground: a gallery, an arcade, a canopy or a balcony along a side, or a wing's low roof" + (b.tags["roof:shape"].map { ", \($0) roof" } ?? "")
+                } else if thick > 2.2 * area.squareRoot() {
+                    kind = "a tall part: a tower"
+                } else { continue }
+                let size = String(format: "%.0f×%.0f m, %.1f..%.1f m", hi.x - lo.x, hi.y - lo.y, b.base, h)
+                let key = kind + "|" + size
+                if notes[key] == nil { notes[key] = Note(kind: kind, key: key, size: size); order.append(key) }
+                notes[key]!.count += 1
+                notes[key]!.area += area
+                if notes[key]!.at.count < 3 { notes[key]!.at.append(String(format: "%@ at (%.0f, %.0f)", b.osm, (lo.x + hi.x) / 2, (lo.y + hi.y) / 2)) }
+            }
+            let noted = order.map { notes[$0]! }.sorted { $0.area > $1.area }.map { n -> String in
+                (n.count > 1 ? "\(n.count) × " : "") + "\(n.kind), \(n.size)" + (n.count > 1 ? " each" : "") + ": " + n.at.joined(separator: ", ") + (n.count > 3 ? ", …" : "")
+            }
+            if !noted.isEmpty {
+                lines.append("")
+                lines.append("Of note, parts easy to miss and each a volume of its own that the model keeps (a mass on its outline, or a shape), unless a mass of yours already covers it:")
+                lines += noted.prefix(16).map { "  " + $0 }
+            }
             var guide = LandmarkRecipe.guide
             if ProcessInfo.processInfo.environment["LANDMARK_PHYSICAL_CHECKS"] != "1" {
                 guide = guide.replacingOccurrences(of: " set_recipe says what floats or leads nowhere: fix it before going on.", with: "")
