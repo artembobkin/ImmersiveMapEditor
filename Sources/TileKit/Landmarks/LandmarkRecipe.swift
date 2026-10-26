@@ -212,7 +212,10 @@ public struct LandmarkRecipe: Codable {
                   {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2, "colour": "lm_stone"},
                   {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4, "height": 1.5, "count": 5, "colour": "lm_stone"}]}
 
-    - A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
+    - The model is one shell: every mass and shape is a closed solid, and all of them are united. Masses that touch \
+    must overlap: a wing sinks half a metre into the hall, a tower into its base, never edge to edge and never with a \
+    slot between them (the generator sinks a corner that stands on or near a neighbour's wall into it, but do not count \
+    on it). A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
     standing proud, windows storey by storey on every wall long enough, and a roof on its top. A window is a recess cut \
     into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
     reads as storeys of windows, with the storeys and spacing the photos show. A window that the rows cannot place (one \

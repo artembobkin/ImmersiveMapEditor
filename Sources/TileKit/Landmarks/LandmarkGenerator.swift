@@ -248,10 +248,14 @@ public enum LandmarkGenerator {
     /// The model of a recipe: its triangles by colour.
     public static func build(_ r: LandmarkRecipe, _ source: LandmarkSource) -> Model {
         let m = Model()
-        for mass in r.masses {
+        var rings: [[P2]?] = r.masses.map { mass in
             let ring = mass.outline.flatMap { source.ring($0) } ?? (mass.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
-            guard ring.count >= 3, mass.top > mass.base else { continue }
-            m.mass(ccw(ring), mass)
+            return ring.count >= 3 && mass.top > mass.base ? ccw(ring) : nil
+        }
+        sink(&rings, r.masses)
+        for (k, mass) in r.masses.enumerated() {
+            guard let ring = rings[k] else { continue }
+            m.mass(ring, mass)
         }
         for f in r.features { m.feature(f) }
         for s in r.shapes { m.shape(s, source) }
@@ -410,7 +414,35 @@ public enum LandmarkGenerator {
             if ProcessInfo.processInfo.environment["LANDMARK_UNION_DEBUG"] != nil {
                 var counts: [Int32: Int] = [:]
                 for s in statuses { counts[s, default: 0] += 1 }
-                FileHandle.standardError.write(Data("union: \(meshes.count) solids, statuses \(counts.sorted { $0.key < $1.key }), result \(result == nil ? "none" : "\(result!.faceIDs.count) triangles")\n".utf8))
+                // How many shells the union has: the triangles' vertex connectivity.
+                var shells = 0
+                if let result {
+                    var parent = Array(0..<(result.verts.count / 3))
+                    func find(_ i: Int) -> Int { var i = i; while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }; return i }
+                    for t in stride(from: 0, to: result.tris.count, by: 3) {
+                        let a = find(Int(result.tris[t])), b = find(Int(result.tris[t + 1])), c = find(Int(result.tris[t + 2]))
+                        parent[b] = a; parent[find(c)] = find(a)
+                    }
+                    var used = Set<Int>()
+                    var size: [Int: Int] = [:], lo: [Int: V3] = [:], hi: [Int: V3] = [:]
+                    for t in stride(from: 0, to: result.tris.count, by: 3) {
+                        let root = find(Int(result.tris[t]))
+                        used.insert(root)
+                        size[root, default: 0] += 1
+                        for k in 0..<3 {
+                            let i = Int(result.tris[t + k]) * 3
+                            let p = V3(Double(result.verts[i]), Double(result.verts[i + 1]), Double(result.verts[i + 2]))
+                            lo[root] = simd_min(lo[root] ?? p, p)
+                            hi[root] = simd_max(hi[root] ?? p, p)
+                        }
+                    }
+                    shells = used.count
+                    for (root, n) in size.sorted(by: { $0.value > $1.value }).prefix(12) {
+                        let a = lo[root]!, b = hi[root]!
+                        FileHandle.standardError.write(Data(String(format: "  shell: %d tris, x %.0f..%.0f y %.0f..%.0f z %.1f..%.1f\n", n, a.x, b.x, a.y, b.y, a.z, b.z).utf8))
+                    }
+                }
+                FileHandle.standardError.write(Data("union: \(meshes.count) solids, statuses \(counts.sorted { $0.key < $1.key }), result \(result == nil ? "none" : "\(result!.faceIDs.count) triangles in \(shells) shells")\n".utf8))
                 for (k, s) in statuses.enumerated() where s != 0 && k < 40 {
                     let m = meshes[k]
                     // The halfedges: a closed, consistently wound mesh has every
@@ -1105,6 +1137,41 @@ public enum LandmarkGenerator {
                 let mid = ((e0.0 + e1.0) / 2 - c, (e0.1 + e1.1) / 2 - zc)
                 face([p(e0, 1), p(e1, 1), p(e1, -1), p(e0, -1)], V3(mid.0.x, mid.0.y, mid.1), colour)
             }
+        }
+    }
+
+    /// Masses that touch or nearly touch sunk a little into each other, so
+    /// the union makes one shell of them: a corner standing on a
+    /// neighbour's wall, or within `near` of it, moves `into` metres inside
+    /// that neighbour (where their heights overlap). Two masses built
+    /// edge to edge, or with a slot between them, would stay two shells,
+    /// with windows cut in walls no one sees.
+    static func sink(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.1) {
+        let polygons = rings.map { $0.map { Geometry.polygon($0 + [$0[0]]) } }
+        for i in rings.indices {
+            guard var ring = rings[i] else { continue }
+            for k in ring.indices {
+                let v = ring[k]
+                for j in rings.indices where j != i {
+                    guard let other = polygons[j], masses[i].base < masses[j].top - 0.05, masses[j].base < masses[i].top - 0.05 else { continue }
+                    guard !other.contains(.point(v + (v - other.centroid.xy) * -1e-3)) || other.boundary.distance(.point(v)) < 1e-6 else { continue }
+                    let d = other.boundary.distance(.point(v))
+                    guard d < near else { continue }
+                    // The nearest point of the neighbour's wall, and the way in.
+                    let (_, on) = Geometry.point(v).nearestPoints(other.boundary)
+                    let inward: P2
+                    if d > 1e-6 {
+                        inward = (on - v) / d
+                    } else {
+                        // On the wall itself: in is away from the centroid's far side.
+                        let c = other.centroid.xy
+                        inward = simd_length(c - v) > 1e-9 ? (c - v) / simd_length(c - v) : .zero
+                    }
+                    ring[k] = on + inward * into
+                    break
+                }
+            }
+            rings[i] = ring
         }
     }
 
