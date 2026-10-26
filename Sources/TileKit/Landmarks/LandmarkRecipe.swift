@@ -242,6 +242,10 @@ public struct LandmarkRecipe: Codable {
     - The style: few large shapes over many small ones; the silhouette, proportions, the main colours and the few details \
     that make the building recognisable from a distance (a portico, a dome, a tower, a quadriga). No textures, no fine \
     ornament. Windows only where the building reads as storeys of windows. Every model of the map looks of one family.
+    - Everything is physical, as a building is, even where no photo shows it: steps lead up to a landing (a box or a \
+    mass at their top height) that reaches the wall and the doors, the floor the portico's columns stand on; a colonnade \
+    stands on a stylobate (a box) and carries its beam; a statue stands on a pedestal, a pediment or a roof; a balcony has \
+    a floor; nothing floats and nothing ends in the air. set_recipe says what floats or leads nowhere: fix it before going on.
     - Use the OSM outlines where they are good. OSM heights can be wrong: trust the photos, and say so.
     """
 

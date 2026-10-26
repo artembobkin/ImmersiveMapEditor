@@ -242,7 +242,8 @@ enum LandmarkMCP {
             try recipe.write(recipeURL)
             let model = LandmarkGenerator.build(recipe, source)
             try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
-            return "Built model.glb: \(model.summary)"
+            let warnings = LandmarkGenerator.warnings(recipe, source)
+            return "Built model.glb: \(model.summary)" + (warnings.isEmpty ? "" : "\nNOT PHYSICAL, fix before going on:\n" + warnings.joined(separator: "\n"))
         }
 
         func render(_ args: [String: Any]) throws -> [[String: Any]] {

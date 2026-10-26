@@ -124,6 +124,127 @@ public enum LandmarkGenerator {
         return out
     }
 
+    /// What is not physical in a recipe, one line each: what floats (a
+    /// colonnade, a statue, a shape above the ground with nothing under it)
+    /// and what leads nowhere (steps with no landing at their top). A
+    /// photo seldom shows these, so the generator says them.
+    public static func warnings(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
+        let solids = Solids(r, source)
+        var out: [String] = []
+        func p2(_ v: [Double]?) -> P2? { v.flatMap { $0.count == 2 ? P2($0[0], $0[1]) : nil } }
+        for (i, f) in r.features.enumerated() {
+            let base = f.base ?? 0
+            switch f.kind {
+            case "steps":
+                guard let a = p2(f.from), let b = p2(f.to), let h = f.height, h > 0 else { continue }
+                let d = b - a, len = simd_length(d)
+                guard len > 1e-6 else { continue }
+                // The landing side: the line's left (the building's).
+                let n = P2(-d.y, d.x) / len, m = (a + b) / 2
+                if !solids.inside(m + n * 0.4, base + h - 0.05) {
+                    out.append("features[\(i)] (steps): they lead to nothing. At their top (\(f1(base + h)) m) there is no floor behind the line from \(f1(a.x)), \(f1(a.y)) to \(f1(b.x)), \(f1(b.y)): add a landing (a box, or a mass, from that line to the building at that height, the floor the columns and the doors stand on), or move the steps to the building's edge.")
+                }
+            case "colonnade":
+                guard let a = p2(f.from), let b = p2(f.to), base > 0.3 else { continue }
+                let n = max(2, f.columns ?? 2)
+                let feet = (0..<n).map { a + (b - a) * (Double($0) / Double(n - 1)) }
+                if feet.contains(where: { !solids.inside($0, base - 0.05) }) {
+                    out.append("features[\(i)] (colonnade): it floats. Its base is \(f1(base)) m but nothing is under some of its columns: add the stylobate (a box under the whole colonnade from the ground to \(f1(base)) m), or set base 0.")
+                }
+            case "statue", "pediment":
+                guard base > 0.3 else { continue }
+                let at = p2(f.at) ?? (p2(f.from).flatMap { a in p2(f.to).map { ($0 + a) / 2 } })
+                if let at, !solids.inside(at, base - 0.05) {
+                    out.append("features[\(i)] (\(f.kind)): it floats at \(f1(base)) m with nothing under it: put it on a mass's top, a pediment, a pedestal, or a box.")
+                }
+            default:
+                break
+            }
+        }
+        for (i, s) in r.shapes.enumerated() {
+            let base = s.base ?? 0
+            guard base > 0.3, s.around == nil, s.repeat == nil else { continue }
+            var at = p2(s.at)
+            if at == nil, let ring = s.polygon?.filter({ $0.count == 2 }).map({ P2($0[0], $0[1]) }), ring.count >= 3 {
+                at = ring.reduce(P2.zero, +) / Double(ring.count)
+            }
+            if let at, !solids.inside(at, base - 0.05) {
+                out.append("shapes[\(i)] (\(s.kind)): it floats at \(f1(base)) m with nothing under its centre: stand it on a mass, a roof, or a shape, or sink it a little into what it is on.")
+            }
+        }
+        return out
+    }
+
+    static func f1(_ v: Double) -> String { String(format: "%.1f", v) }
+
+    /// The solids of a recipe, to ask whether a point is inside one: the
+    /// masses with their roofs, the boxes, the shapes.
+    struct Solids {
+        var items: [(shape: Geometry, lo: Double, hi: Double)] = []
+
+        init(_ r: LandmarkRecipe, _ source: LandmarkSource) {
+            func poly(_ ring: [P2]) -> Geometry? { ring.count >= 3 ? Geometry.polygon(ring + [ring[0]]) : nil }
+            for m in r.masses {
+                let ring = m.outline.flatMap { source.ring($0) } ?? (m.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
+                guard let g = poly(ring) else { continue }
+                var top = m.top
+                if let roof = m.roof, roof.shape != "flat" {
+                    let c = g.centroid.xy, radius = ring.map { simd_length($0 - c) }.reduce(0, +) / Double(ring.count)
+                    top += roof.height ?? radius * (roof.shape == "spire" ? 4 : roof.shape == "onion" ? 2.2 : 0.8)
+                } else if let p = m.roof?.parapet { top += p }
+                items.append((g, m.base, top))
+            }
+            for f in r.features where f.kind == "box" {
+                let ring = (f.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
+                if let g = poly(ring), let top = f.top { items.append((g, f.base ?? 0, top)) }
+            }
+            for f in r.features where f.kind == "colonnade" || f.kind == "steps" {
+                // A colonnade's beam, and steps as a wedge: their footprint, from the ground to the top.
+                guard let a = f.from, let b = f.to, a.count == 2, b.count == 2, let h = f.height else { continue }
+                let p = P2(a[0], a[1]), q = P2(b[0], b[1]), d = q - p, len = simd_length(d)
+                guard len > 1e-6 else { continue }
+                let n = P2(d.y, -d.x) / len
+                let reach = f.kind == "steps" ? (f.depth ?? Double(max(1, f.count ?? Int(h / 0.16))) * 0.35) : (f.radius ?? 0.6) + 0.3
+                let side = f.kind == "steps" ? n * reach : n * reach
+                let ring = f.kind == "steps" ? [p, q, q + side, p + side] : [p - side, q - side, q + side, p + side]
+                if let g = poly(ring) { items.append((g, f.base ?? 0, (f.base ?? 0) + h)) }
+            }
+            for s in r.shapes {
+                let base = s.base ?? 0
+                var top = base
+                var g: Geometry?
+                switch s.kind {
+                case "box":
+                    guard let at = s.at, at.count == 2, let size = s.size, size.count == 3 else { continue }
+                    let h = (s.heading ?? 0) * .pi / 180, u = P2(sin(h), cos(h)), v = P2(-cos(h), sin(h)), c = P2(at[0], at[1])
+                    let a = u * (size[0] / 2), b = v * (size[1] / 2)
+                    g = poly([c - a - b, c + a - b, c + a + b, c - a + b])
+                    top = base + size[2]
+                case "cylinder", "cone", "sphere", "dome":
+                    guard let at = s.at, at.count == 2, let r = s.radius else { continue }
+                    g = Geometry.point(P2(at[0], at[1])).buffer(r, quadSegs: 4)
+                    top = base + (s.height ?? (s.kind == "sphere" ? 2 * r : r))
+                case "prism":
+                    let ring = s.outline.flatMap { source.ring($0) } ?? (s.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
+                    g = poly(ring)
+                    top = s.top ?? base
+                case "loft":
+                    if let own = s.polygon?.filter({ $0.count == 2 }).map({ P2($0[0], $0[1]) }), own.count >= 3 { g = poly(own) }
+                    else if let o = s.outline, let ring = source.ring(o) { g = poly(ring) }
+                    else if let at = s.at, at.count == 2, let r = s.radius { g = Geometry.point(P2(at[0], at[1])).buffer(r, quadSegs: 4) }
+                    top = base + (s.profile?.compactMap { $0.count == 2 ? $0[1] : nil }.max() ?? 0)
+                default:
+                    continue
+                }
+                if let g, s.around == nil, s.repeat == nil { items.append((g, base, top)) }
+            }
+        }
+
+        func inside(_ p: P2, _ z: Double) -> Bool {
+            items.contains { z >= $0.lo - 0.05 && z <= $0.hi + 0.05 && $0.shape.contains(p) }
+        }
+    }
+
     /// The model of a recipe: its triangles by colour.
     public static func build(_ r: LandmarkRecipe, _ source: LandmarkSource) -> Model {
         let m = Model()

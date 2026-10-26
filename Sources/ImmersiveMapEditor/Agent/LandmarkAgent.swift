@@ -188,8 +188,9 @@ final class LandmarkAgent {
         rendered from the photo's own camera beside it, so what differs is plain (count the columns and the windows, \
         check the roof's shape and height, the entrances, the colours); render_views for the whole and from above; \
         render_from for a look from any place. Correct the recipe and compare again, until the shapes agree.
-        4. Before you finish, check from eye level in front of the main facade (render_views from the side it faces) and \
-        from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
+        4. Before you finish, walk the building: render_from 15 m before each entrance at eye level (height 2, looking at \
+        it, hfov 70) and check that the steps lead onto a floor that reaches the doors, that the columns stand on it, that \
+        nothing floats; set_recipe's NOT PHYSICAL lines must all be gone. Then check from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
         fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
         the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
         the colours of the photos in the palette's words. Fix what is missing.

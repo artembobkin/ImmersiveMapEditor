@@ -122,6 +122,8 @@ public enum PipelineCommand {
                 for p in problems { print("problem: \(p)") }
                 guard problems.isEmpty else { exit(1) }
                 print("[landmark] model.glb: \(summary)")
+                let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
+                for w in LandmarkGenerator.warnings(try LandmarkRecipe.read(recipe), source) { print("not physical: \(w)") }
             default:
                 usage()
             }
