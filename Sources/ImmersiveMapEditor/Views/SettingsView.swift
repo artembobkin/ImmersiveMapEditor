@@ -13,6 +13,7 @@ struct SettingsView: View {
     /// The proxy, edited here and kept in the keychain (never shown in full).
     @State private var proxy = ClaudeSettings.proxy
     @State private var noProxy = ClaudeSettings.noProxy
+    @State private var mapillary = ClaudeSettings.mapillaryToken
     @State private var proxySaid = ""
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
@@ -40,6 +41,9 @@ struct SettingsView: View {
                     .onChange(of: proxy) { ClaudeSettings.proxy = proxy }
                 SecureField("No proxy (NO_PROXY)", text: $noProxy)
                     .onChange(of: noProxy) { ClaudeSettings.noProxy = noProxy }
+                SecureField("Mapillary token", text: $mapillary, prompt: Text("MLY|…  (mapillary.com/dashboard/developers)"))
+                    .onChange(of: mapillary) { ClaudeSettings.mapillaryToken = mapillary }
+                    .help("The agent's street-level references: Mapillary's photos (CC BY-SA 4.0, credited). Kept in the keychain.")
                 HStack {
                     Button("Take from ~/bin/claude") {
                         let launcher = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/claude")

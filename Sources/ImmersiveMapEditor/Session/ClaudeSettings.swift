@@ -40,6 +40,13 @@ enum ClaudeSettings {
         set { Keychain.write("claude.noProxy", newValue) }
     }
 
+    /// Mapillary's access token (its street-level photos, CC BY-SA, are the
+    /// landmarks' agent's references), in the keychain.
+    static var mapillaryToken: String {
+        get { Keychain.read("mapillary.token") ?? "" }
+        set { Keychain.write("mapillary.token", newValue) }
+    }
+
     /// The environment `claude` runs in: the editor's, with the proxy.
     static var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment

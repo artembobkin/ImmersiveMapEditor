@@ -137,9 +137,10 @@ final class LandmarkAgent {
         """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
-        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Search the \
-        web for more freely licensed photos of it (Wikimedia Commons) only if they do not show it from enough sides, and \
-        from above if there are any. Keep 3 to 6 good ones in all with save_reference_photo.
+        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then \
+        find_street_photos (Mapillary, street level all around it) and keep the ones that show each facade and the \
+        entrances with save_street_photo. Search the web for more freely licensed photos (Wikimedia Commons) only for \
+        what the street does not show: the whole from afar, the roofs from above. Keep 4 to 8 good ones in all.
         3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Three to five rounds, until the \
         silhouette, proportions, colours and main details agree.
         4. Before you finish, check from eye level in front of the main facade (render_views from the side it faces) and \
@@ -153,7 +154,9 @@ final class LandmarkAgent {
 
     /// The MCP server of the modelling tools: the editor itself, for this folder.
     static func mcpConfig(_ folder: URL) -> String {
-        let server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": ["landmark-mcp", folder.path]]
+        var server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": ["landmark-mcp", folder.path]]
+        let token = ClaudeSettings.mapillaryToken
+        if !token.isEmpty { server["env"] = ["MAPILLARY_TOKEN": token] }
         let data = try! JSONSerialization.data(withJSONObject: ["mcpServers": ["landmark": server]], options: [.withoutEscapingSlashes])
         return String(data: data, encoding: .utf8)!
     }

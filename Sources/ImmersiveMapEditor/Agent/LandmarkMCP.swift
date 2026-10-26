@@ -97,6 +97,15 @@ enum LandmarkMCP {
                 "url": ["type": "string"], "page": ["type": "string"], "author": ["type": "string"],
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
+            ["name": "find_street_photos",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept): the ones within `radius` metres of its centre that look at it, nearest first, each with its id, where it stands (metres and the side), which way it looks, its date and author. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
+             "inputSchema": ["type": "object", "properties": [
+                "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
+                "limit": ["type": "integer", "description": "How many, 15 by default."]]]],
+            ["name": "save_street_photo",
+             "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
+             "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
+                             "required": ["id", "shows"]]],
             ["name": "list_references",
              "description": "The reference photos kept, with their credits and what they show.",
              "inputSchema": ["type": "object", "properties": [:]]],
@@ -113,6 +122,8 @@ enum LandmarkMCP {
             case "set_recipe": return [text(try setRecipe(args["recipe"]))]
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
+            case "find_street_photos": return [text(try streetPhotos(args))]
+            case "save_street_photo": return try saveStreetPhoto(args)
             case "list_references": return [text(String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]")]
             case "show_reference":
                 let file = (args["file"] as? String ?? "") as NSString
@@ -229,6 +240,92 @@ enum LandmarkMCP {
             for key in ["page", "author", "licence", "shows"] where (args[key] as? String ?? "").isEmpty {
                 throw Failure("give its \(key): only freely licensed photos are kept, credited")
             }
+            return try keep(url, page: args["page"] as! String, author: args["author"] as! String,
+                            licence: args["licence"] as! String, shows: args["shows"] as! String)
+        }
+
+        // MARK: Mapillary
+
+        var mapillaryToken: String {
+            get throws {
+                guard let t = ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"], !t.isEmpty else {
+                    throw Failure("no Mapillary token: the user sets it in Settings > Claude")
+                }
+                return t
+            }
+        }
+
+        func mapillary(_ path: String, _ query: [String: String]) throws -> [String: Any] {
+            var items = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+            items.append(URLQueryItem(name: "access_token", value: try mapillaryToken))
+            var c = URLComponents(string: "https://graph.mapillary.com/" + path)!
+            c.queryItems = items
+            let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--max-time", "60", c.url!.absoluteString])
+            guard status == 0 else { throw Failure("Mapillary did not answer: \(said.prefix(300))") }
+            guard let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any] else {
+                throw Failure("Mapillary answered with something else: \(said.prefix(300))")
+            }
+            return json
+        }
+
+        /// The photos around the landmark's centre that look at it.
+        func streetPhotos(_ args: [String: Any]) throws -> String {
+            let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
+            let (lon, lat) = source.centre
+            let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
+            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 15))
+            let kx = cos(lat * .pi / 180) * 111_320.0, ky = 110_574.0
+            let bbox = [lon - radius / kx, lat - radius / ky, lon + radius / kx, lat + radius / ky].map { String(format: "%.6f", $0) }
+            let json = try mapillary("images", ["fields": "id,computed_geometry,computed_compass_angle,captured_at,creator,is_pano",
+                                                "bbox": bbox.joined(separator: ","), "limit": "200"])
+            var found: [(Double, String)] = []
+            let sides = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
+            for e in json["data"] as? [[String: Any]] ?? [] {
+                guard let id = e["id"] as? String,
+                      let c = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double], c.count == 2 else { continue }
+                let dx = (c[0] - lon) * kx, dy = (c[1] - lat) * ky, dist = hypot(dx, dy)
+                guard dist <= radius, dist > 8 else { continue }
+                // Where the camera stands from the centre, and whether it looks back at it.
+                let from = (atan2(dx, dy) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+                let toCentre = (from + 180).truncatingRemainder(dividingBy: 360)
+                let pano = e["is_pano"] as? Bool ?? false
+                let looks = (e["computed_compass_angle"] as? NSNumber)?.doubleValue
+                var away = 0.0
+                if let looks, !pano {
+                    away = abs((looks - toCentre + 540).truncatingRemainder(dividingBy: 360) - 180)
+                    guard away <= 55 else { continue }
+                }
+                let side = sides[Int((from + 22.5) / 45) % 8]
+                var date = "?"
+                if let ms = (e["captured_at"] as? NSNumber)?.doubleValue {
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM"
+                    date = f.string(from: Date(timeIntervalSince1970: ms / 1000))
+                }
+                let author = (e["creator"] as? [String: Any])?["username"] as? String ?? "?"
+                let line = "\(id): \(Int(dist)) m to the \(side) of the centre, "
+                    + (pano ? "a panorama" : "looking \(sides[Int((toCentre + 22.5) / 45) % 8]) at it (\(Int(away))° off)")
+                    + ", \(date), by \(author)"
+                found.append((dist + away * 0.5, line))
+            }
+            guard !found.isEmpty else { return "No street photos within \(Int(radius)) m look at it. Try a larger radius." }
+            let lines = found.sorted { $0.0 < $1.0 }.prefix(limit).map(\.1)
+            return "\(found.count) photos look at it; the \(lines.count) best:\n" + lines.joined(separator: "\n")
+                + "\nKeep one with save_street_photo(id, shows). Licence CC BY-SA 4.0, credited to Mapillary and its author."
+        }
+
+        func saveStreetPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
+            guard let id = args["id"] as? String, !id.isEmpty, id.allSatisfy(\.isNumber) else { throw Failure("give the photo's id from find_street_photos") }
+            guard let shows = args["shows"] as? String, !shows.isEmpty else { throw Failure("say what it shows") }
+            let json = try mapillary(id, ["fields": "thumb_1024_url,creator"])
+            guard let url = json["thumb_1024_url"] as? String else { throw Failure("Mapillary has no picture for \(id)") }
+            let author = (json["creator"] as? [String: Any])?["username"] as? String ?? "unknown"
+            return try keep(url, page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(author) (Mapillary)",
+                            licence: "CC BY-SA 4.0", shows: shows)
+        }
+
+        /// Downloads a photo into the references with its credit.
+        func keep(_ url: String, page: String, author: String, licence: String, shows: String) throws -> [[String: Any]] {
             try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             let raw = references.appendingPathComponent("download.tmp")
@@ -246,8 +343,7 @@ enum LandmarkMCP {
             _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1280", "-s", "format", "jpeg", raw.path, "--out", file.path])
             try? FileManager.default.removeItem(at: raw)
             guard FileManager.default.fileExists(atPath: file.path) else { throw Failure("cannot read the image") }
-            list.append(["file": file.lastPathComponent, "url": url, "page": args["page"]!, "author": args["author"]!,
-                         "licence": args["licence"]!, "shows": args["shows"]!])
+            list.append(["file": file.lastPathComponent, "url": url, "page": page, "author": author, "licence": licence, "shows": shows])
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
             return [text("Kept as \(file.lastPathComponent)")] + (image(file).map { [$0] } ?? [])
         }
