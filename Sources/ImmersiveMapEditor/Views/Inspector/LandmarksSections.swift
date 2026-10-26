@@ -51,7 +51,7 @@ struct LandmarksSections: View {
                     Text("Sonnet").tag("sonnet")
                     Text("Haiku").tag("haiku")
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("Which Claude models the landmark: Claude Code's default, or one by name (the same setting as Settings > Claude > Model).")
                 if session.agent.running {
