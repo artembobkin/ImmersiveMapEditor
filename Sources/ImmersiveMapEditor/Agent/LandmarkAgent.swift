@@ -142,10 +142,10 @@ final class LandmarkAgent {
            a. find_commons_photos (Wikimedia Commons, its category and around it, on a contact sheet): keep one or two \
         classic views of the whole with save_commons_photo, to know the building and to judge the street photos by.
            b. find_street_photos (Mapillary, street level all around it): the best candidates a track at a time, and a \
-        contact sheet with the landmark framed in red on each by the camera's pose. Poses are sometimes wrong: judge from \
-        the sheet which frames really hold the landmark, keep those (one or two a side, the main facade and the entrances \
-        first) with save_street_photo, look at each as it comes back, and drop_reference any whose frame is on another \
-        building.
+        contact sheet with the landmark framed in red on each by the camera's pose, the rest dimmed. Poses are sometimes \
+        wrong: judge from the sheet which frames really hold the landmark, keep those (one or two a side, the main facade \
+        and the entrances first) with save_street_photo; a kept photo comes back with everything outside the frame painted \
+        black, so look at it and drop_reference any whose frame holds another building.
            c. find_commons_photos again for what the street does not show: the roofs from above (aerial, drone), the \
         whole from afar, the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.

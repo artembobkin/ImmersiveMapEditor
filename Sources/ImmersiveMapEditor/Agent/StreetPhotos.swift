@@ -326,6 +326,8 @@ enum ContactSheet {
                 ctx.draw(shown, in: at)
                 if let box {
                     let frame = CGRect(x: at.minX + box.minX * dw, y: at.minY + (1 - box.maxY) * dh, width: box.width * dw, height: box.height * dh)
+                    // Dimmed, not painted over: the agent judges the pose by what is around.
+                    StreetMarking.mask(ctx, outside: frame, in: at, alpha: 0.65)
                     ctx.setStrokeColor(CGColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.95))
                     ctx.setLineWidth(3)
                     ctx.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
@@ -343,8 +345,20 @@ enum ContactSheet {
     }
 }
 
-/// A kept photo marked: the landmark framed in red, a panorama cut to it.
+/// A kept photo marked: everything but the landmark painted black and the
+/// landmark framed in red, a panorama cut to it first.
 enum StreetMarking {
+    /// Paints everything outside `rect` black, `alpha` deep.
+    static func mask(_ ctx: CGContext, outside rect: CGRect, in full: CGRect, alpha: Double) {
+        ctx.saveGState()
+        ctx.addRect(full)
+        ctx.addRect(rect)
+        ctx.clip(using: .evenOdd)
+        ctx.setFillColor(CGColor(gray: 0, alpha: alpha))
+        ctx.fill(full)
+        ctx.restoreGState()
+    }
+
     /// A panorama cut around the landmark's box: the part, and the box
     /// within it.
     static func cut(_ image: CGImage, _ box: CGRect) -> (CGImage, CGRect)? {
@@ -376,6 +390,7 @@ enum StreetMarking {
         // CoreGraphics' y goes up: the box's fractions are from the top.
         let rect = CGRect(x: box.minX * Double(w), y: (1 - box.maxY) * Double(h), width: box.width * Double(w), height: box.height * Double(h))
             .insetBy(dx: -3, dy: -3)
+        mask(ctx, outside: rect, in: CGRect(x: 0, y: 0, width: w, height: h), alpha: 1)
         ctx.setStrokeColor(CGColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.95))
         ctx.setLineWidth(max(3, Double(w) * 0.004))
         ctx.stroke(rect)

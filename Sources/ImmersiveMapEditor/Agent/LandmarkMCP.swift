@@ -389,7 +389,7 @@ enum LandmarkMCP {
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m, \(views.count) show the landmark. The best, a track (one pass of a car or a walker) at a time:\n"
                 + report
-                + "\nThe contact sheet shows them, numbered, the landmark framed in red by Mapillary's camera poses, which are sometimes wrong: look, and keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back framed (a panorama cut to it): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nThe contact sheet shows them, numbered, the landmark framed in red by Mapillary's camera poses, which are sometimes wrong: look, and keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             if let img = image(sheet) { content.append(img) }
             return content
         }
@@ -461,11 +461,11 @@ enum LandmarkMCP {
             guard let view = StreetView(photo, in: scene) else { throw Failure("that photo does not show the landmark") }
             let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
                                 page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(photo.author) (Mapillary)",
-                                licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red)")
+                                licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red, the rest painted black)")
             if let name = (kept.first?["text"] as? String)?.split(separator: " ").last {
                 let file = references.appendingPathComponent(String(name))
                 try StreetMarking.mark(file, view)
-                return [text("Kept as \(name): the landmark is framed in red, \(view.line)")] + (image(file).map { [$0] } ?? [])
+                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line)")] + (image(file).map { [$0] } ?? [])
             }
             return kept
         }
