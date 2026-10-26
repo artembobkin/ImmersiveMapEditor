@@ -23,12 +23,17 @@ let package = Package(
         .target(name: "GLTF", path: "Sources/GLTF"),
         // The light map's bake on the GPU: Metal ray tracing.
         .target(name: "LightBaker", path: "Sources/LightBaker"),
+        // Manifold (github.com/elalish/manifold, Apache 2.0, its sources in manifold/), behind a small C face:
+        // the union of a landmark's solids into one mesh.
+        .target(name: "CManifold", path: "Sources/CManifold", exclude: ["manifold/LICENSE", "manifold/REVISION"],
+                cxxSettings: [.headerSearchPath("manifold/include"), .define("MANIFOLD_PAR", to: "-1")]),
         // The tile pipeline: OSM to one 3D model per map tile.
-        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", .product(name: "Streets", package: "SwiftStreets"),
+        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", "CManifold", .product(name: "Streets", package: "SwiftStreets"),
                                               .product(name: "StreetGeom", package: "SwiftStreets")], path: "Sources/TileKit"),
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry"], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v5],
+    cxxLanguageStandard: .cxx17
 )

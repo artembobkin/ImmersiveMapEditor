@@ -37,6 +37,10 @@ struct LandmarksSections: View {
             }
         }
         if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
+            Section("Show") {
+                Toggle("Wireframe", isOn: $session.landmarkWireframe)
+                    .help("The model's edges over its shading: one shell, since its solids are united, and nothing inside.")
+            }
             Section("Model with Claude") {
                 Picker("Detail", selection: Binding(
                     get: { landmark.detail },

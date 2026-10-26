@@ -255,7 +255,9 @@ public enum LandmarkGenerator {
         }
         for f in r.features { m.feature(f) }
         for s in r.shapes { m.shape(s, source) }
-        m.separate()
+        // The union makes the shell; when it fails outright, the faces on
+        // one plane are at least pushed apart.
+        if !m.unite() { m.separate() }
         return m
     }
 
@@ -278,9 +280,16 @@ public enum LandmarkGenerator {
     public final class Model {
         /// Triangles by colour name, three corners each, X east, Y north, Z up.
         var tris: [String: [V3]] = [:]
-        /// Every triangle in the order it was made, with its colour: what
-        /// `separate` works on.
-        var faces: [(a: V3, b: V3, c: V3, colour: String)] = []
+        /// Every triangle in the order it was made, with its colour and the
+        /// closed solid it belongs to: what `separate` and `unite` work on.
+        var faces: [(a: V3, b: V3, c: V3, colour: String, solid: Int)] = []
+        /// The solid the faces made now belong to: every builder of a closed
+        /// body begins one.
+        var solid = 0
+        func begin() { solid += 1 }
+        /// How the union went: solids united, solids kept as they were.
+        public private(set) var united = 0
+        public private(set) var keptRaw = 0
 
         public var triangles: Int { tris.values.reduce(0) { $0 + $1.count } / 3 }
 
@@ -337,7 +346,8 @@ public enum LandmarkGenerator {
             let all = tris.values.flatMap { $0 }
             guard let first = all.first else { return "nothing built" }
             let lo = all.reduce(first) { simd_min($0, $1) }, hi = all.reduce(first) { simd_max($0, $1) }
-            return String(format: "%d triangles, %.0f × %.0f m, %.1f m high, colours %@", triangles,
+            return String(format: "%d triangles (%d solids united into one shell%@), %.0f × %.0f m, %.1f m high, colours %@", triangles,
+                          united, keptRaw > 0 ? ", \(keptRaw) kept apart, not closed" : "",
                           hi.x - lo.x, hi.y - lo.y, hi.z, tris.keys.sorted().joined(separator: " "))
         }
 
@@ -350,6 +360,112 @@ public enum LandmarkGenerator {
             try GLTF.writeModel(url, parts, name: name)
         }
 
+        /// The solids united into one shell by Manifold: the faces grouped
+        /// by solid, each welded into a mesh, the union's triangles coloured
+        /// by the face they came from. A solid Manifold will not take (not
+        /// closed, a face turned in) stays as it was, apart. Downward faces
+        /// on the ground go: nothing sees them.
+        @discardableResult
+        func unite() -> Bool {
+            var bySolid: [Int: [Int]] = [:]
+            for (i, f) in faces.enumerated() { bySolid[f.solid, default: []].append(i) }
+            let ids = bySolid.keys.sorted()
+            // A face id a planar face of one colour in one solid, so the
+            // union's simplification can merge the triangles of a face again.
+            var groupOf: [String: Int] = [:]
+            var groupColour: [String] = []
+            func group(_ i: Int) -> UInt32 {
+                let f = faces[i]
+                var n = simd_cross(f.b - f.a, f.c - f.a)
+                n /= max(simd_length(n), 1e-12)
+                let key = String(format: "%d|%@|%.3f,%.3f,%.3f|%.3f", f.solid, f.colour, n.x, n.y, n.z, simd_dot(n, f.a))
+                if let g = groupOf[key] { return UInt32(g) }
+                groupOf[key] = groupColour.count
+                groupColour.append(f.colour)
+                return UInt32(groupColour.count - 1)
+            }
+            var meshes: [SolidUnion.Mesh] = []
+            for id in ids {
+                var index: [SIMD3<Int64>: UInt32] = [:]
+                var mesh = SolidUnion.Mesh(verts: [], tris: [], faceIDs: [])
+                func vertex(_ p: V3) -> UInt32 {
+                    let key = SIMD3<Int64>(Int64((p.x * 10_000).rounded()), Int64((p.y * 10_000).rounded()), Int64((p.z * 10_000).rounded()))
+                    if let k = index[key] { return k }
+                    let k = UInt32(mesh.verts.count / 3)
+                    index[key] = k
+                    mesh.verts += [Float(Double(key.x) / 10_000), Float(Double(key.y) / 10_000), Float(Double(key.z) / 10_000)]
+                    return k
+                }
+                for i in bySolid[id]! {
+                    let f = faces[i]
+                    let (a, b, c) = (vertex(f.a), vertex(f.b), vertex(f.c))
+                    guard a != b, b != c, a != c else { continue }
+                    mesh.tris += [a, b, c]
+                    mesh.faceIDs.append(group(i))
+                }
+                meshes.append(mesh)
+            }
+            var statuses: [Int32] = []
+            let result = SolidUnion.unite(meshes, statuses: &statuses)
+            if ProcessInfo.processInfo.environment["LANDMARK_UNION_DEBUG"] != nil {
+                var counts: [Int32: Int] = [:]
+                for s in statuses { counts[s, default: 0] += 1 }
+                FileHandle.standardError.write(Data("union: \(meshes.count) solids, statuses \(counts.sorted { $0.key < $1.key }), result \(result == nil ? "none" : "\(result!.faceIDs.count) triangles")\n".utf8))
+                for (k, s) in statuses.enumerated() where s != 0 && k < 40 {
+                    let m = meshes[k]
+                    // The halfedges: a closed, consistently wound mesh has every
+                    // directed edge once and its opposite once.
+                    var edges: [String: Int] = [:]
+                    for t in stride(from: 0, to: m.tris.count, by: 3) {
+                        for e in 0..<3 { edges["\(m.tris[t + e])>\(m.tris[t + (e + 1) % 3])", default: 0] += 1 }
+                    }
+                    var open = 0, doubled = 0
+                    var samples: [String] = []
+                    for (e, n) in edges {
+                        let parts = e.split(separator: ">").map { Int($0)! }
+                        let back = edges["\(parts[1])>\(parts[0])"] ?? 0
+                        if n > 1 { doubled += 1 }
+                        if back == 0 {
+                            open += 1
+                            if samples.count < 3 {
+                                let p = Array(m.verts[(parts[0] * 3)..<(parts[0] * 3 + 3)]), q = Array(m.verts[(parts[1] * 3)..<(parts[1] * 3 + 3)])
+                                samples.append(String(format: "(%.2f, %.2f, %.2f)-(%.2f, %.2f, %.2f)", p[0], p[1], p[2], q[0], q[1], q[2]))
+                            }
+                        }
+                    }
+                    FileHandle.standardError.write(Data("  solid \(ids[k]): status \(s), \(m.verts.count / 3) verts, \(m.tris.count / 3) tris, \(open) open halfedges, \(doubled) doubled, colours \(Set(bySolid[ids[k]]!.map { faces[$0].colour }).sorted()) e.g. \(samples.joined(separator: " "))\n".utf8))
+                    if ProcessInfo.processInfo.environment["LANDMARK_UNION_DUMP"] == "\(ids[k])" {
+                        for i in bySolid[ids[k]]! {
+                            let f = faces[i]
+                            FileHandle.standardError.write(Data(String(format: "    %@ (%.2f,%.2f,%.2f) (%.2f,%.2f,%.2f) (%.2f,%.2f,%.2f)\n", f.colour, f.a.x, f.a.y, f.a.z, f.b.x, f.b.y, f.b.z, f.c.x, f.c.y, f.c.z).utf8))
+                        }
+                    }
+                }
+            }
+            guard let result else { return false }
+            var out: [String: [V3]] = [:]
+            for t in 0..<(result.faceIDs.count) {
+                let id = Int(result.faceIDs[t])
+                guard id < groupColour.count else { continue }
+                func v(_ k: Int) -> V3 {
+                    let i = Int(result.tris[3 * t + k]) * 3
+                    return V3(Double(result.verts[i]), Double(result.verts[i + 1]), Double(result.verts[i + 2]))
+                }
+                let (a, b, c) = (v(0), v(1), v(2))
+                let n = simd_cross(b - a, c - a)
+                if n.z < 0, max(a.z, b.z, c.z) < 0.005 { continue }
+                out[groupColour[id], default: []] += [a, b, c]
+            }
+            // The solids not taken, as they were.
+            for (k, id) in ids.enumerated() where statuses[k] != 0 {
+                for i in bySolid[id]! { out[faces[i].colour, default: []] += [faces[i].a, faces[i].b, faces[i].c] }
+            }
+            tris = out
+            united = statuses.filter { $0 == 0 }.count
+            keptRaw = statuses.count - united
+            return true
+        }
+
         // MARK: Faces
 
         /// A triangle turned to look along `hint`.
@@ -358,7 +474,7 @@ public enum LandmarkGenerator {
             guard simd_length(n) > 1e-9 else { return }
             let (p, q, r) = simd_dot(n, hint) >= 0 ? (a, b, c) : (a, c, b)
             tris[colour, default: []] += [p, q, r]
-            faces.append((p, q, r, colour))
+            faces.append((p, q, r, colour, solid))
         }
 
         /// A convex planar polygon, fanned.
@@ -428,8 +544,10 @@ public enum LandmarkGenerator {
                 var spans: [(Double, Double, Double)] = []   // a door's t0, t1, top
                 for at in doors where at.edge == i {
                     // A door stands on the wall's foot; a window (sill, glass) where it is told.
+                    // A door's opening starts 2 cm up, so it stays inside the
+                    // wall's face (an opening on the foot's edge is no opening).
                     let window = at.door.glass == true || (at.door.sill ?? 0) > 0.01
-                    let sill = max(0, min(at.door.sill ?? 0, z1 - z0 - 1))
+                    let sill = max(0.02, min(at.door.sill ?? 0, z1 - z0 - 1))
                     let w = min(at.door.width ?? (window ? 1.6 : 2.4), len * 0.6), h = min(at.door.height ?? (window ? 2.4 : 4), (z1 - z0 - sill) * 0.95)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
                     guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 0.5 else { continue }
@@ -466,7 +584,10 @@ public enum LandmarkGenerator {
                     }
                     face(hole.map { p($0.x, $0.y, op.depth) }, o, op.back)
                 }
-                // Portals: jambs and a lintel standing proud around each door.
+                // Portals: jambs and a lintel standing proud around each door,
+                // solids of their own; the wall's solid goes on after them.
+                let wallSolid = solid
+                defer { solid = wallSolid }
                 for at in doors where at.edge == i && at.door.glass != true && (at.door.sill ?? 0) <= 0.01 {
                     let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = at.door.portal ?? 0.35
@@ -480,10 +601,12 @@ public enum LandmarkGenerator {
             }
         }
 
+        /// A closed prism: its own solid.
         func prism(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
+            begin()
             walls(ring, z0, z1, colour)
             cap(ring, z1, up: true, colour)
-            if z0 > 0.01 { cap(ring, z0, up: false, colour) }
+            cap(ring, z0, up: false, colour)
         }
 
         /// A block standing proud of a wall (from `a` along `d`, looking
@@ -556,38 +679,42 @@ public enum LandmarkGenerator {
 
         // MARK: A mass
 
+        /// A mass: its body a closed solid from base to top (the walls with
+        /// their openings, plain strips behind the plinth and the cornice,
+        /// a floor and a ceiling), then the bands, pilasters and roof as
+        /// closed solids of their own, for the union to join.
         func mass(_ ring: [P2], _ m: LandmarkRecipe.Mass) {
             let plinth = m.plinth.map { min($0.height, (m.top - m.base) * 0.4) } ?? 0
             let cornice = m.cornice.map { min($0.height, (m.top - m.base) * 0.3) } ?? 0
             let lo = m.base + plinth, hi = m.top - cornice
             let doors = place(m.doors ?? [], on: ring)
+            begin()
             walls(ring, lo, hi, m.colour, windows: m.windows, doors: doors)
-            if m.base > 0.01 { cap(ring, m.base, up: false, m.colour) }
-            if let p = m.plinth, plinth > 0 {
-                let out = grown(ring, p.depth ?? 0.15)
-                walls(out, m.base, lo, p.colour ?? "lm_stone")
-                cap(out, holes: [ring], lo, up: true, p.colour ?? "lm_stone")
-                if m.base > 0.01 { cap(out, holes: [ring], m.base, up: false, p.colour ?? "lm_stone") }
-            }
-            var eave = ring
-            if let c = m.cornice, cornice > 0 {
-                let out = grown(ring, c.depth ?? 0.4)
-                walls(out, hi, m.top, c.colour ?? "lm_white")
-                cap(out, holes: [ring], hi, up: false, c.colour ?? "lm_white")
-                cap(out, holes: [ring], m.top, up: true, c.colour ?? "lm_white")
-                eave = out
-            }
+            if plinth > 0 { walls(ring, m.base, lo, m.colour) }
+            if cornice > 0 { walls(ring, hi, m.top, m.colour) }
+            cap(ring, m.base, up: false, m.colour)
+            cap(ring, m.top, up: true, m.roof == nil || m.roof?.shape == "flat" ? "lm_stone" : m.colour)
+            if let p = m.plinth, plinth > 0 { band(ring, grown(ring, p.depth ?? 0.15), m.base, lo, p.colour ?? "lm_stone") }
+            if let c = m.cornice, cornice > 0 { band(ring, grown(ring, c.depth ?? 0.4), hi, m.top, c.colour ?? "lm_white") }
             if let p = m.pilasters { pilasters(ring, lo, hi, p, windows: m.windows, wall: m.colour) }
-            if let band = m.bands, let w = m.windows, w.storeys >= 2 {
-                let storey = (hi - lo) / Double(w.storeys), out = grown(ring, band.depth ?? 0.15), colour = band.colour ?? "lm_white"
+            if let b = m.bands, let w = m.windows, w.storeys >= 2 {
+                let storey = (hi - lo) / Double(w.storeys), out = grown(ring, b.depth ?? 0.15)
                 for k in 1..<w.storeys {
-                    let z = lo + storey * Double(k) - band.height / 2
-                    walls(out, z, z + band.height, colour)
-                    cap(out, holes: [ring], z + band.height, up: true, colour)
-                    cap(out, holes: [ring], z, up: false, colour)
+                    let z = lo + storey * Double(k) - b.height / 2
+                    band(ring, out, z, z + b.height, b.colour ?? "lm_white")
                 }
             }
-            roof(ring, m.top, m.roof, under: eave, wall: m.colour)
+            roof(ring, m.top, m.roof, wall: m.colour)
+        }
+
+        /// A closed ring of material around a body, from `inner` out to
+        /// `outer`, `z0` to `z1`: a plinth, a cornice, a string course.
+        func band(_ inner: [P2], _ outer: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
+            begin()
+            walls(outer, z0, z1, colour)
+            walls(inner.reversed(), z0, z1, colour)
+            cap(outer, holes: [inner], z1, up: true, colour)
+            cap(outer, holes: [inner], z0, up: false, colour)
         }
 
         // MARK: Roofs
@@ -596,18 +723,16 @@ public enum LandmarkGenerator {
         /// (dome, onion, spire, pyramid), or planes with eaves reaching
         /// `overhang` beyond the walls, a fascia under them and a soffit back
         /// to `under` (the cornice's outer ring, or the wall).
-        func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?, under: [P2], wall: String) {
+        func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?, wall: String) {
             guard let roof, roof.shape != "flat" else {
-                cap(ring, top, up: true, "lm_stone")
+                // The body's own ceiling is the flat roof; a parapet is a band on it.
                 if let p = roof?.parapet, p > 0.05 {
                     let colour = roof?.colour ?? wall
                     let inner = grown(ring, -0.3)
-                    walls(ring, top, top + p, colour)
                     if inner.count >= 3, inner != ring {
-                        walls(inner.reversed(), top, top + p, colour)
-                        cap(ring, holes: [inner], top + p, up: true, colour)
+                        band(inner, ring, top, top + p, colour)
                     } else {
-                        cap(ring, top + p, up: true, colour)
+                        prism(ring, top, top + p, colour)
                     }
                 }
                 return
@@ -627,12 +752,13 @@ public enum LandmarkGenerator {
             case "pyramidal":
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 0.8)], colour)
             default:
+                // The roof a closed solid: its slopes and gables over a flat
+                // underside, with a fascia around the eaves when they overhang.
+                begin()
                 let over = roof.overhang ?? 0.6
-                guard over > 0.05 else { return planes(ring, top, roof.shape, roof.height, colour, wall: wall) }
+                guard over > 0.05 else { return planes(ring, top, roof.shape, roof.height, colour, wall: wall, bottom: top) }
                 let eave = grown(ring, over), fascia = 0.35
-                walls(eave, top, top + fascia, colour)
-                cap(eave, holes: [under], top, up: false, colour)
-                planes(eave, top + fascia, roof.shape, roof.height, colour, wall: wall)
+                planes(eave, top + fascia, roof.shape, roof.height, colour, wall: wall, bottom: top)
             }
         }
 
@@ -641,6 +767,8 @@ public enum LandmarkGenerator {
         /// 0 is a point, else the top is capped flat.
         func loft(_ ring: [P2], _ c: P2, _ top: Double, _ profile: [(Double, Double)], _ colour: String) {
             func at(_ p: P2, _ k: Int) -> V3 { let q = c + (p - c) * profile[k].0; return V3(q.x, q.y, top + profile[k].1) }
+            begin()
+            if profile[0].0 > 1e-6 { cap(ring.map { c + ($0 - c) * profile[0].0 }, top + profile[0].1, up: false, colour) }
             for k in 0..<(profile.count - 1) {
                 for i in ring.indices {
                     let a = ring[i], b = ring[(i + 1) % ring.count]
@@ -659,10 +787,20 @@ public enum LandmarkGenerator {
         /// rectangle: planes rising from its sides, each clipped to the
         /// outline, with gable walls where the roof rises over the outline's
         /// edge.
-        func planes(_ ring: [P2], _ top: Double, _ shape: String, _ height: Double?, _ colour: String, wall: String) {
+        /// A roof of planes as one closed solid: over every region its
+        /// slope, under it the flat underside at `bottom`, and on the
+        /// outline's edges the walls from `bottom` up to the slope (the
+        /// fascia under the eaves, the gables), all cut from the same pieces
+        /// so their edges meet.
+        func planes(_ ring: [P2], _ top: Double, _ shape: String, _ height: Double?, _ colour: String, wall: String, bottom: Double) {
             let outline = Geometry.polygon(ring + [ring[0]])
             let rect = Array(outline.minimumRotatedRectangle.exterior.dropLast())
-            guard rect.count == 4 else { return cap(ring, top, up: true, colour) }
+            guard rect.count == 4 else {
+                cap(ring, top, up: true, colour)
+                cap(ring, bottom, up: false, colour)
+                if top > bottom + 1e-6 { walls(ring, bottom, top, colour) }
+                return
+            }
             let c = rect.reduce(P2.zero, +) / 4
             var u = rect[1] - rect[0], v = rect[2] - rect[1]
             if simd_length(u) < simd_length(v) { swap(&u, &v) }
@@ -701,14 +839,17 @@ public enum LandmarkGenerator {
                 for part in clipped.polygons {
                     for t in part.constrainedDelaunay() where t.count == 3 {
                         tri(V3(t[0].x, t[0].y, z(t[0])), V3(t[1].x, t[1].y, z(t[1])), V3(t[2].x, t[2].y, z(t[2])), V3(0, 0, 1), colour)
+                        tri(V3(t[0].x, t[0].y, bottom), V3(t[1].x, t[1].y, bottom), V3(t[2].x, t[2].y, bottom), V3(0, 0, -1), colour)
                     }
-                    // Gable walls: the outline's own edges under a rising roof.
+                    // The walls on the outline's own edges: the fascia under
+                    // the eaves, the gables where the roof rises over the edge.
                     let r = Array(part.exterior.dropLast())
                     for i in r.indices {
                         let a = r[i], b = r[(i + 1) % r.count]
-                        guard edge.distance(.point((a + b) / 2)) < 1e-4, z(a) > top + 1e-3 || z(b) > top + 1e-3 else { continue }
+                        guard edge.distance(.point((a + b) / 2)) < 1e-4, z(a) > bottom + 1e-6 || z(b) > bottom + 1e-6 else { continue }
                         let o = outwardOf(outline, a, b)
-                        face([V3(a.x, a.y, top), V3(b.x, b.y, top), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))], o, wall)
+                        let gable = z(a) > top + 1e-3 || z(b) > top + 1e-3
+                        face([V3(a.x, a.y, bottom), V3(b.x, b.y, bottom), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))], o, gable ? wall : colour)
                     }
                 }
             }
@@ -729,13 +870,13 @@ public enum LandmarkGenerator {
                 for i in 0..<n {
                     let c = a + (b - a) * (Double(i) / Double(n - 1))
                     let ring = (0..<8).map { k -> P2 in let t = Double(k) / 8 * 2 * .pi; return c + P2(cos(t), sin(t)) * r }
-                    walls(ring, base, base + height - beam, colour)
-                    if base > 0.01 { cap(ring, base, up: false, colour) }
+                    prism(ring, base, base + height - beam, colour)
                 }
                 let side = P2(-d.y, d.x) * (r + 0.3), along = d * (r + 0.3)
                 prism(ccw([a - along - side, b + along - side, b + along + side, a - along + side]), base + height - beam, base + height, colour)
             case "pediment":
                 guard let a = p2(f.from), let b = p2(f.to), let height = f.height, height > 0 else { return }
+                begin()
                 let len = simd_length(b - a), d = (b - a) / max(len, 1e-9), n = P2(d.y, -d.x) * (f.depth ?? 1.5)
                 let m = (a + b) / 2
                 func v(_ p: P2, _ z: Double) -> V3 { V3(p.x, p.y, z) }
@@ -744,7 +885,7 @@ public enum LandmarkGenerator {
                 face([v(a, base), v(b, base), v(m, base + height)], -right, colour)
                 face([v(a, base), v(a + n, base), v(m + n, base + height), v(m, base + height)], up - dir, colour)
                 face([v(m, base + height), v(m + n, base + height), v(b + n, base), v(b, base)], up + dir, colour)
-                if base > 0.01 { face([v(a, base), v(b, base), v(b + n, base), v(a + n, base)], -up, colour) }
+                face([v(a, base), v(b, base), v(b + n, base), v(a + n, base)], -up, colour)
             case "statue":
                 guard let at = p2(f.at) else { return }
                 let h = f.height ?? 4, w = f.width ?? h * 0.6
@@ -763,28 +904,13 @@ public enum LandmarkGenerator {
                 prism(ccw(ring), base, top, colour)
             case "steps":
                 guard let a = p2(f.from), let b = p2(f.to), let height = f.height, height > 0 else { return }
+                // A stack of slabs, the top one at the line, each a step deeper
+                // than the one above: closed prisms the union joins.
                 let len = simd_length(b - a), d = (b - a) / max(len, 1e-9), n = P2(d.y, -d.x)
                 let count = max(1, f.count ?? Int(height / 0.16)), depth = f.depth ?? Double(count) * 0.35
-                // The profile across, from the line (top) out to the ground.
-                var profile: [P2] = [P2(0, 0), P2(0, height)]
                 for i in 0..<count {
-                    let o = depth * Double(i + 1) / Double(count), z = height * Double(count - i - 1) / Double(count)
-                    profile += [P2(o, height * Double(count - i) / Double(count)), P2(o, z)]
-                }
-                profile = profile.reduce(into: [P2]()) { out, p in if out.last.map({ simd_length($0 - p) > 1e-9 }) ?? true { out.append(p) } }
-                if simd_length(profile.last! - profile[0]) < 1e-9 { profile.removeLast() }
-                func v(_ q: P2, _ t: Double) -> V3 { let p = a + d * t + n * q.x; return V3(p.x, p.y, base + q.y) }
-                let mid = profile.reduce(P2.zero, +) / Double(profile.count)
-                for i in profile.indices {
-                    let p = profile[i], q = profile[(i + 1) % profile.count]
-                    let e = q - p, out = P2(e.y, -e.x)
-                    let hint2 = simd_dot(out, (p + q) / 2 - mid) >= 0 ? out : -out
-                    face([v(p, 0), v(q, 0), v(q, len), v(p, len)], V3(n.x * hint2.x, n.y * hint2.x, hint2.y), colour)
-                }
-                let shape = Geometry.polygon(profile + [profile[0]])
-                for t in shape.constrainedDelaunay() where t.count == 3 {
-                    tri(v(t[0], 0), v(t[1], 0), v(t[2], 0), V3(-d.x, -d.y, 0), colour)
-                    tri(v(t[0], len), v(t[1], len), v(t[2], len), V3(d.x, d.y, 0), colour)
+                    let reach = depth * Double(i + 1) / Double(count), top = base + height * Double(count - i) / Double(count)
+                    prism(ccw([a, b, b + n * reach, a + n * reach]), base, top, colour)
                 }
             default:
                 break
@@ -827,9 +953,9 @@ public enum LandmarkGenerator {
         }
 
         func one(_ s: LandmarkRecipe.Shape, _ source: LandmarkSource, at: P2, heading: Double, base: Double) {
+            begin()
             let colour = s.colour ?? "lm_stone", n = max(3, min(64, s.segments ?? 16))
             let f = frame(at, base, heading, s.pitch ?? 0)
-            let tipped = abs(s.pitch ?? 0) > 1e-6
             func circle(_ r: Double) -> [P2] { (0..<n).map { k in let t = 2 * .pi * Double(k) / Double(n); return P2(r * cos(t), r * sin(t)) } }
             // A ring in plan, moved by the shape's place when it is its own.
             func ring() -> [P2]? {
@@ -860,7 +986,7 @@ public enum LandmarkGenerator {
                     face(quad.reduce(into: [V3]()) { out, p in if out.last.map({ simd_length($0 - p) > 1e-9 }) ?? true { out.append(p) } },
                          f.dir(mid.x, mid.y, (r - rt) / max(h, 1e-9) * r), colour)
                 }
-                if base > 0.01 || tipped { face(lo.reversed().map { f.p($0.x, $0.y, 0) }, f.dir(0, 0, -1), colour) }
+                face(lo.reversed().map { f.p($0.x, $0.y, 0) }, f.dir(0, 0, -1), colour)
                 if rt > 1e-6 { face(hi.map { f.p($0.x, $0.y, h) }, f.dir(0, 0, 1), colour) }
             case "sphere", "dome":
                 guard let r = s.radius else { return }
@@ -879,14 +1005,14 @@ public enum LandmarkGenerator {
                         face(pts, pts.reduce(V3.zero, +) / Double(pts.count) - centre, colour)
                     }
                 }
-                if !whole, base > 0.01 || tipped { face((0..<n).reversed().map { at(0, $0) }, f.dir(0, 0, -1), colour) }
+                if !whole { face((0..<n).reversed().map { at(0, $0) }, f.dir(0, 0, -1), colour) }
             case "prism":
                 guard let outer = ring(), let top = s.top, top > base else { return }
                 let holes = (s.holes ?? []).map { ccw($0.filter { $0.count == 2 }.map { P2($0[0], $0[1]) }) }.filter { $0.count >= 3 }
                 walls(outer, base, top, colour)
                 for hole in holes { walls(hole.reversed(), base, top, colour) }
                 cap(outer, holes: holes, top, up: true, colour)
-                if base > 0.01 { cap(outer, holes: holes, base, up: false, colour) }
+                cap(outer, holes: holes, base, up: false, colour)
             case "loft":
                 guard let profile = s.profile?.filter({ $0.count == 2 }), profile.count >= 2 else { return }
                 let rr: [P2]
@@ -899,7 +1025,6 @@ public enum LandmarkGenerator {
                     c = at
                 } else { return }
                 loft(rr, c, base, profile.map { ($0[0], $0[1]) }, colour)
-                if base > 0.01, profile[0][0] > 1e-6 { cap(rr.map { c + ($0 - c) * profile[0][0] }, base + profile[0][1], up: false, colour) }
             default:
                 break
             }
@@ -965,6 +1090,7 @@ public enum LandmarkGenerator {
         /// A five-pointed star standing upright, its face toward `u`, `r`
         /// to a point, centred at `zc`.
         func star(_ c: P2, _ u: P2, _ v: P2, _ zc: Double, _ r: Double, _ colour: String) {
+            begin()
             let t = max(0.1, r * 0.2)
             let pts: [(P2, Double)] = (0..<10).map { k in
                 let rr = k % 2 == 0 ? r : r * 0.4, a = Double.pi / 2 + Double(k) * .pi / 5

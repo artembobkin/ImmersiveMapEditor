@@ -40,6 +40,8 @@ final class Session {
     /// the Landmarks view, and the OSM elements they are made of.
     private(set) var candidates: [TileLandmark] = []
     var pickedLandmark: String?
+    /// The Landmarks view's wireframe over the shading.
+    var landmarkWireframe = false { didSet { landmarkView?.wireframe = landmarkWireframe } }
     var candidateBuildings: [String] { candidates.flatMap(\.buildings) }
     private(set) var landmarkView: LandmarkView?
     /// When and how sharp the imagery over the working tile was taken, by its
@@ -165,6 +167,7 @@ final class Session {
     func showLandmark(again: Bool = false) {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
+            landmarkView?.wireframe = landmarkWireframe
             landmarkView?.status = { [weak self] in
                 self?.landmarkStatus = $0
                 // While the agent works, the console says what the view shows.

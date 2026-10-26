@@ -31,6 +31,10 @@ final class LandmarkView: MTKView {
     /// What is shown, and what is on its way.
     private(set) var source: Source?
     private var mesh: LandmarkRenderer.Model?
+    /// The wireframe over the shading, and back faces culled (a model's,
+    /// not the OSM boxes': their winding is not kept).
+    var wireframe = false
+    private var cull: Bool { if case .model = source { return true } else { return false } }
     /// What went wrong reading the model, or how big it is.
     var status: (String) -> Void = { _ in }
 
@@ -103,7 +107,7 @@ final class LandmarkView: MTKView {
         frameModel()
         let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))
         try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: out, width: width, height: height) { enc in
-            renderer.encode(enc, model: mesh, viewProjection: vp)
+            renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
         }
     }
 
@@ -132,7 +136,7 @@ final class LandmarkView: MTKView {
             let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))
             let url = dir.appendingPathComponent("\(name).png")
             try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: url, width: width, height: height) { enc in
-                renderer.encode(enc, model: mesh, viewProjection: vp)
+                renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
             }
             out.append(url)
         }
@@ -160,7 +164,7 @@ final class LandmarkView: MTKView {
         let vp = controller.camera.viewProjection(aspect: aspect)
         try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
         try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: out, width: width, height: height) { enc in
-            renderer.encode(enc, model: mesh, viewProjection: vp)
+            renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
         }
         controller.camera.fovDegrees = 50
     }
@@ -229,7 +233,7 @@ extension LandmarkView: MTKViewDelegate {
               let buffer = renderer.queue.makeCommandBuffer(),
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
-        renderer.encode(enc, model: mesh, viewProjection: controller.camera.viewProjection(aspect: aspect))
+        renderer.encode(enc, model: mesh, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe, cull: cull)
         enc.endEncoding()
         buffer.present(drawable)
         buffer.commit()
@@ -404,11 +408,15 @@ final class LandmarkRenderer {
                       bytesPerRow: 4)
     }
 
-    func encode(_ enc: MTLRenderCommandEncoder, model: Model?, viewProjection: simd_float4x4) {
+    /// Draws the model shaded, and over it its wireframe when asked. A
+    /// model's back faces are culled, as the engine culls them: a shell
+    /// shows only its outside, and a face turned in shows as a hole.
+    func encode(_ enc: MTLRenderCommandEncoder, model: Model?, viewProjection: simd_float4x4, wireframe: Bool = false, cull: Bool = false) {
         guard let model else { return }
         enc.setRenderPipelineState(pipeline)
         enc.setDepthStencilState(depth)
         enc.setFragmentSamplerState(sampler, index: 0)
+        enc.setFrontFacing(.counterClockwise)
         // The sun from the south-west (SUN_FROM 225), high: +X east, -Z north.
         let sun = simd_normalize(SIMD3<Float>(-0.5, 0.9, 0.5))
         func draw(_ buffer: MTLBuffer, _ count: Int, _ texture: MTLTexture?, _ colour: SIMD4<Float>) {
@@ -419,7 +427,19 @@ final class LandmarkRenderer {
             enc.setFragmentTexture(texture ?? white, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
         }
+        enc.setCullMode(.none)
         draw(model.ground, 6, nil, SIMD4(0.86, 0.85, 0.82, 1))
+        enc.setCullMode(cull ? .back : .none)
         for p in model.parts { draw(p.vertices, p.count, p.texture, p.colour) }
+        if wireframe {
+            // The edges in dark lines, pulled a little toward the eye so they
+            // win over the faces they lie on.
+            enc.setTriangleFillMode(.lines)
+            enc.setDepthBias(-1, slopeScale: -1, clamp: 0)
+            for p in model.parts { draw(p.vertices, p.count, nil, SIMD4(0.12, 0.1, 0.1, 1)) }
+            enc.setTriangleFillMode(.fill)
+            enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+        }
+        enc.setCullMode(.none)
     }
 }
