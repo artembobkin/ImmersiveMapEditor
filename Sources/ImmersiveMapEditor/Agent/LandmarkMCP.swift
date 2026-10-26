@@ -119,6 +119,9 @@ enum LandmarkMCP {
             ["name": "compare_with_photo",
              "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
+            ["name": "compare_with_satellite",
+             "description": "The satellite view beside the model rendered from straight above, north up, over the same ground: the masses, roofs and courtyards against the imagery. Needs satellite_view first.",
+             "inputSchema": ["type": "object", "properties": [:]]],
             ["name": "render_from",
              "description": "The model as seen from a place of your choice: x and y metres east and north of the landmark's centre, height metres up (2 by default: eye level), heading (a compass bearing: 0 north, 90 east), pitch (degrees, up positive, 0 by default), hfov (degrees wide, 65 by default). For a look from where a Commons photo was taken, or from the square before the entrance.",
              "inputSchema": ["type": "object", "properties": ["x": ["type": "number"], "y": ["type": "number"], "height": ["type": "number"],
@@ -184,11 +187,13 @@ enum LandmarkMCP {
                     if let shown = try? compare(["file": file]) { content += shown }
                 }
                 if picked.isEmpty { content.append(text("No street photo with a camera pose is kept yet: save some with save_street_photo, and every build will come back beside them.")) }
+                if let above = try? compareSatellite() { content += above }
                 return content
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)
             case "compare_with_photo": return try compare(args)
+            case "compare_with_satellite": return try compareSatellite()
             case "satellite_view": return try satellite(args)
             case "render_from": return try renderFrom(args)
             case "find_commons_photos": return try commonsPhotos(args)
@@ -631,7 +636,7 @@ enum LandmarkMCP {
             let taken = SatelliteView.capture(folder: folder, run: Self.run)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             list.removeAll { $0["file"] as? String == "satellite.jpg" }
-            list.append(["file": "satellite.jpg", "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
+            list.append(["file": "satellite.jpg", "radius": radius, "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
                          "page": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
                          "author": SatelliteView.source.attribution, "licence": "Esri World Imagery terms, a reference",
                          "shows": "from above, north up, " + (taken.map { "taken \($0), " } ?? "") + "\(Int(radius)) m around the centre"])
@@ -677,6 +682,28 @@ enum LandmarkMCP {
             let both = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".compare.jpg")
             try SideBySide.draw(photo, render, to: both)
             var content: [[String: Any]] = [text("\(name) and the model from its camera's place (\(Int(x)) m east, \(Int(y)) m north of the centre, looking \(Int(heading))°, \(Int(hfov))° wide): the photo on the left, the model on the right. Mapillary's pose can be some metres and degrees off, and a panorama's cut is not a perspective picture, so judge the shapes and the counts (columns, windows, storeys), not the exact overlap or size.")]
+            if let img = image(both) { content.append(img) }
+            return content
+        }
+
+        /// The satellite view beside the model from straight above, north
+        /// up, over the same ground: the masses and the roofs against the
+        /// imagery (and the OSM outlines drawn on it).
+        func compareSatellite() throws -> [[String: Any]] {
+            let photo = references.appendingPathComponent("satellite.jpg")
+            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            guard FileManager.default.fileExists(atPath: photo.path), let entry = list.first(where: { $0["file"] as? String == "satellite.jpg" }) else {
+                throw Failure("no satellite view kept yet: satellite_view first")
+            }
+            let radius = entry["radius"] as? Double ?? 110
+            // From 600 m up, as narrow as it takes to cover the same ground;
+            // not quite straight down, so the camera keeps its north.
+            let size = 1024
+            let render = currentRound.appendingPathComponent("compare/satellite.render.png")
+            try look(eye: (0, 0, 600), heading: 0, pitch: -89.9, hfov: 2 * atan(radius / 600) * 180 / .pi, width: size, height: size, to: render)
+            let both = currentRound.appendingPathComponent("compare/satellite.compare.jpg")
+            try SideBySide.draw(photo, render, to: both, labels: ("satellite, north up, the OSM outlines in red", "model from above, north up, the same ground"))
+            var content: [[String: Any]] = [text("The satellite view (\(Int(radius)) m around the centre) beside the model from straight above, north up, over the same ground: the masses, the roofs' shapes and ridges, the courtyards. The imagery leans a little (a tall roof sits a few metres off its outline), so judge the shapes, not the exact overlap.")]
             if let img = image(both) { content.append(img) }
             return content
         }

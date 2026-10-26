@@ -191,8 +191,9 @@ final class LandmarkAgent {
         drone), the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
         3. Write its recipe with set_recipe: every build comes back with the model rendered from each kept street \
-        photo's own camera beside that photo (one a side), so what differs is plain: count the columns and the windows, \
-        check the roof's shape and height, the entrances, the relief of the walls, the colours; compare_with_photo for \
+        photo's own camera beside that photo (one a side) and the satellite view beside the model from above, so what \
+        differs is plain: count the columns and the windows, check the roof's shape and height and the masses from above, \
+        the entrances, the relief of the walls, the colours; compare_with_photo for \
         the other kept photos, render_views for the whole and from above, render_from for a look from any place. \
         Correct the recipe and build again, until the shapes agree.
         4. Before you finish, walk the building: render_from 15 m before each entrance at eye level (height 2, looking at \

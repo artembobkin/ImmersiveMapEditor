@@ -125,7 +125,8 @@ final class LandmarkView: MTKView {
                                                  ("from-above", 0, -89.9)]
         for (name, from, pitch) in shots {
             frameModel()
-            controller.camera.yaw = (from + 180).truncatingRemainder(dividingBy: 360)
+            // Looking down, a yaw of 0 puts north at the top.
+            controller.camera.yaw = pitch < -80 ? 0 : (from + 180).truncatingRemainder(dividingBy: 360)
             controller.camera.pitch = pitch
             controller.camera.distance *= pitch < -80 ? 1.1 : 0.9
             let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))

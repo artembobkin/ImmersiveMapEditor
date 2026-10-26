@@ -308,7 +308,7 @@ enum StreetPicks {
 /// A photo and the model from the photo's place, side by side, the same
 /// height: what the agent compares.
 enum SideBySide {
-    static func draw(_ left: URL, _ right: URL, to file: URL) throws {
+    static func draw(_ left: URL, _ right: URL, to file: URL, labels: (String, String) = ("photo", "model, from the same place")) throws {
         func read(_ url: URL) -> CGImage? {
             CGImageSourceCreateWithURL(url as CFURL, nil).flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) }
         }
@@ -322,7 +322,7 @@ enum SideBySide {
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h + label))
         ctx.draw(a, in: CGRect(x: 0, y: label, width: wa, height: h))
         ctx.draw(b, in: CGRect(x: wa + gap, y: label, width: wb, height: h))
-        for (text, x) in [("photo", 4), ("model, from the same place", wa + gap + 4)] {
+        for (text, x) in [(labels.0, 4), (labels.1, wa + gap + 4)] {
             let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
                 .font: CTFontCreateWithName("Helvetica" as CFString, 14, nil), .foregroundColor: CGColor(gray: 0.95, alpha: 1)]))
             ctx.textPosition = CGPoint(x: Double(x), y: 6)
