@@ -13,6 +13,9 @@ enum ClaudeSettings {
     /// The model the agents ask for (an alias such as opus), else Claude
     /// Code's own default.
     static let modelKey = "claude.model"
+    /// How hard the agents think: Claude Code's --effort (low, medium, high,
+    /// xhigh, max), or its default when empty.
+    static let effortKey = "claude.effort"
 
     /// The `claude` to run: the one picked, else the first installed.
     static var executable: URL? {

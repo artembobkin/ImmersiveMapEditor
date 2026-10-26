@@ -168,7 +168,19 @@ enum LandmarkMCP {
         func landmark() throws -> String {
             let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
             func f(_ v: Double) -> String { String(format: "%.1f", v) }
-            var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1).",
+            // The building's main axis: the long side of the smallest rectangle
+            // around its hull, as a compass bearing.
+            var axis = ""
+            let all = source.buildings.flatMap { $0.polygons.flatMap { $0.first ?? [] } }
+            let rect = Geometry.collection(all.map { Geometry.point($0) }).convexHull.minimumRotatedRectangle.exterior
+            if rect.count >= 4 {
+                let u = rect[1] - rect[0], v = rect[2] - rect[1]
+                let long = simd_length(u) >= simd_length(v) ? u : v
+                let bearing = (atan2(long.x, long.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 180)
+                axis = String(format: " Its long axis runs at a bearing of %.0f° (so its walls face %.0f°, %.0f°, %.0f° and %.0f°): give boxes, colonnades and pediments these headings and lines, parallel to the walls, never to north when the building is not.",
+                              bearing, bearing, (bearing + 90).truncatingRemainder(dividingBy: 360), (bearing + 180).truncatingRemainder(dividingBy: 360), (bearing + 270).truncatingRemainder(dividingBy: 360))
+            }
+            var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1)." + axis,
                          "Its OSM buildings (\(source.buildings.count)): id, part or outline, base..height m, plan size and middle (x east, y north, m), area, the tags that shape it.",
                          "Outlines come by get_outlines (ids), simplified to 0.3 m."]
             for b in source.buildings {

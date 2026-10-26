@@ -8,6 +8,7 @@ struct LandmarksSections: View {
     @State private var request = ""
     /// The model the agent runs on: Claude Code's default, or one by name.
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
+    @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @State private var forgetting = false
 
     private var runner: BuildRunner { session.build }
@@ -54,6 +55,17 @@ struct LandmarksSections: View {
                 .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("Which Claude models the landmark: Claude Code's default, or one by name (the same setting as Settings > Claude > Model).")
+                Picker("Effort", selection: $effort) {
+                    Text("Default").tag("")
+                    Text("Low").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("High").tag("high")
+                    Text("Extra high").tag("xhigh")
+                    Text("Max").tag("max")
+                }
+                .pickerStyle(.menu)
+                .disabled(session.agent.running)
+                .help("How hard Claude thinks before each step (Claude Code's --effort): more is slower and dearer, and steadier on the geometry.")
                 if session.agent.running {
                     Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
                 } else {

@@ -79,6 +79,9 @@ final class LandmarkAgent {
         if let model = UserDefaults.standard.string(forKey: ClaudeSettings.modelKey), !model.isEmpty {
             args += ["--model", model]
         }
+        if let effort = UserDefaults.standard.string(forKey: ClaudeSettings.effortKey), !effort.isEmpty {
+            args += ["--effort", effort]
+        }
         if request != nil, let session = Self.conversation(folder) {
             args += ["--resume", session]
         } else {
@@ -222,7 +225,8 @@ final class LandmarkAgent {
         switch json["type"] as? String {
         case "system" where json["subtype"] as? String == "init":
             let tools = (json["tools"] as? [String] ?? []).joined(separator: ", ")
-            return Event(text: "Claude started (\(json["model"] as? String ?? "?")), tools: \(tools)")
+            let effort = UserDefaults.standard.string(forKey: ClaudeSettings.effortKey).flatMap { $0.isEmpty ? nil : ", effort \($0)" } ?? ""
+            return Event(text: "Claude started (\(json["model"] as? String ?? "?")\(effort)), tools: \(tools)")
         case "assistant":
             let content = (json["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
             let lines = content.compactMap { c -> String? in
