@@ -245,8 +245,17 @@ final class LandmarkAgent {
             guard !results.isEmpty else { return nil }
             let lines = results.compactMap { r -> String? in
                 let texts = (r["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String } ?? [(r["content"] as? String) ?? ""]
-                let first = texts.joined(separator: " ").split(separator: "\n").first.map(String.init) ?? ""
-                return r["is_error"] as? Bool == true ? "  ✗ \(first.prefix(300))" : (first.isEmpty ? nil : "  \(first.prefix(200))")
+                let all = texts.joined(separator: "\n").split(separator: "\n").map(String.init)
+                let first = all.first ?? ""
+                if r["is_error"] as? Bool == true { return "  ✗ \(first.prefix(300))" }
+                guard !first.isEmpty else { return nil }
+                // The first line of a result, and the generator's physical
+                // warnings whole: the user watches those too.
+                var shown = ["  \(first.prefix(200))"]
+                if let k = all.firstIndex(where: { $0.hasPrefix("NOT PHYSICAL") }) {
+                    shown += all[k...].map { "  ⚠ \($0.prefix(300))" }
+                }
+                return shown.joined(separator: "\n")
             }
             return Event(text: lines.isEmpty ? nil : lines.joined(separator: "\n"), toolDone: true)
         case "result":
