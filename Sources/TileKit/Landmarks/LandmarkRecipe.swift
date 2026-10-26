@@ -176,7 +176,11 @@ public struct LandmarkRecipe: Codable {
 
     public init() {}
 
+    /// Glass, for a modern building: the map's one glass, and the bright
+    /// glass of a skyscraper. Not sided like a wall, flat.
+    public static let glassColours = ["lm_glass", "lm_sky_glass"]
     static let colourList = Palette.landmark.map { "\($0.0) \($0.1)" }.joined(separator: ", ")
+        + ", and for glass: lm_glass (a curtain wall, a glazed roof), lm_sky_glass (the bright glass of a tower)"
 
     /// The format and the style, as the landmarks' agent is told them.
     public static let guide = """
@@ -240,7 +244,10 @@ public struct LandmarkRecipe: Codable {
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
     outside on the right. Steps rise from the ground at `depth` to the right of the line up to `height` at the line.
     - The style: few large shapes over many small ones; the silhouette, proportions, the main colours and the few details \
-    that make the building recognisable from a distance (a portico, a dome, a tower, a quadriga). No textures, no fine \
+    that make the building recognisable from a distance (a portico, a dome, a tower, a quadriga, a glass curtain wall, a \
+    spire). The building can be of any kind and age: a church (drums with domes or onions, a cross on top), a tower (a tent \
+    roof, a star), a palace, a station, a department store, a modern block of glass and stone (a mass in lm_glass with no \
+    windows is a curtain wall), a monument (a pedestal and a statue). Model what is there. No textures, no fine \
     ornament. Windows only where the building reads as storeys of windows. Every model of the map looks of one family.
     - Everything is physical, as a building is, even where no photo shows it: steps lead up to a landing (a box or a \
     mass at their top height) that reaches the wall and the doors, the floor the portico's columns stand on; a colonnade \

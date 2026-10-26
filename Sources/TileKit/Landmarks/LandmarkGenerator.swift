@@ -42,7 +42,7 @@ public enum LandmarkGenerator {
     /// What is wrong with a recipe, one line each: nothing when it builds.
     public static func check(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
         var out: [String] = []
-        let colours = Set(Palette.landmark.map(\.0))
+        let colours = Set(Palette.landmark.map(\.0) + LandmarkRecipe.glassColours)
         func colour(_ c: String?, _ at: String) {
             if let c, !colours.contains(c) { out.append("\(at): colour \(c) is not one of \(colours.sorted().joined(separator: ", "))") }
         }
