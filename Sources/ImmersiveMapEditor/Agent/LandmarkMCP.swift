@@ -260,7 +260,8 @@ enum LandmarkMCP {
             items.append(URLQueryItem(name: "access_token", value: try mapillaryToken))
             var c = URLComponents(string: "https://graph.mapillary.com/" + path)!
             c.queryItems = items
-            let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--max-time", "60", c.url!.absoluteString])
+            // Without -f: Mapillary explains an error in its JSON body.
+            let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-sSL", "--max-time", "60", c.url!.absoluteString])
             guard status == 0 else { throw Failure("Mapillary did not answer: \(said.prefix(300))") }
             guard let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any] else {
                 throw Failure("Mapillary answered with something else: \(said.prefix(300))")
@@ -275,12 +276,24 @@ enum LandmarkMCP {
             let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
             let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 15))
             let kx = cos(lat * .pi / 180) * 111_320.0, ky = 110_574.0
-            let bbox = [lon - radius / kx, lat - radius / ky, lon + radius / kx, lat + radius / ky].map { String(format: "%.6f", $0) }
-            let json = try mapillary("images", ["fields": "id,computed_geometry,computed_compass_angle,captured_at,creator,is_pano",
-                                                "bbox": bbox.joined(separator: ","), "limit": "200"])
+            // Mapillary refuses a box with too many photos in it (central
+            // Moscow: anything over about 80 m around), so the area is asked
+            // for in cells of 150 m, the answers merged by id.
+            let cell = 75.0, n = Int((radius / cell).rounded(.up))
+            var photos: [String: [String: Any]] = [:]
+            for i in 0..<n {
+                for j in 0..<n {
+                    let cx = lon + (Double(i) * 2 + 1 - Double(n)) * cell / kx, cy = lat + (Double(j) * 2 + 1 - Double(n)) * cell / ky
+                    let bbox = [cx - cell / kx, cy - cell / ky, cx + cell / kx, cy + cell / ky].map { String(format: "%.6f", $0) }
+                    let json = try mapillary("images", ["fields": "id,computed_geometry,computed_compass_angle,captured_at,creator,is_pano",
+                                                        "bbox": bbox.joined(separator: ","), "limit": "100"])
+                    if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
+                    for e in json["data"] as? [[String: Any]] ?? [] { if let id = e["id"] as? String { photos[id] = e } }
+                }
+            }
             var found: [(Double, String)] = []
             let sides = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
-            for e in json["data"] as? [[String: Any]] ?? [] {
+            for e in photos.values {
                 guard let id = e["id"] as? String,
                       let c = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double], c.count == 2 else { continue }
                 let dx = (c[0] - lon) * kx, dy = (c[1] - lat) * ky, dist = hypot(dx, dy)
