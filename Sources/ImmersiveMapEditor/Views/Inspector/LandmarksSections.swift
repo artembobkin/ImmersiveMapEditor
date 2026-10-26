@@ -49,6 +49,7 @@ struct LandmarksSections: View {
                     Text("Fable").tag("fable")
                     Text("Opus").tag("opus")
                     Text("Sonnet").tag("sonnet")
+                    Text("Haiku").tag("haiku")
                 }
                 .pickerStyle(.segmented)
                 .disabled(session.agent.running)
