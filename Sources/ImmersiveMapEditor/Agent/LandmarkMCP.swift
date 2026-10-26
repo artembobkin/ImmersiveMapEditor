@@ -175,7 +175,7 @@ enum LandmarkMCP {
             case "save_commons_photo": return try saveCommonsPhoto(args)
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
-            case "list_references": return [text(String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]")]
+            case "list_references": return [text((String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]") + "\n" + coverage())]
             case "show_reference":
                 let file = (args["file"] as? String ?? "") as NSString
                 guard let shown = image(references.appendingPathComponent(file.lastPathComponent)) else { throw Failure("no reference \(file)") }
@@ -508,8 +508,37 @@ enum LandmarkMCP {
             guard licence.hasPrefix("CC") && !licence.contains("NC") && !licence.contains("ND") || licence.contains("Public domain") || licence == "CC0" else {
                 throw Failure("\(title) is not freely licensed (\(licence)): not kept")
             }
-            return try keep(url, page: photo.page, author: photo.author.isEmpty ? "unknown (Wikimedia Commons)" : "\(photo.author) (Wikimedia Commons)",
-                            licence: licence, shows: shows)
+            let kept = try keep(url, page: photo.page, author: photo.author.isEmpty ? "unknown (Wikimedia Commons)" : "\(photo.author) (Wikimedia Commons)",
+                                licence: licence, shows: shows)
+            return kept.enumerated().map { k, item in k == 0 ? text((item["text"] as? String ?? "") + ". " + coverage()) : item }
+        }
+
+        /// What the references cover so far: the street photos by the side
+        /// their camera stood on, the Commons photos and the satellite apart,
+        /// and the sides with nothing yet. Told after every keep, so the
+        /// agent sees the gaps.
+        func coverage() -> String {
+            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            var sides: [String: Int] = [:]
+            var commons = 0, satellite = 0
+            for e in list {
+                if let pose = e["pose"] as? [String: Any], let x = pose["x"] as? Double, let y = pose["y"] as? Double {
+                    let from = (atan2(x, y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+                    sides[StreetView.side(from), default: 0] += 1
+                } else if e["file"] as? String == "satellite.jpg" {
+                    satellite += 1
+                } else {
+                    commons += 1
+                }
+            }
+            let order = StreetView.sides
+            let have = order.filter { sides[$0] != nil }.map { "\($0) ×\(sides[$0]!)" }
+            let missing = ["north", "east", "south", "west"].filter { s in
+                !order.enumerated().contains { k, name in sides[name] != nil && (abs(k - order.firstIndex(of: s)!) <= 1 || abs(k - order.firstIndex(of: s)!) == 7) }
+            }
+            return "Kept so far: " + (have.isEmpty ? "no street photo" : "street photos from the " + have.joined(separator: ", "))
+                + ", \(commons) from Commons (their side unknown)" + (satellite > 0 ? ", the satellite view" : "")
+                + (missing.isEmpty ? "." : ". Nothing from the \(missing.joined(separator: ", ")) yet: a side the candidates offer is worth one photo, even a dashcam's.")
         }
 
         /// A kept photo that turned out not to show the landmark: gone, with
@@ -546,7 +575,7 @@ enum LandmarkMCP {
                                             "pitch": r1(pose.pitch), "hfov": r1(pose.hfov)]
                 if let size = Self.size(of: file) { entry["width"] = size.0; entry["height"] = size.1 }
                 try credit(String(name), set: "pose", to: entry)
-                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line). compare_with_photo(\"\(name)\") shows the model from the same place.")]
+                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line). compare_with_photo(\"\(name)\") shows the model from the same place. " + coverage())]
                     + (image(file).map { [$0] } ?? [])
             }
             return kept

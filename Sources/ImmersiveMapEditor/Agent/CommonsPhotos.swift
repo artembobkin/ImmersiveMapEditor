@@ -115,7 +115,17 @@ enum CommonsPhotos {
                                 thumb: info["thumburl"] as? String ?? info["url"] as? String, width: width, height: height,
                                 licence: licence, author: String(m("Artist").prefix(60)), date: date, description: description, score: score))
         }
-        return (category, photos.sorted { $0.score > $1.score })
+        // The same author's photos of the same day are one series: the
+        // second and the rest come down, so the list spans more.
+        var seen: [String: Int] = [:]
+        let spread = photos.sorted { $0.score > $1.score }.map { p -> Photo in
+            let key = p.author + "|" + p.date
+            let k = seen[key, default: 0]
+            seen[key] = k + 1
+            return Photo(title: p.title, page: p.page, thumb: p.thumb, width: p.width, height: p.height, licence: p.licence, author: p.author,
+                         date: p.date, description: p.description, score: p.score * pow(0.5, Double(k)))
+        }
+        return (category, spread.sorted { $0.score > $1.score })
     }
 
     /// One file's picture at a width, its page, author and licence.
