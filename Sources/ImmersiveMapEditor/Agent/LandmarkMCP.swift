@@ -92,6 +92,9 @@ enum LandmarkMCP {
              "inputSchema": ["type": "object", "properties": [
                 "views": ["type": "array", "items": ["type": "string"], "description": "Which views; four by default: from-south-west, from-north-east, from-south, from-above."],
                 "boxes": ["type": "boolean", "description": "The OSM buildings as boxes instead of the model."]]]],
+            ["name": "satellite_view",
+             "description": "The landmark from above, from the satellite imagery (Esri World Imagery): one picture centred on it, north up, its OSM outlines in red, a grid every 20 m in metres east and north of its centre (the recipe's x and y), kept in the references. The roofs: their shapes, ridges, domes, lanterns, courtyards, and where things stand, to place shapes by the grid.",
+             "inputSchema": ["type": "object", "properties": ["radius": ["type": "number", "description": "Metres around the centre; the landmark and 25 m by default."]]]],
             ["name": "compare_with_photo",
              "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
@@ -145,6 +148,7 @@ enum LandmarkMCP {
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)
             case "compare_with_photo": return try compare(args)
+            case "satellite_view": return try satellite(args)
             case "render_from": return try renderFrom(args)
             case "find_commons_photos": return try commonsPhotos(args)
             case "save_commons_photo": return try saveCommonsPhoto(args)
@@ -508,6 +512,33 @@ enum LandmarkMCP {
             guard let k = list.firstIndex(where: { $0["file"] as? String == file }) else { return }
             list[k][key] = value
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
+        }
+
+        // MARK: From above
+
+        func satellite(_ args: [String: Any]) throws -> [[String: Any]] {
+            let scene = try StreetScene(folder: folder)
+            let reach = scene.corners.map { max(abs($0.x), abs($0.y)) }.max() ?? 60
+            let radius = max(40, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? (reach + 25)))
+            try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
+            let file = references.appendingPathComponent("satellite.jpg")
+            let (mpp, missing) = try SatelliteView.make(folder: folder, radius: radius, to: file,
+                                                        cache: viewsFolder.appendingPathComponent("satellite"), run: Self.run)
+            let taken = SatelliteView.capture(folder: folder, run: Self.run)
+            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            list.removeAll { $0["file"] as? String == "satellite.jpg" }
+            list.append(["file": "satellite.jpg", "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
+                         "page": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
+                         "author": SatelliteView.source.attribution, "licence": "Esri World Imagery terms, a reference",
+                         "shows": "from above, north up, " + (taken.map { "taken \($0), " } ?? "") + "\(Int(radius)) m around the centre"])
+            try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
+            let small = viewsFolder.appendingPathComponent("satellite/view.jpg")
+            _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1280", "-s", "format", "jpeg", file.path, "--out", small.path])
+            var content: [[String: Any]] = [text("satellite.jpg: the landmark from above, north up, \(Int(radius)) m around its centre, \(String(format: "%.2f", mpp)) m a pixel"
+                + (taken.map { ", imagery taken \($0)" } ?? "") + (missing > 0 ? " (\(missing) tiles did not come)" : "")
+                + ". Red: its OSM outlines. The grid: every 20 m, metres east (x) and north (y) of the centre, the recipe's coordinates.")]
+            if let img = image(FileManager.default.fileExists(atPath: small.path) ? small : file) { content.append(img) }
+            return content
         }
 
         // MARK: The model from a camera's place

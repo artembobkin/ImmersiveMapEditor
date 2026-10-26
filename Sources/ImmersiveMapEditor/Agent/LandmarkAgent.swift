@@ -179,8 +179,10 @@ final class LandmarkAgent {
         wrong: judge from the sheet which frames really hold the landmark, keep those (one or two a side, the main facade \
         and the entrances first) with save_street_photo; a kept photo comes back with everything outside the frame painted \
         black, so look at it and drop_reference any whose frame holds another building.
-           c. find_commons_photos again for what the street does not show: the roofs from above (aerial, drone), the \
-        whole from afar, the details that make it recognisable (a sculpture, a portal).
+           c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
+        and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
+           d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \
+        drone), the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
         3. Write its recipe with set_recipe, then compare: compare_with_photo for each kept street photo shows the model \
         rendered from the photo's own camera beside it, so what differs is plain (count the columns and the windows, \
