@@ -263,6 +263,7 @@ public enum LandmarkGenerator {
         // The union makes the shell; when it fails outright, the faces on
         // one plane are at least pushed apart.
         if !m.unite() { m.separate() }
+        m.cullHidden()
         return m
     }
 
@@ -295,6 +296,32 @@ public enum LandmarkGenerator {
         /// How the union went: solids united, solids kept as they were.
         public private(set) var united = 0
         public private(set) var keptRaw = 0
+        /// Triangles no outside camera could see, dropped (VisiblePass).
+        public private(set) var hidden = 0
+
+        /// Drops the triangles no camera around or above the model sees.
+        func cullHidden() {
+            let colours = tris.keys.sorted()
+            var flat: [V3] = []
+            var owner: [(String, Int)] = []
+            for c in colours {
+                let list = tris[c]!
+                flat += list
+                for t in stride(from: 0, to: list.count, by: 3) { owner.append((c, t)) }
+            }
+            guard !flat.isEmpty, let seen = VisiblePass.visible(flat) else { return }
+            var out: [String: [V3]] = [:]
+            for (k, (c, _)) in owner.enumerated() where seen[k] {
+                out[c, default: []] += [flat[3 * k], flat[3 * k + 1], flat[3 * k + 2]]
+            }
+            hidden = owner.count - seen.filter { $0 }.count
+            if ProcessInfo.processInfo.environment["LANDMARK_UNION_DEBUG"] != nil {
+                var dropped: [String: Int] = [:]
+                for (k, (c, _)) in owner.enumerated() where !seen[k] { dropped[c, default: 0] += 1 }
+                FileHandle.standardError.write(Data("hidden by colour: \(dropped.sorted { $0.value > $1.value })\n".utf8))
+            }
+            tris = out
+        }
 
         public var triangles: Int { tris.values.reduce(0) { $0 + $1.count } / 3 }
 
@@ -351,8 +378,8 @@ public enum LandmarkGenerator {
             let all = tris.values.flatMap { $0 }
             guard let first = all.first else { return "nothing built" }
             let lo = all.reduce(first) { simd_min($0, $1) }, hi = all.reduce(first) { simd_max($0, $1) }
-            return String(format: "%d triangles (%d solids united into one shell%@), %.0f × %.0f m, %.1f m high, colours %@", triangles,
-                          united, keptRaw > 0 ? ", \(keptRaw) kept apart, not closed" : "",
+            return String(format: "%d triangles (%d solids united into one shell%@%@), %.0f × %.0f m, %.1f m high, colours %@", triangles,
+                          united, keptRaw > 0 ? ", \(keptRaw) kept apart, not closed" : "", hidden > 0 ? ", \(hidden) hidden dropped" : "",
                           hi.x - lo.x, hi.y - lo.y, hi.z, tris.keys.sorted().joined(separator: " "))
         }
 
