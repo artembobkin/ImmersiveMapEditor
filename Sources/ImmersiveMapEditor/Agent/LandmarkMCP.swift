@@ -233,13 +233,16 @@ enum LandmarkMCP {
         func render(_ args: [String: Any]) throws -> [[String: Any]] {
             let all = ["from-south", "from-east", "from-north", "from-west", "from-south-west", "from-north-east", "from-above"]
             let asked = (args["views"] as? [String])?.filter(all.contains) ?? ["from-south-west", "from-north-east", "from-south", "from-above"]
-            let boxes = args["boxes"] as? Bool ?? false
+            // No model yet (none built, or a new attempt): its OSM boxes, and say so.
+            let hasModel = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).contains { $0.hasSuffix(".glb") }
+            let boxes = (args["boxes"] as? Bool ?? false) || !hasModel
             let out = viewsFolder.appendingPathComponent(boxes ? "boxes" : "model")
             var command = ["--landmark-views", folder.path, out.path]
             if boxes { command.append("--boxes") }
             let (status, said) = Self.run(URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL, command)
             guard status == 0 else { throw Failure("cannot render: \(said)") }
             var content: [[String: Any]] = []
+            if boxes, !(args["boxes"] as? Bool ?? false) { content.append(text("No model yet: these are the OSM boxes. set_recipe builds the model.")) }
             for v in asked {
                 let png = out.appendingPathComponent("\(v).png")
                 let small = out.appendingPathComponent("\(v).small.jpg")

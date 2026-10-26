@@ -157,7 +157,11 @@ final class Session {
     func showLandmark(again: Bool = false) {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
-            landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
+            landmarkView?.status = { [weak self] in
+                self?.landmarkStatus = $0
+                // While the agent works, the console says what the view shows.
+                if self?.agent.running == true { self?.build.append("  view: \($0)") }
+            }
         }
         // Its model, or its OSM buildings as boxes while it has none.
         guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return landmarkView?.show(nil) ?? () }
