@@ -38,6 +38,9 @@ public enum LandmarkGenerator {
     public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft"]
     /// How deep a window is cut into its wall.
     static let windowDepth = 0.25
+    /// From this area a glazed opening is a shop front or a glazed arch,
+    /// not a window, and shows the map's glass (`lm_glass`) at its back.
+    static let glazedArea = 10.0
 
     /// What is wrong with a recipe, one line each: nothing when it builds.
     public static func check(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
@@ -633,9 +636,13 @@ public enum LandmarkGenerator {
                     let w = min(at.door.width ?? (window ? 1.6 : 2.4), len * 0.6), h = min(at.door.height ?? (window ? 2.4 : 4), (z1 - z0 - sill) * 0.95)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
                     guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 0.5 else { continue }
+                    // A window's glass is a dark tone of its wall, as on an
+                    // ordinary building; a large glazed opening (a shop front,
+                    // a glazed arch) shows the map's glass itself.
+                    let glazed = w * h >= LandmarkGenerator.glazedArea
                     openings.append(Opening(ring: opening(t, z0 + sill, w, h, arched: at.door.arched == true),
                                             depth: window ? LandmarkGenerator.windowDepth : (at.door.depth ?? 0.6),
-                                            back: window ? (at.door.colour ?? "\(colour).glass") : (at.door.colour ?? "lm_dark")))
+                                            back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : "lm_dark")))
                     spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
                 if let w = windows {

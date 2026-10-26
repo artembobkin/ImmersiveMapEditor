@@ -220,7 +220,8 @@ public struct LandmarkRecipe: Codable {
     into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
     reads as storeys of windows, with the storeys and spacing the photos show. A window that the rows cannot place (one \
     between pilasters, a single large window, a window of its own above a door) is a door with a `sill` (metres above \
-    the wall's foot) and `glass` true: cut in at that place, glass at its back, as the rows' windows are. A door is an entrance cut into the wall \
+    the wall's foot) and `glass` true: cut in at that place, glass at its back, as the rows' windows are; from 10 m² (a shop front, a glazed \
+    arch, a glass wall between piers) its back is the map's glass, lm_glass, which reads as glass from afar where a wall's dark tone reads as a hole. A door is an entrance cut into the wall \
     nearest its `at` (a point on or by that wall), deeper than a window, its leaf at the back and a portal standing proud \
     around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
