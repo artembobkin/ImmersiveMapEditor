@@ -280,36 +280,58 @@ enum StreetPicks {
     /// framed in red on each, numbered as the report numbers them, so the
     /// agent sees at once which really show it.
     static func sheet(_ picks: [StreetView], thumbs: [URL?], to file: URL) throws {
-        let columns = picks.count <= 4 ? 2 : picks.count <= 9 ? 3 : 4, rows = (picks.count + columns - 1) / columns
+        let cells = picks.enumerated().map { k, view -> ContactSheet.Cell in
+            ContactSheet.Cell(image: thumbs[k], box: view.box, cut: view.photo.pano,
+                              label: "#\(k + 1)  \(view.photo.id)  \(Int(view.distance)) m, from the \(StreetView.side(view.from))")
+        }
+        try ContactSheet.draw(cells, to: file)
+    }
+}
+
+/// A grid of pictures with a label each, and a red frame where one is
+/// given: what the agent looks at to choose.
+enum ContactSheet {
+    struct Cell {
+        let image: URL?
+        /// The frame, as fractions of the picture (from the top left).
+        let box: CGRect?
+        /// Whether to cut the picture to the frame first (a panorama).
+        let cut: Bool
+        let label: String
+    }
+
+    static func draw(_ cells: [Cell], to file: URL) throws {
+        let columns = cells.count <= 4 ? 2 : cells.count <= 9 ? 3 : 4, rows = (cells.count + columns - 1) / columns
         let cw = 320, ch = 260, pad = 6
         let w = columns * cw, h = rows * ch
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
         ctx.setFillColor(CGColor(gray: 0.12, alpha: 1))
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-        for (k, view) in picks.enumerated() {
+        for (k, cell) in cells.enumerated() {
             let col = k % columns, row = k / columns
             // CoreGraphics' y goes up: the first row at the top.
-            let cell = CGRect(x: col * cw + pad, y: h - (row + 1) * ch + pad + 22, width: cw - 2 * pad, height: ch - 2 * pad - 22)
-            if let url = thumbs[k], let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let area = CGRect(x: col * cw + pad, y: h - (row + 1) * ch + pad + 22, width: cw - 2 * pad, height: ch - 2 * pad - 22)
+            if let url = cell.image, let src = CGImageSourceCreateWithURL(url as CFURL, nil),
                let image = CGImageSourceCreateImageAtIndex(src, 0, nil) {
                 var shown = image
-                var box = view.box
-                if view.photo.pano, let (part, inner) = StreetMarking.cut(image, box) {
+                var box = cell.box
+                if cell.cut, let b = box, let (part, inner) = StreetMarking.cut(image, b) {
                     shown = part
                     box = inner
                 }
-                let scale = min(cell.width / Double(shown.width), cell.height / Double(shown.height))
+                let scale = min(area.width / Double(shown.width), area.height / Double(shown.height))
                 let dw = Double(shown.width) * scale, dh = Double(shown.height) * scale
-                let at = CGRect(x: cell.midX - dw / 2, y: cell.midY - dh / 2, width: dw, height: dh)
+                let at = CGRect(x: area.midX - dw / 2, y: area.midY - dh / 2, width: dw, height: dh)
                 ctx.draw(shown, in: at)
-                let frame = CGRect(x: at.minX + box.minX * dw, y: at.minY + (1 - box.maxY) * dh, width: box.width * dw, height: box.height * dh)
-                ctx.setStrokeColor(CGColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.95))
-                ctx.setLineWidth(3)
-                ctx.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
+                if let box {
+                    let frame = CGRect(x: at.minX + box.minX * dw, y: at.minY + (1 - box.maxY) * dh, width: box.width * dw, height: box.height * dh)
+                    ctx.setStrokeColor(CGColor(red: 1, green: 0.1, blue: 0.1, alpha: 0.95))
+                    ctx.setLineWidth(3)
+                    ctx.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
+                }
             }
-            let label = "#\(k + 1)  \(view.photo.id)  \(Int(view.distance)) m, from the \(StreetView.side(view.from))"
-            let text = NSAttributedString(string: label, attributes: [
+            let text = NSAttributedString(string: cell.label, attributes: [
                 .font: CTFontCreateWithName("Helvetica" as CFString, 13, nil), .foregroundColor: CGColor(gray: 0.95, alpha: 1)])
             let line = CTLineCreateWithAttributedString(text)
             ctx.textPosition = CGPoint(x: Double(col * cw + pad), y: Double(h - (row + 1) * ch + pad))

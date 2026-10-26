@@ -137,13 +137,18 @@ final class LandmarkAgent {
         """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
-        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then \
-        find_street_photos (Mapillary, street level all around it): it returns the best candidates, a track at a time, \
-        and a contact sheet with the landmark framed in red on each by the camera's pose. Poses are sometimes wrong: judge \
-        from the sheet which frames really hold the landmark, keep those (one or two a side, the main facade and the \
-        entrances first) with save_street_photo, look at each as it comes back, and drop_reference any whose frame is on \
-        another building. Search the web for more freely licensed photos (Wikimedia Commons) only for what the street \
-        does not show: the whole from afar, the roofs from above. Keep 4 to 8 good ones in all.
+        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then the \
+        references, in this order:
+           a. find_commons_photos (Wikimedia Commons, its category and around it, on a contact sheet): keep one or two \
+        classic views of the whole with save_commons_photo, to know the building and to judge the street photos by.
+           b. find_street_photos (Mapillary, street level all around it): the best candidates a track at a time, and a \
+        contact sheet with the landmark framed in red on each by the camera's pose. Poses are sometimes wrong: judge from \
+        the sheet which frames really hold the landmark, keep those (one or two a side, the main facade and the entrances \
+        first) with save_street_photo, look at each as it comes back, and drop_reference any whose frame is on another \
+        building.
+           c. find_commons_photos again for what the street does not show: the roofs from above (aerial, drone), the \
+        whole from afar, the details that make it recognisable (a sculpture, a portal).
+        Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
         3. Write its recipe with set_recipe, render_views, compare with the photos, correct. Three to five rounds, until the \
         silhouette, proportions, colours and main details agree.
         4. Before you finish, check from eye level in front of the main facade (render_views from the side it faces) and \

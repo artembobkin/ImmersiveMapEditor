@@ -106,6 +106,15 @@ enum LandmarkMCP {
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
                              "required": ["id", "shows"]]],
+            ["name": "find_commons_photos",
+             "description": "Photos of the landmark on Wikimedia Commons (freely licensed only: CC0, CC BY, CC BY-SA, public domain): the files of its category (from OSM's wikimedia_commons or wikidata tag) and the files geotagged around it, the best first (views from above and recent large ones), each with its name, size, date, author, licence and description, and a contact sheet of them. The whole from afar, the roofs from above, the details the street does not show. Keep one with save_commons_photo.",
+             "inputSchema": ["type": "object", "properties": [
+                "radius": ["type": "number", "description": "Metres around the centre for geotagged files, 150 by default."],
+                "limit": ["type": "integer", "description": "How many, 16 by default."]]]],
+            ["name": "save_commons_photo",
+             "description": "Downloads one of find_commons_photos' files by its name (File:...) into the references, credited (its author and licence), and returns it to look at.",
+             "inputSchema": ["type": "object", "properties": ["file": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
+                             "required": ["file", "shows"]]],
             ["name": "drop_reference",
              "description": "Removes a kept reference photo that turned out not to show the landmark (its credit too).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
@@ -126,6 +135,8 @@ enum LandmarkMCP {
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)
+            case "find_commons_photos": return try commonsPhotos(args)
+            case "save_commons_photo": return try saveCommonsPhoto(args)
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
             case "list_references": return [text(String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]")]
@@ -383,6 +394,51 @@ enum LandmarkMCP {
             return content
         }
 
+        // MARK: Wikimedia Commons
+
+        func commonsPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
+            let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
+            let radius = (args["radius"] as? NSNumber)?.doubleValue ?? 150
+            let limit = max(1, min(30, (args["limit"] as? NSNumber)?.intValue ?? 16))
+            let (category, photos) = try CommonsPhotos.find(tags: source.buildings.map(\.tags), lon: source.centre.0, lat: source.centre.1,
+                                                            radius: radius, run: Self.run)
+            let where_ = category.map { "its category \"\($0)\" and " } ?? "no category of its own (no wikimedia_commons or wikidata tag): "
+            guard !photos.isEmpty else { return [text("Commons has no freely licensed photos in \(where_)within \(Int(radius)) m.")] }
+            let picks = Array(photos.prefix(limit))
+            let dir = viewsFolder.appendingPathComponent("commons")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let cells = picks.enumerated().map { k, p -> ContactSheet.Cell in
+                let file = dir.appendingPathComponent("\(k + 1).jpg")
+                var image: URL? = nil
+                if let thumb = p.thumb {
+                    let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "60", "-A", CommonsPhotos.agent, "-o", file.path, thumb])
+                    _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "400", "-s", "format", "jpeg", file.path, "--out", file.path])
+                    if status == 0 { image = file }
+                }
+                return ContactSheet.Cell(image: image, box: nil, cut: false, label: "#\(k + 1)  \(String(p.title.dropFirst("File:".count).prefix(40)))")
+            }
+            let sheet = dir.appendingPathComponent("sheet.jpg")
+            try ContactSheet.draw(cells, to: sheet)
+            var content: [[String: Any]] = [text("Commons: \(photos.count) freely licensed photos in \(where_)within \(Int(radius)) m; the \(picks.count) best:\n"
+                + picks.enumerated().map { "#\($0 + 1) " + $1.line }.joined(separator: "\n")
+                + "\nThe contact sheet shows them numbered. Keep one with save_commons_photo(file, shows).")]
+            if let img = image(sheet) { content.append(img) }
+            return content
+        }
+
+        func saveCommonsPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
+            guard var title = args["file"] as? String, !title.isEmpty else { throw Failure("give the file's name from find_commons_photos") }
+            guard let shows = args["shows"] as? String, !shows.isEmpty else { throw Failure("say what it shows") }
+            if !title.hasPrefix("File:") { title = "File:" + title }
+            guard let photo = try CommonsPhotos.file(title, width: 1600, run: Self.run), let url = photo.thumb else { throw Failure("Commons has no \(title)") }
+            let licence = photo.licence
+            guard licence.hasPrefix("CC") && !licence.contains("NC") && !licence.contains("ND") || licence.contains("Public domain") || licence == "CC0" else {
+                throw Failure("\(title) is not freely licensed (\(licence)): not kept")
+            }
+            return try keep(url, page: photo.page, author: photo.author.isEmpty ? "unknown (Wikimedia Commons)" : "\(photo.author) (Wikimedia Commons)",
+                            licence: licence, shows: shows)
+        }
+
         /// A kept photo that turned out not to show the landmark: gone, with
         /// its credit.
         func dropReference(_ name: String) throws -> String {
@@ -420,7 +476,7 @@ enum LandmarkMCP {
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             let raw = references.appendingPathComponent("download.tmp")
             let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"),
-                                          ["-fsSL", "--max-filesize", "30000000", "-A", "ImmersiveMapEditor/1 (landmark references)", "-o", raw.path, url])
+                                          ["-fsSL", "--http1.1", "--max-filesize", "30000000", "-A", CommonsPhotos.agent, "-o", raw.path, url])
             guard status == 0 else { throw Failure("cannot download it: \(said)") }
             let head = (try? FileHandle(forReadingFrom: raw).readData(ofLength: 12)) ?? Data()
             let isImage = head.starts(with: [0xFF, 0xD8]) || head.starts(with: [0x89, 0x50, 0x4E, 0x47])
