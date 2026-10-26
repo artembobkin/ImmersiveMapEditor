@@ -13,6 +13,7 @@ import TileKit
 ///   ImmersiveMapEditor --map-snapshot WORKSPACE OUT.png       the map to a PNG, no window
 ///   ImmersiveMapEditor --landmark-snapshot MODEL.glb OUT.png  a landmark model to a PNG, no window
 ///   ImmersiveMapEditor --landmark-views FOLDER OUT_DIR [--boxes]  a landmark's model (or OSM boxes) from around, PNGs
+///   ImmersiveMapEditor --erase-people IN.jpg OUT.jpg            a photo's people painted black, to check the model
 ///   ImmersiveMapEditor landmark-mcp FOLDER                    the landmarks' agent's tools, an MCP server on stdio
 ///
 /// With no argument it opens the data folder of Settings (DataFolder).

@@ -459,9 +459,11 @@ enum LandmarkMCP {
             if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
             guard let photo = StreetPhoto(json, scene), let url = photo.thumb else { throw Failure("Mapillary has no picture for \(id)") }
             guard let view = StreetView(photo, in: scene) else { throw Failure("that photo does not show the landmark") }
+            // A panorama is kept whole until it is cut to the landmark.
             let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
                                 page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(photo.author) (Mapillary)",
-                                licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red, the rest painted black)")
+                                licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red, the rest painted black)",
+                                maxSide: photo.pano ? 8192 : 1280)
             if let name = (kept.first?["text"] as? String)?.split(separator: " ").last {
                 let file = references.appendingPathComponent(String(name))
                 try StreetMarking.mark(file, view)
@@ -471,7 +473,7 @@ enum LandmarkMCP {
         }
 
         /// Downloads a photo into the references with its credit.
-        func keep(_ url: String, page: String, author: String, licence: String, shows: String) throws -> [[String: Any]] {
+        func keep(_ url: String, page: String, author: String, licence: String, shows: String, maxSide: Int = 1280) throws -> [[String: Any]] {
             try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             let raw = references.appendingPathComponent("download.tmp")
@@ -486,9 +488,11 @@ enum LandmarkMCP {
                 throw Failure("that is not a JPEG, PNG or WebP image: give the direct image URL")
             }
             let file = references.appendingPathComponent(String(format: "photo-%02d.jpg", list.count + 1))
-            _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1280", "-s", "format", "jpeg", raw.path, "--out", file.path])
+            _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "\(maxSide)", "-s", "format", "jpeg", raw.path, "--out", file.path])
             try? FileManager.default.removeItem(at: raw)
             guard FileManager.default.fileExists(atPath: file.path) else { throw Failure("cannot read the image") }
+            // The people in it painted black, by the Mac's own model.
+            PeopleMask.erase(file)
             list.append(["file": file.lastPathComponent, "url": url, "page": page, "author": author, "licence": licence, "shows": shows])
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
             return [text("Kept as \(file.lastPathComponent)")] + (image(file).map { [$0] } ?? [])

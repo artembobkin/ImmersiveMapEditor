@@ -94,8 +94,9 @@ struct StreetPhoto {
         self.id = id
         at = scene.metres(lon: c[0], lat: c[1])
         compass = (e["computed_compass_angle"] as? NSNumber)?.doubleValue
-        pano = e["is_pano"] as? Bool ?? false
-        camera = e["camera_type"] as? String ?? (pano ? "spherical" : "perspective")
+        let flagged = e["is_pano"] as? Bool ?? false, type = e["camera_type"] as? String
+        pano = flagged || ["spherical", "equirectangular"].contains(type ?? "")
+        camera = type ?? (pano ? "spherical" : "perspective")
         let params = e["camera_parameters"] as? [Double] ?? []
         focal = params.first.map { $0 > 0.1 && $0 < 5 ? $0 : 0.7 } ?? 0.7
         width = (e["width"] as? NSNumber)?.intValue ?? 1920
@@ -169,21 +170,23 @@ struct StreetView {
         distance = nearest
         guard distance > 5 else { return nil }
         guard hi - lo < 300 else { return nil }   // standing inside it
-        // The view's direction: the compass, or the centre for a panorama.
-        let look = photo.pano ? toCentre : (photo.compass ?? toCentre)
+        // The view's direction: the compass. A panorama looks everywhere, so
+        // it is never off, but its picture is still laid out from its compass.
+        let look = photo.compass ?? toCentre
         off = photo.pano ? 0 : abs(Self.wrap(look - toCentre))
         let rel = Self.wrap(toCentre - look)
         span = (lo + rel)...(hi + rel)
         let top = atan2(scene.top - 2, max(distance, 1)) * 180 / .pi, bottom = atan2(-2.0, max(distance, 1)) * 180 / .pi
         let w = Double(photo.width), h = Double(photo.height), l = max(w, h)
         var x0 = 0.0, x1 = 0.0, y0 = 0.0, y1 = 0.0, half = 0.0
-        switch photo.camera {
-        case "spherical":
+        switch photo.pano ? "spherical" : photo.camera {
+        case "spherical", "equirectangular":
             half = 180
-            x0 = 0.5 + (span.lowerBound - 8) / 360
-            x1 = 0.5 + (span.upperBound + 8) / 360
-            y0 = 0.5 - min(top + 8, 80) / 180
-            y1 = 0.5 - max(bottom - 10, -60) / 180
+            // Wide margins: a panorama's compass is often some degrees off.
+            x0 = 0.5 + (span.lowerBound - 20) / 360
+            x1 = 0.5 + (span.upperBound + 20) / 360
+            y0 = 0.5 - min(top + 10, 80) / 180
+            y1 = 0.5 - max(bottom - 12, -60) / 180
         case "fisheye":
             half = 0.5 / photo.focal * 180 / .pi
             func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * (a * .pi / 180) }

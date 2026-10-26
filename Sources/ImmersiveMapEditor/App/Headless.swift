@@ -9,7 +9,7 @@ import SwiftUI
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--erase-people"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -72,6 +72,13 @@ enum Headless {
             } catch {
                 return fail(error.localizedDescription)
             }
+        }
+        if let i = arguments.firstIndex(of: "--erase-people"), arguments.count > i + 2 {
+            // A photo's people painted black, to check the model.
+            let out = URL(fileURLWithPath: arguments[i + 2])
+            try? FileManager.default.copyItem(at: URL(fileURLWithPath: arguments[i + 1]), to: out)
+            print(PeopleMask.erase(out) ? "people painted" : "no people found")
+            return 0
         }
         if let i = arguments.firstIndex(of: "--map-snapshot"), arguments.count > i + 2 {
             // The map as it opens, once OpenStreetMap's tiles in view are here.
