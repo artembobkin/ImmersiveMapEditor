@@ -61,6 +61,13 @@ struct StatusLine: View {
             Text("The tile lit by its light map. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames.")
                 .lineLimit(1)
             Spacer()
+        case .style:
+            Text("The palette every build paints with. Pick a colour or type its hex; a change is saved at once and shows when the tile is built again.")
+                .lineLimit(1)
+            Spacer()
+            if let file = session.palette.file {
+                Text(file.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+            }
         }
     }
 }

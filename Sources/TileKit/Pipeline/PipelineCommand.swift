@@ -29,6 +29,7 @@ public enum PipelineCommand {
         setvbuf(stdout, nil, _IOLBF, 0)
         var args = Arguments(arguments)
         let paths = WorkspacePaths(root: URL(fileURLWithPath: args.value("--root")?[0] ?? FileManager.default.currentDirectoryPath))
+        Palette.load(paths)
         func path(_ p: String) -> URL { paths.resolve(p) }
         do {
             guard let command = args.next() else { usage() }

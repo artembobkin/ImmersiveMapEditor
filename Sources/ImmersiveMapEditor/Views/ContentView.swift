@@ -105,6 +105,8 @@ struct ContentView: View {
             }
         case .buildings:
             BuildingsView()
+        case .style:
+            StyleView()
         case .light:
             // The same 3D tile, lit: its light map on the palette, or alone.
             if session.workspace.shown.isEmpty {

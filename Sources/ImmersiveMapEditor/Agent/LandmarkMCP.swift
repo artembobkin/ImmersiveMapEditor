@@ -13,6 +13,10 @@ import TileKit
 /// the proxy from the environment Claude Code runs in.
 enum LandmarkMCP {
     static func run(folder: URL) -> Never {
+        // The data folder's palette: tiles/z/x/y/landmarks/<id> is six below the root.
+        var root = folder.standardizedFileURL
+        for _ in 0..<6 { root = root.deletingLastPathComponent() }
+        Palette.load(WorkspacePaths(root: root))
         let server = Server(folder: folder.standardizedFileURL)
         while let line = readLine(strippingNewline: true) {
             guard let data = line.data(using: .utf8),

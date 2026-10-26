@@ -6,8 +6,13 @@ import Geometry
 /// a darker tone of their wall, and the colour is left to the landmarks.
 /// Hex as it shows on screen: the engine samples the texture raw, so these
 /// bytes are the colours drawn. The order is the order of the cells.
+///
+/// The tables below are the defaults. The data folder's `config/palette.json`
+/// (`{"colours": {"plaster_a": "#…"}}`, edited in the editor's Style view)
+/// replaces any of them by name: `load` reads it, `apply` puts the colours
+/// in and derives every tone again.
 public enum Palette {
-    public static let base: [(String, String)] = [
+    public private(set) static var base: [(String, String)] = [
         // The roads: cool roadway, a light kerb, off-white and yellow paint
         ("asphalt", "#6E6A7D"), ("kerb", "#A6A3B1"), ("marking", "#ECE8E1"), ("marking_yellow", "#E8C24A"),
         // Kept so the cells of every other colour stay where they were
@@ -25,7 +30,7 @@ public enum Palette {
     /// Walls: the plaster family, brick, modern, and the plain box of a
     /// building that is not a typical house. Each takes a shade per side of
     /// the sun, and so do its window reveals and its glass.
-    public static let walls: [(String, String)] = [
+    public private(set) static var walls: [(String, String)] = [
         ("plaster_a", "#EFD3A1"), ("plaster_b", "#E9C48C"), ("plaster_c", "#F2DDB8"), ("brick", "#C8735A"),
         ("modern", "#D9D6D0"), ("box", "#D4D0CA"),
     ]
@@ -46,7 +51,7 @@ public enum Palette {
     static let glass = 0.52     // a window's glass against its wall
 
     /// The things of a construction site and the street, sided like walls.
-    public static let props: [(String, String)] = [
+    public private(set) static var props: [(String, String)] = [
         ("fence", "#5E8B78"), ("fence_post", "#45695B"), ("fence_rail", "#ECE9E1"), ("crane", "#F2B53A"),
         ("machine", "#EE9F32"), ("machine_dark", "#4B4752"), ("cabin", "#4F84C4"), ("cabin_b", "#E6E3DD"),
         ("cab_glass", "#6E8DA6"), ("concrete", "#B3AEA8"), ("sand", "#D9B57C"), ("frame", "#5B5E6C"),
@@ -56,14 +61,55 @@ public enum Palette {
 
     /// The landmarks' own colours, the same in every tile: a model is
     /// repainted in these. Sided like walls, with window tones.
-    public static let landmark: [(String, String)] = [
+    public private(set) static var landmark: [(String, String)] = [
         ("lm_white", "#EEE8DC"), ("lm_cream", "#E8D6B2"), ("lm_ochre", "#E3BE7E"), ("lm_red", "#B54A3C"),
         ("lm_rose", "#D39A8A"), ("lm_green", "#5E8C74"), ("lm_dark_green", "#3E5E52"), ("lm_gold", "#D8A93F"),
         ("lm_stone", "#ABA7A3"), ("lm_dark", "#4B4752"),
     ]
 
+    /// The groups of the colours that can be set: their names and defaults.
+    public static let defaults: [(group: String, colours: [(String, String)])] = [
+        ("Roads and ground", base), ("Walls", walls), ("Props", props), ("Landmarks", landmark),
+    ]
+
+    /// The colours set over the defaults, by name.
+    public private(set) static var overrides: [String: String] = [:]
+
+    /// Puts colours in over the defaults (an empty dictionary: the defaults
+    /// alone) and derives every tone again.
+    public static func apply(_ colours: [String: String]) {
+        overrides = colours.filter { Int($0.value.dropFirst(), radix: 16) != nil && $0.value.count == 7 }
+        func set(_ table: [(String, String)]) -> [(String, String)] { table.map { ($0.0, overrides[$0.0] ?? $0.1) } }
+        base = set(defaults[0].colours)
+        walls = set(defaults[1].colours)
+        props = set(defaults[2].colours)
+        landmark = set(defaults[3].colours)
+        all = derive()
+        names = Set(all.map(\.0))
+        hexByName = Dictionary(all, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// The palette file of a data folder.
+    public static func file(_ paths: WorkspacePaths) -> URL { paths.config.appendingPathComponent("palette.json") }
+
+    /// Reads the data folder's palette, if it has one, over the defaults.
+    public static func load(_ paths: WorkspacePaths) {
+        guard let data = try? Data(contentsOf: file(paths)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let colours = json["colours"] as? [String: String] else { return apply([:]) }
+        apply(colours)
+    }
+
+    /// Writes the colours set to the data folder's palette and applies them.
+    public static func save(_ colours: [String: String], _ paths: WorkspacePaths) throws {
+        apply(colours)
+        try FileManager.default.createDirectory(at: paths.config, withIntermediateDirectories: true)
+        let json: [String: Any] = ["colours": overrides, "note": "The colours set over the editor's defaults, by name: edited in the Style view."]
+        try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]).write(to: file(paths))
+    }
+
     /// Every colour name the palette has.
-    public static let names: Set<String> = Set(all.map(\.0))
+    public private(set) static var names: Set<String> = Set(all.map(\.0))
 
     /// A colour's hex by its name: a cell's, or a wall tone's family
     /// ("lm_cream.reveal": its side tone) for a preview.
@@ -71,7 +117,7 @@ public enum Palette {
         if let h = hexByName[name] { return h }
         return hexByName[name + ".side"] ?? hexByName[name + ".lit"]
     }
-    static let hexByName: [String: String] = Dictionary(all, uniquingKeysWith: { a, _ in a })
+    private(set) static var hexByName: [String: String] = Dictionary(all, uniquingKeysWith: { a, _ in a })
 
     public static func rgb(_ hex: String) -> (Int, Int, Int) {
         let h = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
@@ -88,7 +134,9 @@ public enum Palette {
     static func tone(_ hex: String, _ k: Double) -> String { tone(hex, (k, k, k)) }
 
     /// Every colour by name, in cell order.
-    public static let all: [(String, String)] = {
+    public private(set) static var all: [(String, String)] = derive()
+
+    static func derive() -> [(String, String)] {
         var out = base
         let glassTint = (glass * 0.92, glass * 0.96, glass * 1.12)
         for (wall, hex) in walls {
@@ -98,7 +146,8 @@ public enum Palette {
                 out.append(("\(wall).glass.\(side)", tone(tone(hex, glassTint), f)))
             }
         }
-        for (side, f) in roofSides { out.append(("roof.\(side)", tone("#7F8AA6", f))) }
+        let roof = base.first { $0.0 == "roof" }?.1 ?? "#7F8AA6"
+        for (side, f) in roofSides { out.append(("roof.\(side)", tone(roof, f))) }
         for (name, hex) in props {
             for (side, f) in sides { out.append(("\(name).\(side)", tone(hex, f))) }
         }
@@ -112,7 +161,7 @@ public enum Palette {
         out.append(("lm_glass", "#7E9DB0"))
         out.append(("lm_sky_glass", "#4E92D6"))
         return out
-    }()
+    }
 
     /// Which side of the sun a face looks to, from its normal in plan.
     public static func side(_ nx: Double, _ ny: Double) -> String {

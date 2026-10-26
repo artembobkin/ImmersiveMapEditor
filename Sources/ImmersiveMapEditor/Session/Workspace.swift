@@ -16,6 +16,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     case light = "Light"
     case landmarks = "Landmarks"
     case buildings = "Buildings"
+    case style = "Style"
     var id: String { rawValue }
 }
 

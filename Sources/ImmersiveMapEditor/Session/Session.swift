@@ -31,6 +31,8 @@ final class Session {
     let buildings = OsmBuildings()
     /// Claude modelling a landmark.
     let agent = LandmarkAgent()
+    /// The palette's colours set over the defaults, in the Style view.
+    let palette = PaletteEdits()
     /// The open tile's landmarks (its landmarks/ folder), the one picked in
     /// the Landmarks view, and the OSM elements they are made of.
     private(set) var candidates: [TileLandmark] = []
@@ -57,6 +59,7 @@ final class Session {
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
+        palette.load(workspace.paths)
         agent.modelChanged = { [weak self] in self?.showLandmark(again: true) }
     }
 
@@ -67,6 +70,7 @@ final class Session {
         model = nil
         roads = nil
         workspace = Workspace(root: root)
+        palette.load(workspace.paths)
         candidate = workspace.tile
         phase = .choosing
         tiles = TileView(model: workspace)
