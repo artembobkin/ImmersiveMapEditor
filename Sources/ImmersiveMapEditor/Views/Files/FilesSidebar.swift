@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The left panel, the same in every view: the tile shown (open, or picked
@@ -70,9 +71,16 @@ private struct NodeRow: View {
     }
 }
 
-/// A file of a tile: its name, its size and age.
+/// A file of a tile: its name, its size and age. A picture shows itself
+/// in a popover while the pointer rests on it.
 private struct FileRow: View {
     let file: TileFiles.File
+    @State private var hovering = false
+    @State private var previewing = false
+    @State private var image: NSImage?
+
+    static let pictures: Set<String> = ["jpg", "jpeg", "png", "webp", "heic"]
+    var isPicture: Bool { Self.pictures.contains(file.url.pathExtension.lowercased()) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -82,5 +90,30 @@ private struct FileRow: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .help(file.url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        .onHover { over in
+            guard isPicture else { return }
+            hovering = over
+            if over {
+                // A moment's rest before the picture comes, so a pass over the
+                // list does not flash every one.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard hovering else { return }
+                    if image == nil { image = NSImage(contentsOf: file.url) }
+                    previewing = image != nil
+                }
+            } else {
+                previewing = false
+            }
+        }
+        .popover(isPresented: $previewing, arrowEdge: .trailing) {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: 720, maxHeight: 560)
+                    .padding(6)
+            }
+        }
     }
 }
