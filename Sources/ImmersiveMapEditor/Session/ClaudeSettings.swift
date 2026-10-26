@@ -47,9 +47,13 @@ enum ClaudeSettings {
         set { Keychain.write("mapillary.token", newValue) }
     }
 
-    /// The environment `claude` runs in: the editor's, with the proxy.
+    /// The environment `claude` runs in: the editor's, with the proxy, and
+    /// without the user's CLAUDE.md files and auto memory: the agent's
+    /// context holds its job alone (the user, 2026-10-26).
     static var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
+        env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"
+        env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
         let proxy = self.proxy, noProxy = self.noProxy
         if !proxy.isEmpty {
             for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {
