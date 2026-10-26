@@ -72,12 +72,12 @@ private struct NodeRow: View {
 }
 
 /// A file of a tile: its name, its size and age. A picture shows itself
-/// in a popover while the pointer rests on it.
+/// large over the main area while the pointer rests on it (a popover would
+/// take the pointer and close itself).
 private struct FileRow: View {
     let file: TileFiles.File
+    @Environment(Session.self) private var session
     @State private var hovering = false
-    @State private var previewing = false
-    @State private var image: NSImage?
 
     static let pictures: Set<String> = ["jpg", "jpeg", "png", "webp", "heic"]
     var isPicture: Bool { Self.pictures.contains(file.url.pathExtension.lowercased()) }
@@ -97,23 +97,35 @@ private struct FileRow: View {
                 // A moment's rest before the picture comes, so a pass over the
                 // list does not flash every one.
                 Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(250))
-                    guard hovering else { return }
-                    if image == nil { image = NSImage(contentsOf: file.url) }
-                    previewing = image != nil
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if hovering { session.hoveredPicture = file.url }
                 }
-            } else {
-                previewing = false
+            } else if session.hoveredPicture == file.url {
+                session.hoveredPicture = nil
             }
         }
-        .popover(isPresented: $previewing, arrowEdge: .trailing) {
-            if let image {
+    }
+}
+
+/// The picture the pointer rests on in the files sidebar, large over the
+/// main area, under the pointer's notice.
+struct PicturePreview: View {
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        if let url = session.hoveredPicture, let image = NSImage(contentsOf: url) {
+            VStack(alignment: .leading, spacing: 4) {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 720, maxHeight: 560)
-                    .padding(6)
+                Text(url.lastPathComponent).font(.caption).foregroundStyle(.secondary)
             }
+            .padding(8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .shadow(radius: 12)
+            .padding(16)
+            .frame(maxWidth: 900, maxHeight: 700, alignment: .topLeading)
+            .allowsHitTesting(false)
         }
     }
 }

@@ -33,6 +33,9 @@ final class Session {
     let agent = LandmarkAgent()
     /// The palette's colours set over the defaults, in the Style view.
     let palette = PaletteEdits()
+    /// A picture of the files sidebar the pointer rests on: shown large
+    /// over the main area, so a reference is seen without opening it.
+    var hoveredPicture: URL?
     /// The open tile's landmarks (its landmarks/ folder), the one picked in
     /// the Landmarks view, and the OSM elements they are made of.
     private(set) var candidates: [TileLandmark] = []

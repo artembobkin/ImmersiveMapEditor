@@ -43,7 +43,7 @@ struct ContentView: View {
         @Bindable var workspace = session.workspace
         let working = session.phase == .working
         return WindowLayout(consoleShown: session.panels.console) {
-            main
+            main.overlay(alignment: .topLeading) { PicturePreview() }
         } console: {
             BottomPanel().environment(session.build)
         } status: {
