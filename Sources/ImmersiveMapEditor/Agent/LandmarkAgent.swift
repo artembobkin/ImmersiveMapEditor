@@ -198,7 +198,8 @@ final class LandmarkAgent {
         fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
         the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
         every part get_landmark lists "of note" (a gallery or canopy along a side, a lantern on the roof, a tower) is \
-        there; the colours of the photos in the palette's words. Fix what is missing.
+        there; the walls' colours of the photos and the roofs' colours satellite_view read, in the palette's words. Fix \
+        what is missing.
         5. End with a short summary: what the model has, and what you were not sure of.
         """
     }

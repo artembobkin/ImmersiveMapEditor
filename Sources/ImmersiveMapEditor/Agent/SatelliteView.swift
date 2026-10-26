@@ -19,7 +19,7 @@ enum SatelliteView {
     /// around its centre, to `file`. Returns metres a pixel and the tiles
     /// that did not come.
     static func make(folder: URL, radius: Double, to file: URL, cache: URL,
-                     run: (URL, [String]) -> (Int32, String)) throws -> (metresPerPixel: Double, missing: Int) {
+                     run: (URL, [String]) -> (Int32, String)) throws -> (metresPerPixel: Double, missing: Int, roofs: [String]) {
         let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
         let (lon, lat) = source.centre
         let n = Double(1 << zoom) * 256
@@ -57,6 +57,7 @@ enum SatelliteView {
         }
         // A point in metres east and north of the centre, in the context.
         func at(_ p: P2) -> CGPoint { CGPoint(x: half + p.x / mpp, y: half + p.y / mpp) }
+        let roofs = roofColours(ctx, source: source, at: at)
         // The grid: a line every 20 m, labelled every 40.
         let step = 20.0, reach = Double(Int(radius / step)) * step
         ctx.setLineWidth(1)
@@ -89,7 +90,82 @@ enum SatelliteView {
         }
         CGImageDestinationAddImage(dest, out, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
         CGImageDestinationFinalize(dest)
-        return (mpp, missing)
+        return (mpp, missing, roofs)
+    }
+
+    /// The colour of each large part's roof, read off the imagery inside
+    /// its outline (a metre grid of samples, the darkest third left out as
+    /// shadow), and the palette's landmark colour nearest to it: what the
+    /// recipe's roof colours should be. The largest parts first, ten at most.
+    static func roofColours(_ ctx: CGContext, source: LandmarkSource, at: (P2) -> CGPoint) -> [String] {
+        guard let data = ctx.data else { return [] }
+        let p = data.assumingMemoryBound(to: UInt8.self), stride = ctx.bytesPerRow, w = ctx.width, h = ctx.height
+        let parts = source.buildings.filter { $0.part }
+        let candidates = (parts.isEmpty ? source.buildings : parts)
+            .map { b in (b, b.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) }) }
+            .filter { $0.1 >= 60 }.sorted { $0.1 > $1.1 }.prefix(10)
+        var out: [String] = []
+        for (b, area) in candidates {
+            var samples: [(Double, Double, Double)] = []
+            for poly in b.polygons {
+                let ring = poly[0]
+                guard ring.count >= 3 else { continue }
+                let xs = ring.map(\.x), ys = ring.map(\.y)
+                var y = ys.min()!
+                while y <= ys.max()! {
+                    var x = xs.min()!
+                    while x <= xs.max()! {
+                        let q = P2(x, y)
+                        if inside(q, ring) {
+                            let c = at(q)
+                            // The context's rows go up; the bitmap's go down from the top.
+                            let px = Int(c.x), py = h - 1 - Int(c.y)
+                            if px >= 0, px < w, py >= 0, py < h {
+                                let k = py * stride + px * 4
+                                samples.append((Double(p[k]), Double(p[k + 1]), Double(p[k + 2])))
+                            }
+                        }
+                        x += 1
+                    }
+                    y += 1
+                }
+            }
+            guard samples.count >= 20 else { continue }
+            // The darkest third is shadow and the brightest tenth glare.
+            let sorted = samples.sorted { $0.0 + $0.1 + $0.2 < $1.0 + $1.1 + $1.2 }
+            let kept = sorted[(sorted.count / 3)..<(sorted.count - sorted.count / 10)]
+            let n = Double(kept.count)
+            let mean = kept.reduce((0.0, 0.0, 0.0)) { ($0.0 + $1.0 / n, $0.1 + $1.1 / n, $0.2 + $1.2 / n) }
+            let (r, g, bl) = (Int(mean.0), Int(mean.1), Int(mean.2))
+            // The imagery's brightness is not to be trusted (a light roof
+            // burns out white), its hue is: the colour by hue, the greys to
+            // the palette's grey.
+            let mx = max(r, g, bl), mn = min(r, g, bl)
+            let hue: String, colour: String
+            if mx - mn < 18 {
+                (hue, colour) = mx > 100 ? ("grey", "lm_stone") : ("dark grey, near black", "lm_dark")
+            } else if g >= r && g >= bl {
+                (hue, colour) = mx > 120 ? ("greenish", "lm_green") : ("dark green", "lm_dark_green")
+            } else if r > g && r > bl {
+                (hue, colour) = g > bl + 15 ? ("brownish or ochre", "lm_ochre") : ("reddish", "lm_red")
+            } else {
+                (hue, colour) = ("bluish grey", "lm_stone")
+            }
+            out.append(String(format: "%@ (%.0f m²): the roof reads rgb(%d, %d, %d), %@: %@", b.osm, area, r, g, bl, hue, colour))
+        }
+        return out
+    }
+
+    /// Whether a point is inside a ring.
+    static func inside(_ q: P2, _ ring: [P2]) -> Bool {
+        var c = false
+        var j = ring.count - 1
+        for i in ring.indices {
+            let a = ring[i], b = ring[j]
+            if (a.y > q.y) != (b.y > q.y), q.x < (b.x - a.x) * (q.y - a.y) / (b.y - a.y) + a.x { c.toggle() }
+            j = i
+        }
+        return c
     }
 
     static func label(_ text: String, at p: CGPoint, _ ctx: CGContext) {

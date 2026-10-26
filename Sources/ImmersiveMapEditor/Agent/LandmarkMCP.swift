@@ -578,8 +578,8 @@ enum LandmarkMCP {
             let radius = max(40, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? (reach + 25)))
             try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
             let file = references.appendingPathComponent("satellite.jpg")
-            let (mpp, missing) = try SatelliteView.make(folder: folder, radius: radius, to: file,
-                                                        cache: viewsFolder.appendingPathComponent("satellite"), run: Self.run)
+            let (mpp, missing, roofs) = try SatelliteView.make(folder: folder, radius: radius, to: file,
+                                                               cache: viewsFolder.appendingPathComponent("satellite"), run: Self.run)
             let taken = SatelliteView.capture(folder: folder, run: Self.run)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             list.removeAll { $0["file"] as? String == "satellite.jpg" }
@@ -592,7 +592,8 @@ enum LandmarkMCP {
             _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "1280", "-s", "format", "jpeg", file.path, "--out", small.path])
             var content: [[String: Any]] = [text("satellite.jpg: the landmark from above, north up, \(Int(radius)) m around its centre, \(String(format: "%.2f", mpp)) m a pixel"
                 + (taken.map { ", imagery taken \($0)" } ?? "") + (missing > 0 ? " (\(missing) tiles did not come)" : "")
-                + ". Red: its OSM outlines. The grid: every 20 m, metres east (x) and north (y) of the centre, the recipe's coordinates.")]
+                + ". Red: its OSM outlines. The grid: every 20 m, metres east (x) and north (y) of the centre, the recipe's coordinates."
+                + (roofs.isEmpty ? "" : "\nThe roofs' colours, read off the imagery inside each large part's outline (the roof leans a little off its outline in the picture, so trust the large parts): use these in the recipe.\n" + roofs.joined(separator: "\n")))]
             if let img = image(FileManager.default.fileExists(atPath: small.path) ? small : file) { content.append(img) }
             return content
         }
