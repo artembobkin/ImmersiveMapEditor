@@ -6,6 +6,8 @@ import SwiftUI
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
     @State private var request = ""
+    /// The model the agent runs on: Claude Code's default, or one by name.
+    @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @State private var forgetting = false
 
     private var runner: BuildRunner { session.build }
@@ -42,6 +44,15 @@ struct LandmarksSections: View {
                 .pickerStyle(.segmented)
                 .disabled(session.agent.running)
                 .help("How far Claude goes: the masses and roofs alone, the facades with their windows, doors and relief, or every element that reads from across the street.")
+                Picker("Model", selection: $model) {
+                    Text("Default").tag("")
+                    Text("Fable").tag("fable")
+                    Text("Opus").tag("opus")
+                    Text("Sonnet").tag("sonnet")
+                }
+                .pickerStyle(.segmented)
+                .disabled(session.agent.running)
+                .help("Which Claude models the landmark: Claude Code's default, or one by name (the same setting as Settings > Claude > Model).")
                 if session.agent.running {
                     Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
                 } else {
