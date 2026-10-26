@@ -142,7 +142,7 @@ enum SatelliteView {
             // the palette's grey.
             let mx = max(r, g, bl), mn = min(r, g, bl)
             let hue: String, colour: String
-            if mx - mn < 18 {
+            if mx - mn < 26 {
                 (hue, colour) = mx > 100 ? ("grey", "lm_stone") : ("dark grey, near black", "lm_dark")
             } else if g >= r && g >= bl {
                 (hue, colour) = mx > 120 ? ("greenish", "lm_green") : ("dark green", "lm_dark_green")
