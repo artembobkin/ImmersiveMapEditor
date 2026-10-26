@@ -253,6 +253,7 @@ public enum LandmarkGenerator {
             return ring.count >= 3 && mass.top > mass.base ? ccw(ring) : nil
         }
         sink(&rings, r.masses)
+        sinkEdges(&rings, r.masses)
         for (k, mass) in r.masses.enumerated() {
             guard let ring = rings[k] else { continue }
             m.mass(ring, mass)
@@ -495,6 +496,17 @@ public enum LandmarkGenerator {
             tris = out
             united = statuses.filter { $0 == 0 }.count
             keptRaw = statuses.count - united
+            if let path = ProcessInfo.processInfo.environment["LANDMARK_UNION_OBJ"] {
+                var obj = ""
+                var n = 0
+                for (colour, list) in out {
+                    obj += "g \(colour)\n"
+                    for p in list { obj += String(format: "v %.4f %.4f %.4f\n", p.x, p.y, p.z) }
+                    for t in stride(from: 0, to: list.count, by: 3) { obj += "f \(n + t + 1) \(n + t + 2) \(n + t + 3)\n" }
+                    n += list.count
+                }
+                try? obj.write(toFile: path, atomically: true, encoding: .utf8)
+            }
             return true
         }
 
@@ -1172,6 +1184,65 @@ public enum LandmarkGenerator {
                 }
             }
             rings[i] = ring
+        }
+    }
+
+    /// A wall running along a neighbour's wall within `near` of it (a
+    /// slot between two masses, or two walls flush) pushed `into` metres
+    /// into the neighbour along the stretch they share: the wall is split
+    /// where the stretch begins and ends, and that piece moves. Corners far
+    /// from the neighbour (a wider block beside a narrower one) leave `sink`
+    /// nothing to do; this closes the slot itself.
+    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.1) {
+        let original = rings
+        for i in rings.indices {
+            guard let ring = original[i] else { continue }
+            var out: [P2] = []
+            for k in ring.indices {
+                let a = ring[k], b = ring[(k + 1) % ring.count]
+                let d = b - a, len = simd_length(d)
+                guard len > 1e-6 else { out.append(a); continue }
+                let dir = d / len, n = P2(dir.y, -dir.x)   // the outside of a counter-clockwise ring
+                // The stretches of this wall that face a neighbour's wall closely:
+                // (from, to, how far the neighbour is).
+                var stretches: [(Double, Double, Double)] = []
+                for j in original.indices where j != i {
+                    // The lower wall goes into the taller neighbour, where the
+                    // whole of it hides; a taller wall pushed into a lower
+                    // neighbour would step out above it.
+                    guard let other = original[j], masses[i].base < masses[j].top - 0.05, masses[j].base < masses[i].top - 0.05,
+                          masses[i].top <= masses[j].top + 0.05 else { continue }
+                    for m in other.indices {
+                        let c = other[m], e = other[(m + 1) % other.count]
+                        let f = e - c, flen = simd_length(f)
+                        guard flen > 1e-6, abs(simd_dot(f / flen, dir)) > cos(10 * Double.pi / 180) else { continue }
+                        // How far out the neighbour's wall is, and where along ours it runs.
+                        let dc = simd_dot(c - a, n), de = simd_dot(e - a, n)
+                        guard min(dc, de) > -0.05, max(dc, de) < near else { continue }
+                        let t0 = max(0, min(simd_dot(c - a, dir), simd_dot(e - a, dir))), t1 = min(len, max(simd_dot(c - a, dir), simd_dot(e - a, dir)))
+                        guard t1 - t0 > 1 else { continue }
+                        stretches.append((t0, t1, max(dc, de)))
+                    }
+                }
+                out.append(a)
+                guard !stretches.isEmpty else { continue }
+                // The wall from a to b, its near stretches pushed out, in order.
+                stretches.sort { $0.0 < $1.0 }
+                var cursor = 0.0
+                for (t0, t1, far) in stretches where t0 >= cursor - 1e-6 {
+                    let push = n * (far + into)
+                    if t0 > cursor + 0.05 { out.append(a + dir * t0) }
+                    out.append(a + dir * max(t0, cursor) + push)
+                    out.append(a + dir * t1 + push)
+                    if t1 < len - 0.05 { out.append(a + dir * t1) }
+                    cursor = t1
+                }
+            }
+            // Points that fell together (a stretch to the corner) once.
+            var cleaned: [P2] = []
+            for p in out where cleaned.last.map({ simd_length($0 - p) > 1e-6 }) ?? true { cleaned.append(p) }
+            if cleaned.count > 1, simd_length(cleaned[0] - cleaned[cleaned.count - 1]) < 1e-6 { cleaned.removeLast() }
+            if cleaned.count >= 3 { rings[i] = cleaned }
         }
     }
 
