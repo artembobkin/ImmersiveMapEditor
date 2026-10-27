@@ -548,7 +548,7 @@ enum StreetPicks {
                     let first = perFacade[f][0]
                     guard let v = rest.filter({ $0.looks[f] >= first.looks[f] * 0.4
                         && ($0.photo.sequence != first.photo.sequence || simd_length($0.photo.at - first.photo.at) > 25) })
-                        .max(by: { $0.looks[f] < $1.looks[f] }) else { break }
+                        .max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) else { break }
                     take(v, for: f)
                 }
             }
