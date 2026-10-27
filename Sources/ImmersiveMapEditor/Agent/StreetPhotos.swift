@@ -529,9 +529,10 @@ enum StreetPicks {
             views.filter { v in v.looks[f] >= worthwhile && v.seen[f] >= StreetView.enough && !perFacade[f].contains { $0.photo.id == v.photo.id } }
         }
         let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
-        // The best look at every facade first.
+        // The best look at every facade first, the part of it seen counting
+        // twice: a whole facade from a corner before half of it square on.
         for f in order where picks.count < limit {
-            if let v = pool(f).max(by: { $0.looks[f] < $1.looks[f] }) { take(v, for: f) }
+            if let v = pool(f).max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) { take(v, for: f) }
         }
         // Then the rest of each facade: what shows most of what is not seen
         // yet (a pick made for another facade costs nothing), or a second

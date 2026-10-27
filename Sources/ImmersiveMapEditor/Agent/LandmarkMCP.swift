@@ -450,7 +450,7 @@ enum LandmarkMCP {
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
             // Facade by facade, so a facade seen only in passing keeps its
             // candidates: the best hundred looks at each judged with what
-            // hides them, then the best sixteen of each asked for in full
+            // hides them, then the best two dozen of each asked for in full
             // (camera, computed pose, quality), thirty ids a call.
             func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
                 var ids = Set<String>()
@@ -466,7 +466,7 @@ enum LandmarkMCP {
                 guard let view = StreetView.best(e, in: scene) else { continue }
                 judged.append((view, e))
             }
-            let asked = bestOfEachFacade(judged, 16).map { $0["id"] as! String }
+            let asked = bestOfEachFacade(judged, 24).map { $0["id"] as! String }
             if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
                 for (f, facade) in scene.facades.enumerated() {
                     let glanced = rough.filter { $0.0.seen[f] >= StreetView.enough }.count
