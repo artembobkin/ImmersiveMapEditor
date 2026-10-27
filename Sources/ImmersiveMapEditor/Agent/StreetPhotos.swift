@@ -233,7 +233,7 @@ struct StreetScene {
         let w = Double(width), h = Double(height), l = max(w, h)
         let focal = 0.5 * w / l / tan(max(10, min(170, hfov)) / 2 * .pi / 180)
         let photo = StreetPhoto(id: "pose", at: P2(x, y), compass: heading, focal: focal, width: width, height: height)
-        return StreetView(photo, in: self)
+        return StreetView(photo, in: self, central: false)
     }
 }
 
@@ -388,13 +388,19 @@ struct StreetView {
     /// A look at a facade counts from this much of it in the frame.
     static let enough = 0.2
 
+    /// Degrees a compass may be off: a candidate keeps the landmark inside
+    /// the frame by this much.
+    static let edgeMargin = 12.0
+
     /// Why the last photo judged gave no look, for the debug counts.
     nonisolated(unsafe) static var reason = ""
 
     /// The look a photo gives of the scene's landmark, nil when it shows no
     /// facade (behind the camera, out of the frame, hidden). A quick look
-    /// leaves out what hides it, for sorting thousands.
-    init?(_ photo: StreetPhoto, in scene: StreetScene, quick: Bool = false) {
+    /// leaves out what hides it, for sorting thousands. A `central` look
+    /// has the landmark well inside the frame (`edgeMargin`): a candidate's,
+    /// not a neighbouring frame's or a kept photo's.
+    init?(_ photo: StreetPhoto, in scene: StreetScene, quick: Bool = false, central: Bool = true) {
         self.photo = photo
         guard !scene.facades.isEmpty, !scene.inside(photo.at) else { Self.reason = "inside the hull"; return nil }
         let toCentre = (atan2(-photo.at.x, -photo.at.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
@@ -517,6 +523,15 @@ struct StreetView {
         box = CGRect(x: bx0, y: by0, width: max(0, bx1 - bx0), height: max(0, by1 - by0))
         share = photo.pano ? min(1, (hi - lo) / 90) : box.width
         guard share > 0.06 else { Self.reason = "a sliver of the frame"; return nil }
+        // Well inside the frame: with its compass a little off either way
+        // (`edgeMargin`), a quarter of the frame's width still holds the
+        // landmark. One at the frame's edge is a sliver in the picture, or
+        // out of it (the user, 2026-10-27).
+        if central && !photo.pano {
+            let margin = min(Self.edgeMargin, half * 0.35)
+            let inner = max(0, min(hi, half - margin) - max(lo, -half + margin))
+            guard inner >= 0.25 * 2 * half else { Self.reason = "at the frame's edge"; return nil }
+        }
         // The photo's worth as a whole: its best look, and what else it shows.
         let mean = perimeter > 0 ? zip(looks, scene.facades).reduce(0.0) { $0 + $1.0 * $1.1.length } / perimeter : 0
         score = 0.6 * looks[best] + 0.4 * mean
@@ -642,7 +657,7 @@ struct StreetTrack {
             let h = n.pano ? (n.compass ?? 0) : heading(at: j, compass: n.compass).heading
             guard let h else { continue }
             let other = StreetPhoto(id: n.id, at: n.at, compass: h, focal: photo.focal, width: photo.width, height: photo.height, pano: n.pano)
-            if let v = StreetView(other, in: scene, quick: true), v.seen[view.best] >= StreetView.enough { seen += 1 }
+            if let v = StreetView(other, in: scene, quick: true, central: false), v.seen[view.best] >= StreetView.enough { seen += 1 }
         }
         guard seen >= 2 else { return (nil, "\(seen == 0 ? "none" : "only one") of its neighbouring frames sees \(scene.facades[view.best].name): one frame alone is a mistake of its pose") }
         judged.confirmedBy = seen
@@ -654,7 +669,7 @@ enum StreetPicks {
     /// A look worth a candidate.
     static let worthwhile = 0.05
     /// Looks at each station, each from another track.
-    static let perStation = 3
+    static let perStation = 5
 
     /// The candidates, a walk around the landmark: facade by facade, station
     /// by station along it (from beyond one end, its thirds, from beyond
