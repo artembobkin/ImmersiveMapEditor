@@ -463,7 +463,7 @@ enum LandmarkMCP {
             }
             var judged: [(StreetView, [String: Any])] = []
             for e in bestOfEachFacade(rough, 100) {
-                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene) else { continue }
+                guard let view = StreetView.best(e, in: scene) else { continue }
                 judged.append((view, e))
             }
             let asked = bestOfEachFacade(judged, 16).map { $0["id"] as! String }
@@ -491,14 +491,20 @@ enum LandmarkMCP {
             }
             func text(_ s: String) -> [String: Any] { self.text(s) }
             let photosCount = total
-            let views = photos.values.compactMap { StreetPhoto($0, scene) }.filter { simd_length($0.at) <= radius }
-                .compactMap { StreetView($0, in: scene) }
+            let views = photos.values.compactMap { StreetView.best($0, in: scene) }.filter { simd_length($0.photo.at) <= radius }
             if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
+                for (f, facade) in scene.facades.enumerated() {
+                    let top = views.filter { $0.seen[f] >= StreetView.enough }.sorted { $0.looks[f] > $1.looks[f] }.prefix(6)
+                    FileHandle.standardError.write("\(facade.name): the best looks\n".data(using: .utf8)!)
+                    for v in top {
+                        FileHandle.standardError.write(String(format: "  %@: look %.2f, seen %.2f, score %.2f, %@\n", v.photo.id, v.looks[f], v.seen[f], v.score, v.line(scene)).data(using: .utf8)!)
+                    }
+                }
                 for id in asked where !views.contains(where: { $0.photo.id == id }) {
                     var why = "not returned by Mapillary"
                     if let e = photos[id] {
                         if let photo = StreetPhoto(e, scene) {
-                            why = simd_length(photo.at) > radius ? "beyond the radius" : StreetView(photo, in: scene) == nil ? StreetView.reason : "?"
+                            why = simd_length(photo.at) > radius ? "beyond the radius" : StreetView.best(e, in: scene) == nil ? StreetView.reason : "?"
                             why += " (\(photo.camera), focal \(photo.focal), compass \(photo.compass.map { Int($0) } ?? -1), at \(Int(photo.at.x)), \(Int(photo.at.y)))"
                         } else { why = "no pose at all" }
                     }
@@ -650,8 +656,9 @@ enum LandmarkMCP {
             let scene = try StreetScene(folder: folder)
             let json = try mapillary(id, ["fields": StreetPhoto.fields + ",thumb_2048_url,thumb_original_url"])
             if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
-            guard let photo = StreetPhoto(json, scene), let url = photo.thumb else { throw Failure("Mapillary has no picture for \(id)") }
-            guard let view = StreetView(photo, in: scene) else { throw Failure("that photo does not show the landmark") }
+            guard let url = StreetPhoto(json, scene)?.thumb else { throw Failure("Mapillary has no picture for \(id)") }
+            guard let view = StreetView.best(json, in: scene) else { throw Failure("that photo does not show the landmark") }
+            let photo = view.photo
             // A panorama is kept whole until it is cut to the landmark.
             let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
                                 page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(photo.author) (Mapillary)",

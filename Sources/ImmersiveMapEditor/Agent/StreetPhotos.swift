@@ -219,17 +219,28 @@ struct StreetPhoto {
 
     static let fields = "id,computed_geometry,geometry,computed_compass_angle,compass_angle,captured_at,creator,is_pano,camera_type,camera_parameters,width,height,sequence,quality_score"
 
-    init?(_ e: [String: Any], _ scene: StreetScene) {
-        // The computed pose (structure from motion), or the device's own
-        // when Mapillary has none: a photo the coverage tile places is as
-        // good a candidate by its device's pose.
-        let computed = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double]
-        let device = (e["geometry"] as? [String: Any])?["coordinates"] as? [Double]
-        guard let id = e["id"] as? String, let c = computed ?? device, c.count == 2 else { return nil }
+    /// Whether Mapillary has both poses and they disagree (by 20 m or 35°).
+    static func posesDisagree(_ e: [String: Any], _ scene: StreetScene) -> Bool {
+        guard let c = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double], c.count == 2,
+              let raw = (e["geometry"] as? [String: Any])?["coordinates"] as? [Double], raw.count == 2 else { return false }
+        if simd_length(scene.metres(lon: raw[0], lat: raw[1]) - scene.metres(lon: c[0], lat: c[1])) > 20 { return true }
+        if let a = (e["computed_compass_angle"] as? NSNumber)?.doubleValue, let b = (e["compass_angle"] as? NSNumber)?.doubleValue,
+           abs(StreetView.wrap(a - b)) > 35 { return true }
+        return false
+    }
+
+    /// By the computed pose (structure from motion), or the device's own
+    /// (`device`, or when Mapillary has no computed one: a photo the
+    /// coverage tile places is as good a candidate by its device's pose).
+    init?(_ e: [String: Any], _ scene: StreetScene, device: Bool = false) {
+        let computed = device ? nil : (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double]
+        let raw = (e["geometry"] as? [String: Any])?["coordinates"] as? [Double]
+        guard let id = e["id"] as? String, let c = computed ?? raw, c.count == 2 else { return nil }
         self.id = id
         at = scene.metres(lon: c[0], lat: c[1])
         fromDevice = computed == nil
-        compass = ((e["computed_compass_angle"] ?? e["compass_angle"]) as? NSNumber)?.doubleValue
+        let angles = device ? [e["compass_angle"], e["computed_compass_angle"]] : [e["computed_compass_angle"], e["compass_angle"]]
+        compass = angles.compactMap { ($0 as? NSNumber)?.doubleValue }.first
         let flagged = e["is_pano"] as? Bool ?? false, type = e["camera_type"] as? String
         pano = flagged || ["spherical", "equirectangular"].contains(type ?? "")
         camera = type ?? (pano ? "spherical" : "perspective")
@@ -241,12 +252,7 @@ struct StreetPhoto {
         author = (e["creator"] as? [String: Any])?["username"] as? String ?? "unknown"
         sequence = e["sequence"] as? String ?? id
         thumb = (e["thumb_original_url"] as? String) ?? (e["thumb_2048_url"] as? String) ?? (e["thumb_1024_url"] as? String)
-        var doubt = false
-        if let raw = (e["geometry"] as? [String: Any])?["coordinates"] as? [Double], raw.count == 2,
-           simd_length(scene.metres(lon: raw[0], lat: raw[1]) - at) > 20 { doubt = true }
-        if let c = compass, let raw = (e["compass_angle"] as? NSNumber)?.doubleValue,
-           abs(StreetView.wrap(c - raw)) > 35 { doubt = true }
-        poseDoubt = doubt
+        poseDoubt = Self.posesDisagree(e, scene)
         quality = (e["quality_score"] as? NSNumber)?.doubleValue
         hour = captured.map { Int(($0.timeIntervalSince1970 / 3600 + (scene.lon / 15).rounded()).truncatingRemainder(dividingBy: 24)) }
     }
@@ -355,7 +361,8 @@ struct StreetView {
         // The photo's own worth, the same for every facade.
         let years: Double = photo.captured.map { Date().timeIntervalSince($0) / 31_557_600 } ?? 8
         let fresh = max(0.6, 1 - years * 0.05)
-        let sure = photo.poseDoubt ? 0.4 : 1.0
+        // Two poses disagreeing cost a little: the agent checks the frame.
+        let sure = photo.poseDoubt ? 0.7 : 1.0
         let good = photo.quality.map { 0.5 + 0.5 * $0 } ?? 0.9
         let day = photo.hour.map { $0 >= 7 && $0 <= 19 ? 1.0 : 0.4 } ?? 1
         let worth = fresh * sure * good * day * (photo.pano ? 0.9 : 1) * (photo.fromDevice ? 0.8 : 1)
@@ -461,6 +468,16 @@ struct StreetView {
         score = 0.6 * looks[best] + 0.4 * mean
     }
 
+    /// The look a Mapillary entry gives: by its computed pose, or by its
+    /// device's when the two disagree and the device's shows more (the
+    /// frame drawn follows the pose chosen).
+    static func best(_ e: [String: Any], in scene: StreetScene, quick: Bool = false) -> StreetView? {
+        let computed = StreetPhoto(e, scene).flatMap { StreetView($0, in: scene, quick: quick) }
+        guard StreetPhoto.posesDisagree(e, scene), let device = StreetPhoto(e, scene, device: true).flatMap({ StreetView($0, in: scene, quick: quick) }) else { return computed }
+        guard let computed else { return device }
+        return device.score > computed.score ? device : computed
+    }
+
     /// The facades it shows, best first: "the north facade whole, a third
     /// of the east facade".
     func shows(_ scene: StreetScene) -> String {
@@ -470,7 +487,8 @@ struct StreetView {
 
     func line(_ scene: StreetScene) -> String {
         let how = photo.pano ? "a panorama, cut to it" : "\(Int(share * 100))% of the frame, \(Int(off))° off"
-        let doubts = [photo.poseDoubt ? "its pose is doubtful" : nil, photo.fromDevice ? "its pose is the device's alone" : nil,
+        let doubts = [photo.poseDoubt ? "its two poses disagree, framed by the \(photo.fromDevice ? "device's" : "computed one")" : nil,
+                      photo.fromDevice && !photo.poseDoubt ? "its pose is the device's alone" : nil,
                       (photo.hour ?? 12) < 7 || (photo.hour ?? 12) > 19 ? "at night" : nil]
             .compactMap { $0 }
         return "\(photo.id): \(Int(distance)) m, from the \(Self.side(from)), shows \(shows(scene)), \(how), \(photo.date), by \(photo.author)"
