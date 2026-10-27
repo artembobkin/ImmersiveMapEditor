@@ -193,26 +193,27 @@ final class LandmarkAgent {
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
         2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then the \
         references, in this order:
-           a. find_commons_photos (Wikimedia Commons, its category and around it): keep one classic view of the whole \
-        (two at most, and not two alike) with save_commons_photo, to know the building and to judge the street photos by.
+           a. find_commons_photos (Wikimedia Commons, its category and around it): five candidates by their descriptions \
+        alone; keep one classic view of the whole with save_commons_photo (it comes back to look at; drop_reference it if \
+        it is not that, and keep another), to know the building and to judge the street photos by. Ask for their \
+        pictures (pictures: true) only when the descriptions do not tell.
            b. find_street_photos (Mapillary, street level all around it): a walk around it, facade by facade (the sides of \
         the outline) and station by station along each (from beyond one end, its thirds, from beyond the other end), at \
         each the photos standing there that show the facade best, each from another track, with the landmark framed in \
         red by the camera's pose. Every station's photos are kept for you at once, in a folder for each facade: its best \
-        one to three in best/, shown to you as pictures, the others in other/, by name (north-facade/best/photo-03.jpg: \
-        give that path to show_reference, compare_with_photo and drop_reference). Model each facade from its best \
+        one to three in best/, the very best of each shown to you as a picture, the others in other/, all by name \
+        (north-facade/best/photo-03.jpg: give that path to show_reference, compare_with_photo and drop_reference). Model each facade from its best \
         photos, and open the others when a detail needs them. Poses are \
         sometimes wrong: look at the kept photos (everything outside a frame is painted black), and where a frame holds \
         another building, drop_reference it; save_street_photo keeps any other candidate you want, and every keep tells \
         you how much of each facade the kept photos show.
            c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
         and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
-           d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \
-        drone), the details that make it recognisable (a sculpture, a portal).
-        Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
+           d. find_commons_photos again only for what these do not show (the roofs at a slant: aerial, drone; a \
+        sculpture, a portal), by the descriptions; keep one or two at most. The web (WebSearch, WebFetch) only when these give nothing.
         3. Write its recipe with set_recipe: every build comes back with the model rendered from a best street photo of \
-        each facade from that photo's own camera beside that photo (the next best each round) and the satellite view \
-        beside the model from above, so what \
+        each facade the recipe changed (all on the first build) from that photo's own camera beside that photo (the next \
+        best each round) and the satellite view beside the model from above, so what \
         differs is plain: count the columns and the windows, check the roof's shape and height and the masses from above, \
         the entrances, the relief of the walls, the colours; compare_with_photo for \
         the other kept photos, render_views for the whole and from above, render_from for a look from any place. \

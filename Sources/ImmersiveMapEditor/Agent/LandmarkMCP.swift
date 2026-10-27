@@ -151,10 +151,11 @@ enum LandmarkMCP {
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
                              "required": ["id", "shows"]]],
             ["name": "find_commons_photos",
-             "description": "Photos of the landmark on Wikimedia Commons (freely licensed only: CC0, CC BY, CC BY-SA, public domain): the files of its category (from OSM's wikimedia_commons or wikidata tag) and the files geotagged around it, the best first (views from above and recent large ones), each with its name, size, date, author, licence and description, and a contact sheet of them. The whole from afar, the roofs from above, the details the street does not show. Keep one with save_commons_photo.",
+             "description": "Photos of the landmark on Wikimedia Commons (freely licensed only: CC0, CC BY, CC BY-SA, public domain): the files of its category (from OSM's wikimedia_commons or wikidata tag) and the files geotagged around it, the best first (views from above and recent large ones), five at most, each with its name, size, date, author, licence and description; their pictures only with pictures: true. The whole from afar, the roofs from above, the details the street does not show. Keep one with save_commons_photo (it comes back to look at).",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre for geotagged files, 150 by default."],
-                "limit": ["type": "integer", "description": "How many, 16 by default."]]]],
+                "limit": ["type": "integer", "description": "How many, 5 at most and by default."],
+                "pictures": ["type": "boolean", "description": "The candidates' pictures too (false by default: their descriptions alone, the pictures cost you)."]]]],
             ["name": "save_commons_photo",
              "description": "Downloads one of find_commons_photos' files by its name (File:...) into the references, credited (its author and licence), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
@@ -182,15 +183,22 @@ enum LandmarkMCP {
                 let said = try setRecipe(args["recipe"])
                 guard said.hasPrefix("Built") else { return [text(said)] }
                 // The build, and at once the model beside a kept street photo
-                // of each facade from that photo's place: one of its best/, the
-                // next one each round, so the rounds go through all of them
-                // (a facade without best/, its best look); six at most.
+                // of each facade this recipe changed (all on the first build)
+                // from that photo's place: one of its best/, the next one
+                // each round, so the rounds go through all of them (a facade
+                // without best/, its best look); six at most.
                 var content: [[String: Any]] = [text(said)]
                 var picked: [String] = []
+                var compared: [String] = []
                 if let scene = try? StreetScene(folder: folder) {
                     let kept = keptViews(scene)
                     let round = Int(currentRound.lastPathComponent) ?? 0
-                    for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
+                    let changed = lastTouched ?? Array(scene.facades.indices)
+                    if lastTouched != nil {
+                        content.append(text(changed.isEmpty ? "The recipe changed no element: no comparison this round." : "Compared below: the facades this recipe changed, \(changed.map { scene.facades[$0].name }.joined(separator: ", ")). review_facade for any other."))
+                    }
+                    for f in changed.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
+                        compared.append(scene.facades[f].name)
                         let best = bestPhotos(Self.facadeFolder(scene.facades[f].name))
                         if !best.isEmpty {
                             let file = best[round % best.count]
@@ -205,7 +213,7 @@ enum LandmarkMCP {
                 for file in picked.prefix(6) {
                     if let shown = try? compare(["file": file]) { content += shown }
                 }
-                if picked.isEmpty { content.append(text("No street photo with a camera pose is kept yet: save some with save_street_photo, and every build will come back beside them.")) }
+                if picked.isEmpty && compared.isEmpty && lastTouched == nil { content.append(text("No street photo with a camera pose is kept yet: find_street_photos keeps them, and every build will come back beside them.")) }
                 if let above = try? compareSatellite() { content += above }
                 let due = facadesToReview()
                 if !due.isEmpty {
@@ -349,6 +357,8 @@ enum LandmarkMCP {
             let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
             let problems = LandmarkGenerator.check(recipe, source)
             guard problems.isEmpty else { return "Not built, the recipe has problems:\n" + problems.joined(separator: "\n") }
+            // The facades this recipe changes against the last round's.
+            lastTouched = touchedFacades(previous: currentRound.appendingPathComponent("recipe.json"), now: value, source: source)
             try recipe.write(recipeURL)
             let model = LandmarkGenerator.build(recipe, source)
             try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
@@ -362,6 +372,54 @@ enum LandmarkMCP {
             try? FileManager.default.copyItem(at: folder.appendingPathComponent("model.glb"), to: round.appendingPathComponent("model.glb"))
             try? (said + "\n").write(to: round.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
             return said + " (round \(round.lastPathComponent))"
+        }
+
+        /// The facades the last set_recipe changed, nil for all (the first
+        /// build, or no last round to compare with).
+        var lastTouched: [Int]? = nil
+
+        /// The facades a recipe changes against the previous one: the
+        /// elements (masses, features, shapes) new or changed, each at the
+        /// facades within 15 m of any of its points (its outline's ring, at,
+        /// from, to, centre, polygon, holes); an element with no point near
+        /// any facade (a dome in the middle) touches all. nil for all when
+        /// there is no previous recipe to compare with.
+        func touchedFacades(previous: URL, now: Any, source: LandmarkSource) -> [Int]? {
+            guard let scene = try? StreetScene(folder: folder), !scene.facades.isEmpty,
+                  let data = try? Data(contentsOf: previous), let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let new = now as? [String: Any] else { return nil }
+            func canon(_ e: Any) -> String {
+                (try? JSONSerialization.data(withJSONObject: e, options: [.sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            }
+            var was = Set<String>()
+            for key in ["masses", "features", "shapes"] { for e in old[key] as? [Any] ?? [] { was.insert(canon(e)) } }
+            var touched = Set<Int>()
+            for key in ["masses", "features", "shapes"] {
+                for e in new[key] as? [Any] ?? [] where !was.contains(canon(e)) {
+                    guard let d = e as? [String: Any] else { continue }
+                    var points: [P2] = []
+                    func pair(_ v: Any?) -> P2? {
+                        guard let a = v as? [Any], a.count >= 2, let x = (a[0] as? NSNumber)?.doubleValue, let y = (a[1] as? NSNumber)?.doubleValue else { return nil }
+                        return P2(x, y)
+                    }
+                    for k in ["at", "from", "to", "centre"] { if let p = pair(d[k]) { points.append(p) } }
+                    if let around = d["around"] as? [String: Any], let p = pair(around["centre"]) { points.append(p) }
+                    for p in (d["polygon"] as? [Any] ?? []).compactMap(pair) { points.append(p) }
+                    for hole in d["holes"] as? [Any] ?? [] { for p in (hole as? [Any] ?? []).compactMap(pair) { points.append(p) } }
+                    if let outline = d["outline"] as? String, let ring = source.ring(outline) { points += ring }
+                    var near = Set<Int>()
+                    for (f, facade) in scene.facades.enumerated() {
+                        let a = facade.a, b = facade.b, ab = b - a, len2 = max(1e-9, simd_dot(ab, ab))
+                        for p in points {
+                            let t = max(0, min(1, simd_dot(p - a, ab) / len2))
+                            if simd_length(p - (a + ab * t)) <= 15 { near.insert(f); break }
+                        }
+                    }
+                    if near.isEmpty { near = Set(scene.facades.indices) }
+                    touched.formUnion(near)
+                }
+            }
+            return touched.sorted()
         }
 
         func render(_ args: [String: Any]) throws -> [[String: Any]] {
@@ -664,7 +722,11 @@ enum LandmarkMCP {
             // best come back as pictures, the others by name.
             let best = StreetPicks.best(stations, in: scene, building: buildingOf)
             var bestOf: [String: Int] = [:]   // photo id to the facade it is a best of
-            for (f, views) in best { for v in views { bestOf[v.photo.id] = f } }
+            var first = Set<String>()         // the one of each facade that comes back as a picture
+            for (f, views) in best {
+                for v in views { bestOf[v.photo.id] = f }
+                if let v = views.first { first.insert(v.photo.id) }
+            }
             var keptNow: [String: [[String: Any]]] = [:]
             let already = (credited())
                 .compactMap { $0["page"] as? String }
@@ -680,11 +742,11 @@ enum LandmarkMCP {
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count + droppedByPicture.count) are borne out again by Mapillary's computed pose; of those, \(droppedByPicture.count) dropped by their pictures (no building in the red frame, or a blank: the Mac's scene classifier and the facade's other photos). A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track:\n"
                 + report
-                + "\nEvery station's photos are kept already, framed in red, the rest painted black, each in the folder of its facade: the best one to three of each facade in its best/ (north-facade/best/, chosen by how much of the facade they show, how square on and large, daylight, and how sure the Mac is of a building in them), the others in its other/. The best follow as pictures, the others by name: show_reference(name) to look at one. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEvery station's photos are kept already, framed in red, the rest painted black, each in the folder of its facade: the best one to three of each facade in its best/ (north-facade/best/, chosen by how much of the facade they show, how square on and large, daylight, and how sure the Mac is of a building in them), the others in its other/. The very best of each facade follows as a picture, the rest by name: show_reference(name) to look at one, when a detail needs it. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 if let kept = keptNow[pick.photo.id] {
                     content.append(text("#\(k + 1) " + (kept.first?["text"] as? String ?? "")))
-                    if bestOf[pick.photo.id] != nil { content += kept.dropFirst() }
+                    if first.contains(pick.photo.id) { content += kept.dropFirst() }
                     continue
                 }
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
@@ -717,7 +779,8 @@ enum LandmarkMCP {
         func commonsPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
             let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
             let radius = (args["radius"] as? NSNumber)?.doubleValue ?? 150
-            let limit = max(1, min(30, (args["limit"] as? NSNumber)?.intValue ?? 16))
+            let limit = max(1, min(5, (args["limit"] as? NSNumber)?.intValue ?? 5))
+            let pictures = args["pictures"] as? Bool ?? false
             let (category, photos) = try CommonsPhotos.find(tags: source.buildings.map(\.tags), lon: source.centre.0, lat: source.centre.1,
                                                             radius: radius, run: Self.run)
             let where_ = category.map { "its category \"\($0)\" and " } ?? "no category of its own (no wikimedia_commons or wikidata tag): "
@@ -737,10 +800,10 @@ enum LandmarkMCP {
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try ContactSheet.draw(cells, to: sheet)
-            var content: [[String: Any]] = [text("Commons: \(photos.count) freely licensed photos in \(where_)within \(Int(radius)) m; the \(picks.count) best follow, numbered. Keep one with save_commons_photo(file, shows).")]
+            var content: [[String: Any]] = [text("Commons: \(photos.count) freely licensed photos in \(where_)within \(Int(radius)) m; the \(picks.count) best follow, numbered" + (pictures ? "." : " (their descriptions; pictures: true for their pictures). Keep one with save_commons_photo(file, shows): it comes back to look at, and drop_reference it if it is not what you need."))]
             for (k, p) in picks.enumerated() {
                 content.append(text("#\(k + 1) " + p.line))
-                if let file = cells[k].image, let img = image(file) { content.append(img) }
+                if pictures, let file = cells[k].image, let img = image(file) { content.append(img) }
             }
             return content
         }
