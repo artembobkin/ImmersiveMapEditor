@@ -48,6 +48,11 @@ enum Headless {
             // report printed (with LANDMARK_STREET_OFFLINE, from the cached
             // coverage tiles alone, no token needed).
             let folder = URL(fileURLWithPath: arguments[i + 1]).standardizedFileURL
+            // The token of Settings, as the agent's server gets it.
+            if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
+                let token = ClaudeSettings.mapillaryToken
+                if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
+            }
             let server = LandmarkMCP.Server(folder: folder)
             Segmenter.folder = server.root.appendingPathComponent("config/models")
             var args: [String: Any] = [:]

@@ -96,6 +96,21 @@ struct StreetScene {
         return true
     }
 
+    /// How much of a facade some samples are, in words, with the end they
+    /// are at when they are a part: "whole", "half (its east end)".
+    func part(_ f: Int, _ flags: [Bool]) -> String {
+        let facade = facades[f]
+        let count = flags.filter { $0 }.count
+        guard count > 0 else { return "nothing" }
+        let fraction = Double(count) / Double(flags.count)
+        let how = fraction > 0.85 ? "whole" : fraction > 0.6 ? "most of it" : fraction > 0.4 ? "half" : fraction > 0.25 ? "a third" : "a little"
+        guard fraction <= 0.85 else { return how }
+        let mean = Double(flags.indices.filter { flags[$0] }.reduce(0, +)) / Double(count), centre = Double(flags.count - 1) / 2
+        guard abs(mean - centre) > Double(flags.count) * 0.12 else { return "\(how) (its middle)" }
+        let d = mean > centre ? facade.b - facade.a : facade.a - facade.b
+        return "\(how) (its \(StreetView.side(atan2(d.x, d.y) * 180 / .pi)) end)"
+    }
+
     /// The hull's sides as facades: its edges, each short one (under 6 m, or
     /// a twelfth of the perimeter: a corner's chamfer, a portico's step) and
     /// each running within 15° of a neighbour joined to the neighbour nearest
@@ -265,8 +280,10 @@ struct StreetView {
     let from: Double
     /// Degrees between where the camera looks and the centre (0 for a panorama).
     let off: Double
-    /// Of each facade of the scene, the part in the frame (0 to 1).
+    /// Of each facade of the scene, the part in the frame (0 to 1), and
+    /// which of its samples: what two photos show together.
     let seen: [Double]
+    let seenSamples: [[Bool]]
     /// Of each facade, how good a look the photo gives of it (0 to 1): the
     /// part seen, how square on, how large in the frame, how near, and the
     /// photo's own worth (its date, pose, quality, daylight).
@@ -302,12 +319,15 @@ struct StreetView {
     /// A look at a facade counts from this much of it in the frame.
     static let enough = 0.2
 
+    /// Why the last photo judged gave no look, for the debug counts.
+    nonisolated(unsafe) static var reason = ""
+
     /// The look a photo gives of the scene's landmark, nil when it shows no
     /// facade (behind the camera, out of the frame, hidden). A quick look
     /// leaves out what hides it, for sorting thousands.
     init?(_ photo: StreetPhoto, in scene: StreetScene, quick: Bool = false) {
         self.photo = photo
-        guard !scene.facades.isEmpty, !scene.inside(photo.at) else { return nil }
+        guard !scene.facades.isEmpty, !scene.inside(photo.at) else { Self.reason = "inside the hull"; return nil }
         let toCentre = (atan2(-photo.at.x, -photo.at.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
         from = (toCentre + 180).truncatingRemainder(dividingBy: 360)
         // The view's direction: the compass. A panorama looks everywhere, so
@@ -332,7 +352,7 @@ struct StreetView {
         let worth = fresh * sure * good * day * (photo.pano ? 0.9 : 1)
         // Each facade's samples: facing the camera, not glancing, in the
         // frame, not hidden by another building.
-        var seen: [Double] = [], looks: [Double] = []
+        var seen: [Double] = [], looks: [Double] = [], seenSamples: [[Bool]] = []
         var lo = Double.infinity, hi = -Double.infinity, nearest = Double.infinity
         var rays = 0, blocked = 0
         var perimeter = 0.0, inFrame = 0.0
@@ -345,7 +365,8 @@ struct StreetView {
         for f in scene.facades {
             perimeter += f.length
             var count = 0, rels: [Double] = [], incidence = 0.0, near = Double.infinity, blockedHere = 0
-            for (s, normal) in f.samples {
+            var flags = [Bool](repeating: false, count: f.samples.count)
+            for (i, (s, normal)) in f.samples.enumerated() {
                 let d = s - photo.at, dist = simd_length(d)
                 guard dist > 2, dist <= 300 else { continue }
                 let sine = simd_dot(normal, -d) / dist
@@ -365,12 +386,14 @@ struct StreetView {
                     }
                 }
                 count += 1
+                flags[i] = true
                 rels.append(rel)
                 incidence += sine
                 near = min(near, dist)
             }
             let part = Double(count) / Double(f.samples.count)
             seen.append(part)
+            seenSamples.append(flags)
             guard count > 0 else { looks.append(0); continue }
             inFrame += part * f.length
             nearest = min(nearest, near)
@@ -387,15 +410,19 @@ struct StreetView {
             let clear = count + blockedHere > 0 ? Double(count) / Double(count + blockedHere) : 1
             looks.append(part * square * large * close * clear * worth)
         }
-        guard let best = looks.indices.max(by: { looks[$0] < looks[$1] }), looks[best] > 0, seen[best] >= Self.enough else { return nil }
+        guard let best = looks.indices.max(by: { looks[$0] < looks[$1] }), looks[best] > 0, seen[best] >= Self.enough else {
+            Self.reason = rays > 0 && blocked == rays ? "hidden by other buildings" : "no facade in the frame"
+            return nil
+        }
         self.seen = seen
+        self.seenSamples = seenSamples
         self.looks = looks
         self.best = best
         distance = nearest
-        guard distance > 5 else { return nil }
+        guard distance > 5 else { Self.reason = "too near"; return nil }
         coverage = perimeter > 0 ? inFrame / perimeter : 0
         hidden = quick ? 0 : rays == 0 ? 1 : Double(blocked) / Double(rays)
-        guard hidden < 0.7 else { return nil }
+        guard hidden < 0.7 else { Self.reason = "mostly hidden by other buildings"; return nil }
         // The frame: the seen part's bearings across, the top and the foot
         // at the nearest point down.
         let top = atan2(scene.top - 2, max(distance, 1)) * 180 / .pi, bottom = atan2(-2.0, max(distance, 1)) * 180 / .pi
@@ -419,7 +446,7 @@ struct StreetView {
         let bx0 = max(0, min(1, x0)), bx1 = max(0, min(1, x1)), by0 = max(0, min(1, y0)), by1 = max(0, min(1, y1))
         box = CGRect(x: bx0, y: by0, width: max(0, bx1 - bx0), height: max(0, by1 - by0))
         share = photo.pano ? min(1, (hi - lo) / 90) : box.width
-        guard share > 0.06 else { return nil }
+        guard share > 0.06 else { Self.reason = "a sliver of the frame"; return nil }
         // The photo's worth as a whole: its best look, and what else it shows.
         let mean = perimeter > 0 ? zip(looks, scene.facades).reduce(0.0) { $0 + $1.0 * $1.1.length } / perimeter : 0
         score = 0.6 * looks[best] + 0.4 * mean
@@ -429,11 +456,7 @@ struct StreetView {
     /// of the east facade".
     func shows(_ scene: StreetScene) -> String {
         let order = looks.indices.filter { seen[$0] >= Self.enough && looks[$0] > 0 }.sorted { looks[$0] > looks[$1] }
-        return order.map { k -> String in
-            let part = seen[k]
-            let how = part > 0.9 ? "whole" : part > 0.6 ? "most of it" : part > 0.4 ? "half" : part > 0.25 ? "a third" : "a little"
-            return "\(scene.facades[k].name) \(how)"
-        }.joined(separator: ", ")
+        return order.map { "\(scene.facades[$0].name) \(scene.part($0, seenSamples[$0]))" }.joined(separator: ", ")
     }
 
     func line(_ scene: StreetScene) -> String {
@@ -450,48 +473,56 @@ enum StreetPicks {
     static let worthwhile = 0.05
 
     /// The candidates, facade by facade: for every facade the photo that
-    /// shows it best, then a second from another track or from well apart,
+    /// shows it best, then the photos that show what that one does not,
+    /// until the facade is seen whole (three at most), or a second look
+    /// from another track or from well apart when the first sees it whole,
     /// within `limit` in all, and the facades no photo shows: lines for the
     /// agent, and the picks as they are numbered.
     static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView]) {
         guard !views.isEmpty else { return ("", []) }
         let facades = scene.facades
-        var byTrack: [String: [StreetView]] = [:]
-        for v in views { byTrack[v.photo.sequence, default: []].append(v) }
-        let tracks = Array(byTrack.values)
-        /// Each track's best frame for a facade, the best track first.
-        func candidates(_ f: Int) -> [(track: Int, view: StreetView)] {
-            tracks.indices.compactMap { t in
-                tracks[t].filter { $0.looks[f] >= worthwhile && $0.seen[f] >= StreetView.enough }
-                    .max { $0.looks[f] < $1.looks[f] }.map { (t, $0) }
-            }.sorted { $0.view.looks[f] > $1.view.looks[f] }
-        }
         var picks: [StreetView] = []
         var taken: [String: Int] = [:]   // photo id to its number
-        var perFacade: [[(track: Int, view: StreetView)]] = Array(repeating: [], count: facades.count)
-        let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
-        func take(_ c: (track: Int, view: StreetView), for f: Int) {
-            if taken[c.view.photo.id] == nil {
-                picks.append(c.view)
-                taken[c.view.photo.id] = picks.count
-            }
-            perFacade[f].append(c)
+        var perFacade: [[StreetView]] = Array(repeating: [], count: facades.count)
+        var covered: [[Bool]] = facades.map { [Bool](repeating: false, count: $0.samples.count) }
+        func fraction(_ f: Int) -> Double { Double(covered[f].filter { $0 }.count) / Double(max(1, covered[f].count)) }
+        func gain(_ v: StreetView, _ f: Int) -> Double {
+            Double(covered[f].indices.filter { v.seenSamples[f][$0] && !covered[f][$0] }.count) / Double(max(1, covered[f].count))
         }
+        func take(_ v: StreetView, for f: Int) {
+            if taken[v.photo.id] == nil {
+                picks.append(v)
+                taken[v.photo.id] = picks.count
+            }
+            perFacade[f].append(v)
+            for i in covered[f].indices where v.seenSamples[f][i] { covered[f][i] = true }
+        }
+        func pool(_ f: Int) -> [StreetView] {
+            views.filter { v in v.looks[f] >= worthwhile && v.seen[f] >= StreetView.enough && !perFacade[f].contains { $0.photo.id == v.photo.id } }
+        }
+        let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
         // The best look at every facade first.
         for f in order where picks.count < limit {
-            if let c = candidates(f).first { take(c, for: f) }
+            if let v = pool(f).max(by: { $0.looks[f] < $1.looks[f] }) { take(v, for: f) }
         }
-        // Then a second look, from another track, or from the same one well
-        // apart, at least two fifths as good.
-        for f in order where picks.count < limit && perFacade[f].count == 1 {
-            let first = perFacade[f][0]
-            let other = candidates(f).dropFirst().first { c in
-                taken[c.view.photo.id] == nil && c.view.looks[f] >= first.view.looks[f] * 0.4
-            } ?? tracks[first.track].filter {
-                taken[$0.photo.id] == nil && $0.looks[f] >= max(worthwhile, first.view.looks[f] * 0.4)
-                    && $0.seen[f] >= StreetView.enough && simd_length($0.photo.at - first.view.photo.at) > 25
-            }.max { $0.looks[f] < $1.looks[f] }.map { (first.track, $0) }
-            if let other { take(other, for: f) }
+        // Then the rest of each facade: what shows most of what is not seen
+        // yet (a pick made for another facade costs nothing), or a second
+        // look at a facade seen whole, at least two fifths as good.
+        for f in order where !perFacade[f].isEmpty {
+            while picks.count < limit && perFacade[f].count < 3 {
+                let rest = pool(f)
+                if fraction(f) < 0.85 {
+                    guard let v = rest.max(by: { gain($0, f) * (0.5 + $0.looks[f]) < gain($1, f) * (0.5 + $1.looks[f]) }), gain(v, f) >= 0.15 else { break }
+                    take(v, for: f)
+                } else {
+                    guard perFacade[f].count == 1 else { break }
+                    let first = perFacade[f][0]
+                    guard let v = rest.filter({ $0.looks[f] >= first.looks[f] * 0.4
+                        && ($0.photo.sequence != first.photo.sequence || simd_length($0.photo.at - first.photo.at) > 25) })
+                        .max(by: { $0.looks[f] < $1.looks[f] }) else { break }
+                    take(v, for: f)
+                }
+            }
         }
         var out: [String] = []
         for f in order {
@@ -501,9 +532,12 @@ enum StreetPicks {
                 out.append("\(name) (\(Int(facades[f].length)) m): " + (any == 0 ? "no photo shows it." : "no photo gives a good look at it (\(any) glance at it)."))
                 continue
             }
-            out.append("\(name) (\(Int(facades[f].length)) m):\n" + perFacade[f].map { c in
-                "  #\(taken[c.view.photo.id]!) " + c.view.line(scene) + " (\(tracks[c.track].count) frames of its track show the landmark)"
-            }.joined(separator: "\n"))
+            let whole = fraction(f) > 0.85
+            out.append("\(name) (\(Int(facades[f].length)) m), " + (whole ? "seen whole by these:" : "these show \(scene.part(f, covered[f])), no photo the rest:") + "\n"
+                       + perFacade[f].map { v in
+                           let frames = views.filter { $0.photo.sequence == v.photo.sequence }.count
+                           return "  #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
+                       }.joined(separator: "\n"))
         }
         return (out.joined(separator: "\n"), picks)
     }

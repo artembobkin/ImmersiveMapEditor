@@ -479,8 +479,9 @@ enum LandmarkMCP {
             if offline {
                 for (_, e) in judged where asked.contains(e["id"] as! String) { photos[e["id"] as! String] = e }
             } else {
-                for chunk in stride(from: 0, to: asked.count, by: 30).map({ Array(asked[$0..<min($0 + 30, asked.count)]) }) {
+                for chunk in stride(from: 0, to: asked.count, by: 20).map({ Array(asked[$0..<min($0 + 20, asked.count)]) }) {
                     let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields])
+                    if let error = json["error"] as? [String: Any] { throw Failure("Mapillary refused the photos' details: \(error["message"] ?? error)") }
                     for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
                 }
             }
@@ -488,6 +489,18 @@ enum LandmarkMCP {
             let photosCount = total
             let views = photos.values.compactMap { StreetPhoto($0, scene) }.filter { simd_length($0.at) <= radius }
                 .compactMap { StreetView($0, in: scene) }
+            if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
+                for id in asked where !views.contains(where: { $0.photo.id == id }) {
+                    var why = "not returned by Mapillary"
+                    if let e = photos[id] {
+                        if let photo = StreetPhoto(e, scene) {
+                            why = simd_length(photo.at) > radius ? "beyond the radius" : StreetView(photo, in: scene) == nil ? StreetView.reason : "?"
+                            why += " (\(photo.camera), focal \(photo.focal), compass \(photo.compass.map { Int($0) } ?? -1), at \(Int(photo.at.x)), \(Int(photo.at.y)))"
+                        } else { why = "no computed pose" }
+                    }
+                    FileHandle.standardError.write("\(id): no look: \(why)\n".data(using: .utf8)!)
+                }
+            }
             guard !views.isEmpty else {
                 return [text("Of \(photosCount) street photos within \(Int(radius)) m none shows the landmark well. Try a larger radius.")]
             }
@@ -509,9 +522,9 @@ enum LandmarkMCP {
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m, the \(views.count) best looks judged in full. Facade by facade (the sides of its outline, the longest first), the best look at each and a second from another track (one pass of a car or a walker) or angle:\n"
+                "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. Facade by facade (the sides of its outline, the longest first), the best look at each and a second from another track (one pass of a car or a walker) or angle:\n"
                 + report
-                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows), one for every facade first. A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows): for every facade, the picks that together show it whole, as listed. A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
                 try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
@@ -597,16 +610,22 @@ enum LandmarkMCP {
                 if e["pose"] != nil { street += 1 } else if e["file"] as? String == "satellite.jpg" { satellite += 1 } else { commons += 1 }
             }
             guard let scene = try? StreetScene(folder: folder) else { return "" }
-            var counts = [Int](repeating: 0, count: scene.facades.count)
+            // What the kept photos show of each facade together.
+            var covered: [[Bool]] = scene.facades.map { [Bool](repeating: false, count: $0.samples.count) }
             for (_, view) in keptViews(scene) {
-                for f in counts.indices where view.seen[f] >= StreetView.enough && view.looks[f] > 0 { counts[f] += 1 }
+                for f in covered.indices where view.seen[f] >= StreetView.enough && view.looks[f] > 0 {
+                    for i in covered[f].indices where view.seenSamples[f][i] { covered[f][i] = true }
+                }
             }
             let order = scene.facades.indices.sorted { scene.facades[$0].length > scene.facades[$1].length }
-            let have = order.filter { counts[$0] > 0 }.map { "\(scene.facades[$0].name) ×\(counts[$0])" }
-            let missing = order.filter { counts[$0] == 0 }.map { "\(scene.facades[$0].name) (\(Int(scene.facades[$0].length)) m)" }
-            return "Kept so far: " + (street == 0 ? "no street photo" : "street photos of " + have.joined(separator: ", "))
+            func fraction(_ f: Int) -> Double { Double(covered[f].filter { $0 }.count) / Double(max(1, covered[f].count)) }
+            let have = order.filter { fraction($0) > 0 }.map { "\(scene.facades[$0].name) \(scene.part($0, covered[$0]))" }
+            let missing = order.filter { fraction($0) <= 0.85 }.map { f -> String in
+                "\(scene.facades[f].name) (\(Int(scene.facades[f].length)) m" + (fraction(f) > 0 ? ", the rest of it)" : ")")
+            }
+            return "Kept so far: " + (street == 0 ? "no street photo" : "street photos showing " + have.joined(separator: ", "))
                 + ", \(commons) from Commons (their side unknown)" + (satellite > 0 ? ", the satellite view" : "")
-                + (missing.isEmpty ? "." : ". Nothing of \(missing.joined(separator: ", ")) yet: a candidate that shows one is worth keeping, even a dashcam's glancing look.")
+                + (missing.isEmpty ? ". Every facade is seen whole." : ". Not seen yet: \(missing.joined(separator: ", ")). A candidate that shows it is worth keeping, even a dashcam's glancing look.")
         }
 
         /// A kept photo that turned out not to show the landmark: gone, with

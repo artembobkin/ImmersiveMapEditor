@@ -182,9 +182,9 @@ final class LandmarkAgent {
            b. find_street_photos (Mapillary, street level all around it): the candidates facade by facade (the sides of \
         the outline), the best look at each and a second from another track or angle, each with the landmark framed in \
         red by the camera's pose, the rest dimmed. Poses are sometimes wrong: judge from the pictures which frames really \
-        hold the landmark, keep those with save_street_photo: one for every facade the candidates offer before a second \
-        for any (every keep tells you which facades you have and which you lack), a dashcam's glancing look at a facade \
-        being worth more than a fourth view of the front; a kept photo comes back with everything outside the frame \
+        hold the landmark, keep those with save_street_photo: for every facade, the picks that together show it whole \
+        (every keep tells you how much of each facade the kept photos show and what is not seen yet), a dashcam's \
+        glancing look at a facade being worth more than a fourth view of the front; a kept photo comes back with everything outside the frame \
         painted black, so look at it and drop_reference any whose frame holds another building.
            c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
         and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
