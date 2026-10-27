@@ -6,11 +6,15 @@ import SwiftUI
 /// one) and its files, fetched, seeded and built. A file opens in its app.
 struct FilesSidebar: View {
     @Environment(Session.self) private var session
+    @Environment(\.scenePhase) private var phase
+    /// Bumped by Refresh and on coming back to the editor: the folder read
+    /// again, files deleted or added in the Finder shown as they are.
+    @State private var refreshed = 0
 
     var body: some View {
         let workspace = session.workspace
-        // Read again when the tiles' builds change or a build ends.
-        let _ = (workspace.tilesRevision, session.build.running)
+        // Read again when the tiles' builds change, a build ends, or asked.
+        let _ = (workspace.tilesRevision, session.build.running, refreshed)
         List {
             if let tile = session.shownTile {
                 let files = TileFiles(tile: tile, workspace: workspace)
@@ -22,6 +26,11 @@ struct FilesSidebar: View {
                     .disabled(!exists)
                     .help(exists ? files.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
                                  : "The tile has no folder yet: opening it fetches its OSM")
+                    Button { refreshed += 1 } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!exists)
+                    .help("Read the tile's folder again: files deleted or added in the Finder (a landmark's references) shown as they are")
                 } header: {
                     Text(verbatim: tile.name)
                 }
@@ -40,6 +49,7 @@ struct FilesSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .onChange(of: phase) { if phase == .active { refreshed += 1 } }
     }
 }
 

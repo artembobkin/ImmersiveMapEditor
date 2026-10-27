@@ -711,7 +711,7 @@ enum StreetPicks {
     /// A look worth a candidate.
     static let worthwhile = 0.05
     /// Looks at each station, each from another track.
-    static let perStation = 5
+    static let perStation = 7
 
     /// The candidates, a walk around the landmark: facade by facade, station
     /// by station along it (from beyond one end, its thirds, from beyond

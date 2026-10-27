@@ -139,10 +139,10 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track (five at most), each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. Every station's photos are kept into the references at once, each into the folder of its facade (north-facade/ and so on), framed in red, the rest painted black. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track (seven at most), each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. Every station's photos are kept into the references at once, each into the folder of its facade (north-facade/ and so on), framed in red, the rest painted black. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
-                "limit": ["type": "integer", "description": "How many at most, 100 by default: up to five stations a facade, five photos a station."]]]],
+                "limit": ["type": "integer", "description": "How many at most, 140 by default: up to five stations a facade, seven photos a station."]]]],
             ["name": "save_street_photo",
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
@@ -208,7 +208,10 @@ enum LandmarkMCP {
             case "save_commons_photo": return try saveCommonsPhoto(args)
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
-            case "list_references": return [text((String(data: (try? Data(contentsOf: credits)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]") + "\n" + coverage())]
+            case "list_references":
+                let list = credited()
+                let json = (try? JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
+                return [text((String(data: json, encoding: .utf8) ?? "[]") + "\n" + coverage())]
             case "show_user_picture":
                 let file = (args["file"] as? String ?? "") as NSString
                 let url = folder.appendingPathComponent("requests").appendingPathComponent(file.lastPathComponent)
@@ -285,6 +288,22 @@ enum LandmarkMCP {
 
         var recipeURL: URL { folder.appendingPathComponent("recipe.json") }
         var credits: URL { references.appendingPathComponent("credits.json") }
+
+        /// The credits of the photos still there: one the user deleted in the
+        /// Finder (or the editor) is gone from the credits too, so it counts
+        /// for nothing and its number is free again.
+        func credited() -> [[String: Any]] {
+            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            let kept = list.filter { e in
+                guard let file = e["file"] as? String else { return true }
+                return FileManager.default.fileExists(atPath: references.appendingPathComponent(file).path)
+            }
+            if kept.count != list.count,
+               let data = try? JSONSerialization.data(withJSONObject: kept, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) {
+                try? data.write(to: credits)
+            }
+            return kept
+        }
 
         func recipeText() throws -> String {
             // Compact, a mass a line, so a recipe of many parts fits.
@@ -415,7 +434,7 @@ enum LandmarkMCP {
         func streetPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
             let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
-            let limit = max(1, min(200, (args["limit"] as? NSNumber)?.intValue ?? 100))
+            let limit = max(1, min(300, (args["limit"] as? NSNumber)?.intValue ?? 140))
             // Every photo around, from Mapillary's coverage tiles (the Graph
             // API's box search answers with a different sample every time),
             // judged first by its raw pose, then the best few dozen asked for
@@ -472,7 +491,7 @@ enum LandmarkMCP {
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
             // Facade by facade, so a facade seen only in passing keeps its
             // candidates: the best thousand looks at each judged with
-            // what hides them, then the best twenty-five at every station of each
+            // what hides them, then the best forty at every station of each
             // asked for in full (camera, computed pose, quality), twenty ids
             // a call.
             func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
@@ -496,14 +515,14 @@ enum LandmarkMCP {
                 guard let view = StreetView(confirmed, in: scene) else { continue }
                 judged.append((view, e))
             }
-            // The best twenty-five at every station of every facade asked for in
+            // The best forty at every station of every facade asked for in
             // full, so each station keeps candidates from several tracks.
             var askedIds = Set<String>()
             var asked: [String] = []
             for f in scene.facades.indices {
                 for k in 0..<StreetScene.stations {
                     for (_, e) in judged.filter({ $0.0.seen[f] >= StreetView.enough && scene.station(f, of: $0.0.photo.at) == k })
-                        .sorted(by: { $0.0.looks[f] * $0.0.seen[f] > $1.0.looks[f] * $1.0.seen[f] }).prefix(25)
+                        .sorted(by: { $0.0.looks[f] * $0.0.seen[f] > $1.0.looks[f] * $1.0.seen[f] }).prefix(40)
                     where askedIds.insert(e["id"] as! String).inserted { asked.append(e["id"] as! String) }
                 }
             }
@@ -590,7 +609,7 @@ enum LandmarkMCP {
             var keptNow: [String: [[String: Any]]] = [:]
             var shown = Set<String>()
             var stationsSeen = Set<String>()
-            let already = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? [])
+            let already = (credited())
                 .compactMap { $0["page"] as? String }
             for (f, k, view) in stations where keptNow[view.photo.id] == nil && !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
                 if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos",
@@ -624,7 +643,7 @@ enum LandmarkMCP {
 
         /// The kept street photos as looks at the landmark, from their poses.
         func keptViews(_ scene: StreetScene) -> [(file: String, view: StreetView)] {
-            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            let list = credited()
             return list.compactMap { e in
                 guard let file = e["file"] as? String, let pose = e["pose"] as? [String: Any],
                       let x = pose["x"] as? Double, let y = pose["y"] as? Double,
@@ -686,7 +705,7 @@ enum LandmarkMCP {
         /// apart, and the facades with nothing yet. Told after every keep,
         /// so the agent sees the gaps.
         func coverage() -> String {
-            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            let list = credited()
             var street = 0, commons = 0, satellite = 0
             for e in list {
                 if e["pose"] != nil { street += 1 } else if e["file"] as? String == "satellite.jpg" { satellite += 1 } else { commons += 1 }
@@ -720,7 +739,7 @@ enum LandmarkMCP {
             if dir.standardizedFileURL != references.standardizedFileURL, (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true {
                 try? FileManager.default.removeItem(at: dir)
             }
-            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            var list = credited()
             list.removeAll { $0["file"] as? String == relative }
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
             return "Dropped \(relative)"
@@ -788,7 +807,7 @@ enum LandmarkMCP {
 
         /// Adds a field to a kept photo's credit.
         func credit(_ file: String, set key: String, to value: Any) throws {
-            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            var list = credited()
             guard let k = list.firstIndex(where: { $0["file"] as? String == file }) else { return }
             list[k][key] = value
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
@@ -805,7 +824,7 @@ enum LandmarkMCP {
             let (mpp, missing, roofs) = try SatelliteView.make(folder: folder, radius: radius, to: file,
                                                                cache: cacheFolder.appendingPathComponent("imagery"), run: Self.run)
             let taken = SatelliteView.capture(folder: folder, run: Self.run)
-            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            var list = credited()
             list.removeAll { $0["file"] as? String == "satellite.jpg" }
             list.append(["file": "satellite.jpg", "radius": radius, "url": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
                          "page": "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9",
@@ -837,7 +856,7 @@ enum LandmarkMCP {
         func compare(_ args: [String: Any]) throws -> [[String: Any]] {
             let given = args["file"] as? String ?? ""
             guard let (photo, name) = reference(given) else { throw Failure("no reference \(given)") }
-            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            let list = credited()
             guard let entry = list.first(where: { $0["file"] as? String == name }) else { throw Failure("no reference \(name)") }
             guard let pose = entry["pose"] as? [String: Any], let x = pose["x"] as? Double, let y = pose["y"] as? Double,
                   let heading = pose["heading"] as? Double, let hfov = pose["hfov"] as? Double else {
@@ -862,7 +881,7 @@ enum LandmarkMCP {
         /// imagery (and the OSM outlines drawn on it).
         func compareSatellite() throws -> [[String: Any]] {
             let photo = references.appendingPathComponent("satellite.jpg")
-            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            let list = credited()
             guard FileManager.default.fileExists(atPath: photo.path), let entry = list.first(where: { $0["file"] as? String == "satellite.jpg" }) else {
                 throw Failure("no satellite view kept yet: satellite_view first")
             }
@@ -900,7 +919,7 @@ enum LandmarkMCP {
                   into sub: String? = nil) throws -> [[String: Any]] {
             let dir = sub.map { references.appendingPathComponent($0) } ?? references
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            var list = credited()
             let raw = references.appendingPathComponent("download.tmp")
             let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"),
                                           ["-fsSL", "--http1.1", "--max-filesize", "30000000", "-A", CommonsPhotos.agent, "-o", raw.path, url])
@@ -936,7 +955,7 @@ enum LandmarkMCP {
             var path = name.hasPrefix("references/") ? String(name.dropFirst("references/".count)) : name
             guard !path.split(separator: "/").contains("..") else { return nil }
             if !FileManager.default.fileExists(atPath: references.appendingPathComponent(path).path) {
-                let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+                let list = credited()
                 guard let found = list.compactMap({ $0["file"] as? String }).first(where: { ($0 as NSString).lastPathComponent == (path as NSString).lastPathComponent }) else { return nil }
                 path = found
             }
