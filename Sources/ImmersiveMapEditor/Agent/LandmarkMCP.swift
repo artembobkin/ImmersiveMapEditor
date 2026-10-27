@@ -431,20 +431,43 @@ enum LandmarkMCP {
                 guard tiles.insert("\(t.x)/\(t.y)").inserted else { continue }
                 points += CoverageTile.points(try coverage(x: t.x, y: t.y), x: t.x, y: t.y)
             }
-            var rough: [(StreetView, [String: Any])] = []
+            // Each photo as the coverage tile describes it, and the tracks:
+            // every photo's frames in the order taken, a margin beyond the
+            // radius so a photo at its edge has its neighbours.
+            var entries: [[String: Any]] = []
+            var frames: [String: [StreetTrack.Frame]] = [:]
             for p in points {
                 let at = scene.metres(lon: p.lon, lat: p.lat)
-                guard simd_length(at) <= radius, let id = p.props["id"].map({ "\($0)" }), !id.isEmpty else { continue }
-                var e: [String: Any] = ["id": id, "computed_geometry": ["coordinates": [p.lon, p.lat]],
-                                        "is_pano": (p.props["is_pano"] as? Bool) ?? ((p.props["is_pano"] as? UInt64).map { $0 != 0 } ?? false),
-                                        "sequence": p.props["sequence_id"].map { "\($0)" } ?? id]
-                if let a = p.props["compass_angle"] as? Double { e["computed_compass_angle"] = a }
-                else if let a = p.props["compass_angle"] as? Int64 { e["computed_compass_angle"] = Double(a) }
-                else if let a = p.props["compass_angle"] as? UInt64 { e["computed_compass_angle"] = Double(a) }
-                if let t = p.props["captured_at"] as? Int64 { e["captured_at"] = Double(t) }
-                else if let t = p.props["captured_at"] as? UInt64 { e["captured_at"] = Double(t) }
-                else if let t = p.props["captured_at"] as? Double { e["captured_at"] = t }
-                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene, quick: true) else { continue }
+                guard simd_length(at) <= radius + 150, let id = p.props["id"].map({ "\($0)" }), !id.isEmpty else { continue }
+                var pano = false
+                if let b = p.props["is_pano"] as? Bool { pano = b } else if let n = p.props["is_pano"] as? UInt64 { pano = n != 0 }
+                let sequence = p.props["sequence_id"].map { "\($0)" } ?? id
+                var e: [String: Any] = ["id": id, "computed_geometry": ["coordinates": [p.lon, p.lat]], "is_pano": pano, "sequence": sequence]
+                var compass: Double?
+                if let a = p.props["compass_angle"] as? Double { compass = a }
+                else if let a = p.props["compass_angle"] as? Int64 { compass = Double(a) }
+                else if let a = p.props["compass_angle"] as? UInt64 { compass = Double(a) }
+                if let compass { e["computed_compass_angle"] = compass }
+                var time = 0.0
+                if let t = p.props["captured_at"] as? Int64 { time = Double(t) }
+                else if let t = p.props["captured_at"] as? UInt64 { time = Double(t) }
+                else if let t = p.props["captured_at"] as? Double { time = t }
+                e["captured_at"] = time
+                frames[sequence, default: []].append(StreetTrack.Frame(id: id, at: at, compass: compass, time: time, pano: pano))
+                if simd_length(at) <= radius { entries.append(e) }
+            }
+            let tracks = frames.mapValues { StreetTrack($0) }
+            func track(_ e: [String: Any]) -> StreetTrack? { tracks[(e["sequence"] as? String) ?? ((e["sequence"] as? [String: Any])?["id"] as? String) ?? ""] }
+            // Judged first by the tile's pose, its heading the track's when
+            // its compass is missing or strays.
+            var rough: [(StreetView, [String: Any])] = []
+            for e in entries {
+                guard var photo = StreetPhoto(e, scene) else { continue }
+                if !photo.pano, let t = track(e), let i = t.index[photo.id] {
+                    guard let h = t.heading(at: i, compass: photo.compass).heading else { continue }
+                    photo.compass = h
+                }
+                guard let view = StreetView(photo, in: scene, quick: true) else { continue }
                 rough.append((view, e))
             }
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
@@ -462,9 +485,16 @@ enum LandmarkMCP {
                 }
                 return out
             }
+            // Then judged with what hides them, and borne out by their tracks
+            // (the tile's pose for now): only those are asked for in full.
             var judged: [(StreetView, [String: Any])] = []
+            var refused: [String: Int] = [:]
             for e in bestOfEachFacade(rough, 500) {
-                guard let view = StreetView.best(e, in: scene) else { continue }
+                guard let photo = StreetPhoto(e, scene) else { continue }
+                guard let t = track(e) else { refused["no track", default: 0] += 1; continue }
+                let (confirmed, why) = t.confirm(photo, in: scene)
+                guard let confirmed else { refused[why.components(separatedBy: ":").first ?? why, default: 0] += 1; continue }
+                guard let view = StreetView(confirmed, in: scene) else { continue }
                 judged.append((view, e))
             }
             // The best few at every station of every facade asked for in
@@ -483,7 +513,10 @@ enum LandmarkMCP {
                     let glanced = rough.filter { $0.0.seen[f] >= StreetView.enough }.count
                     let clear = judged.filter { $0.0.seen[f] >= StreetView.enough && $0.0.looks[f] > 0 }.count
                     let worth = judged.filter { $0.0.looks[f] >= StreetPicks.worthwhile }.count
-                    FileHandle.standardError.write("\(facade.name) (\(Int(facade.length)) m): \(glanced) rough looks, \(clear) judged clear, \(worth) worthwhile\n".data(using: .utf8)!)
+                    FileHandle.standardError.write("\(facade.name) (\(Int(facade.length)) m): \(glanced) rough looks, \(clear) judged clear and borne out by their tracks, \(worth) worthwhile\n".data(using: .utf8)!)
+                }
+                for (why, n) in refused.sorted(by: { $0.value > $1.value }) {
+                    FileHandle.standardError.write("not borne out by its track: \(n) × \(why)\n".data(using: .utf8)!)
                 }
             }
             var photos: [String: [String: Any]] = [:]
@@ -502,7 +535,22 @@ enum LandmarkMCP {
             }
             func text(_ s: String) -> [String: Any] { self.text(s) }
             let photosCount = total
-            let views = photos.values.compactMap { StreetView.best($0, in: scene) }.filter { simd_length($0.photo.at) <= radius }
+            // Judged again by the full answer: the pose Mapillary computed
+            // (one whose device's pose disagrees is a mistake of one or the
+            // other), borne out by its track again.
+            var final: [String: String] = [:]   // why a photo asked for is not shown
+            var views: [StreetView] = []
+            for (id, e) in photos {
+                guard let photo = StreetPhoto(e, scene) else { final[id] = "no pose at all"; continue }
+                guard simd_length(photo.at) <= radius else { final[id] = "beyond the radius"; continue }
+                guard !photo.poseDoubt else { final[id] = "its computed pose and its device's disagree"; continue }
+                guard let t = tracks[photo.sequence] ?? tracks[(e["sequence"] as? String) ?? ""] else { final[id] = "no track"; continue }
+                let (confirmed, why) = t.confirm(photo, in: scene)
+                guard let confirmed else { final[id] = why; continue }
+                guard let view = StreetView(confirmed, in: scene) else { final[id] = StreetView.reason; continue }
+                views.append(view)
+            }
+            for v in views { confirmed[v.photo.id] = v }
             if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
                 for (f, facade) in scene.facades.enumerated() {
                     let top = views.filter { $0.seen[f] >= StreetView.enough }.sorted { $0.looks[f] > $1.looks[f] }.prefix(6)
@@ -512,14 +560,7 @@ enum LandmarkMCP {
                     }
                 }
                 for id in asked where !views.contains(where: { $0.photo.id == id }) {
-                    var why = "not returned by Mapillary"
-                    if let e = photos[id] {
-                        if let photo = StreetPhoto(e, scene) {
-                            why = simd_length(photo.at) > radius ? "beyond the radius" : StreetView.best(e, in: scene) == nil ? StreetView.reason : "?"
-                            why += " (\(photo.camera), focal \(photo.focal), compass \(photo.compass.map { Int($0) } ?? -1), at \(Int(photo.at.x)), \(Int(photo.at.y)))"
-                        } else { why = "no pose at all" }
-                    }
-                    FileHandle.standardError.write("\(id): no look: \(why)\n".data(using: .utf8)!)
+                    FileHandle.standardError.write("\(id): not shown: \(final[id] ?? "not returned by Mapillary")\n".data(using: .utf8)!)
                 }
             }
             guard !views.isEmpty else {
@@ -549,12 +590,12 @@ enum LandmarkMCP {
             let already = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? [])
                 .compactMap { $0["page"] as? String }
             for (f, k, view) in stations where keptNow[view.photo.id] == nil && !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
-                if let kept = try? keepStreet(view.photo.id, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos") {
+                if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos") {
                     keptNow[view.photo.id] = kept
                 }
             }
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best:\n"
+                "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count) are borne out again by Mapillary's computed pose. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best:\n"
                 + report
                 + "\nEvery station's photo is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
@@ -680,18 +721,25 @@ enum LandmarkMCP {
         func saveStreetPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
             guard let id = args["id"] as? String, !id.isEmpty, id.allSatisfy(\.isNumber) else { throw Failure("give the photo's id from find_street_photos") }
             guard let shows = args["shows"] as? String, !shows.isEmpty else { throw Failure("say what it shows") }
-            return try keepStreet(id, shows: shows)
+            guard let view = confirmed[id] else {
+                throw Failure("\(id) is not one find_street_photos bore out by its track in this session: only those are kept")
+            }
+            return try keepStreet(view, shows: shows)
         }
+
+        /// The street photos find_street_photos bore out by their tracks in
+        /// this session, by id, with the pose they were judged by.
+        var confirmed: [String: StreetView] = [:]
 
         /// A Mapillary photo kept by its id: downloaded, the landmark framed
         /// in red and the rest painted black, credited with its camera's
         /// pose; the text says what it shows and what the references cover.
-        func keepStreet(_ id: String, shows: String) throws -> [[String: Any]] {
+        func keepStreet(_ view: StreetView, shows: String) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
-            let json = try mapillary(id, ["fields": StreetPhoto.fields + ",thumb_2048_url,thumb_original_url"])
+            let id = view.photo.id
+            let json = try mapillary(id, ["fields": "id,thumb_2048_url,thumb_original_url"])
             if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }
-            guard let url = StreetPhoto(json, scene)?.thumb else { throw Failure("Mapillary has no picture for \(id)") }
-            guard let view = StreetView.best(json, in: scene) else { throw Failure("that photo does not show the landmark") }
+            guard let url = (json["thumb_original_url"] ?? json["thumb_2048_url"]) as? String else { throw Failure("Mapillary has no picture for \(id)") }
             let photo = view.photo
             // A panorama is kept whole until it is cut to the landmark.
             let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
