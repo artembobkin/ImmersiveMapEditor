@@ -225,6 +225,8 @@ public struct LandmarkRecipe: Codable {
     nearest its `at` (a point on or by that wall), deeper than a window, its leaf at the back and a portal standing proud \
     around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
+    Give every size as the building has it: the generator draws the map's caricature itself, every cornice, band, pilaster, \
+    portal, parapet and recess at least about half a metre to a metre, and windows a little larger, so a detail reads from afar. \
     A pitched roof has eaves 0.6 m beyond the walls with a fascia (`overhang` to change), a flat roof a `parapet` when \
     the photos show one. The roof's colour is what satellite_view reads off the imagery for that part (lm_stone grey \
     metal, lm_green or lm_dark_green green, lm_red red, lm_dark black), given for every mass: never a guess. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \

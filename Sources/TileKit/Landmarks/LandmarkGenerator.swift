@@ -37,7 +37,31 @@ public enum LandmarkGenerator {
     public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
     public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft"]
     /// How deep a window is cut into its wall.
-    static let windowDepth = 0.25
+    /// The caricature. The map is seen from afar, and a detail under a metre
+    /// is lost or turns to noise there, where a cartoon map (Zenly, Fenn)
+    /// draws every cornice, pilaster and recess a size up. So the recipe
+    /// gives the real sizes and the generator builds every detail at least
+    /// this big (the user, 2026-10-27), the same on every building:
+    /// - a plinth, band, pilaster or portal stands at least `proud` out;
+    /// - a cornice is at least `corniceDepth` out and `corniceHeight` tall,
+    ///   a plinth `plinthHeight`, a band `bandHeight`;
+    /// - a window is cut `windowDepth` in, and drawn `windowScale` wider
+    ///   and `windowRise` taller than given, within its bay and storey;
+    /// - a parapet is at least `parapet`, eaves reach `eaves` with a fascia
+    ///   `fascia` deep, a door is cut `doorDepth` in.
+    enum Caricature {
+        static let proud = 0.45
+        static let corniceDepth = 0.8, corniceHeight = 0.9
+        static let plinthHeight = 0.9
+        static let bandHeight = 0.4
+        static let pilasterWidth = 0.8
+        static let portalWidth = 0.6
+        static let windowScale = 1.3, windowRise = 1.15
+        static let parapet = 0.7
+        static let eaves = 0.9, fascia = 0.6
+        static let doorDepth = 0.8
+    }
+    static let windowDepth = 0.45
     /// From this area a glazed opening is a shop front or a glazed arch,
     /// not a window, and shows the map's glass (`lm_glass`) at its back.
     static let glazedArea = 10.0
@@ -641,7 +665,7 @@ public enum LandmarkGenerator {
                     // a glazed arch) shows the map's glass itself.
                     let glazed = w * h >= LandmarkGenerator.glazedArea
                     openings.append(Opening(ring: opening(t, z0 + sill, w, h, arched: at.door.arched == true),
-                                            depth: window ? LandmarkGenerator.windowDepth : (at.door.depth ?? 0.6),
+                                            depth: window ? LandmarkGenerator.windowDepth : max(at.door.depth ?? 0.6, Caricature.doorDepth),
                                             back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : "lm_dark")))
                     spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
@@ -679,13 +703,13 @@ public enum LandmarkGenerator {
                 defer { solid = wallSolid }
                 for at in doors where at.edge == i && at.door.glass != true && (at.door.sill ?? 0) <= 0.01 {
                     let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
-                    let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = at.door.portal ?? 0.35
+                    let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = max(at.door.portal ?? 0.35, Caricature.portalWidth)
                     guard pw > 0.01, t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
                     let top = min(z0 + h + pw, z1)
                     let portal = at.door.colour.map { _ in "\(colour)" } ?? colour
-                    proud(a, d, o2, t - w / 2 - pw, t - w / 2, z0, top, 0.25, portal)
-                    proud(a, d, o2, t + w / 2, t + w / 2 + pw, z0, top, 0.25, portal)
-                    proud(a, d, o2, t - w / 2, t + w / 2, z0 + h, top, 0.25, portal)
+                    proud(a, d, o2, t - w / 2 - pw, t - w / 2, z0, top, Caricature.proud, portal)
+                    proud(a, d, o2, t + w / 2, t + w / 2 + pw, z0, top, Caricature.proud, portal)
+                    proud(a, d, o2, t - w / 2, t + w / 2, z0 + h, top, Caricature.proud, portal)
                 }
             }
         }
@@ -728,7 +752,7 @@ public enum LandmarkGenerator {
         func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
             guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
             let storey = (hi - lo) / Double(w.storeys)
-            let height = min(w.height, storey * 0.65), width = min(w.width, w.spacing * 0.7)
+            let height = min(w.height * Caricature.windowRise, storey * 0.7), width = min(w.width * Caricature.windowScale, w.spacing * 0.72)
             let n = Int((len - 1) / w.spacing)
             guard n >= 1, height > 0.3 else { return [] }
             var out: [[P2]] = []
@@ -746,7 +770,7 @@ public enum LandmarkGenerator {
         /// they share the spacing, else spaced from the middle.
         func pilasters(_ ring: [P2], _ lo: Double, _ hi: Double, _ p: LandmarkRecipe.Pilasters, windows: LandmarkRecipe.Windows?, wall: String) {
             guard p.spacing > 0.5 else { return }
-            let width = p.width ?? 1.0, depth = p.depth ?? 0.3, colour = p.colour ?? wall
+            let width = max(p.width ?? 1.0, Caricature.pilasterWidth), depth = max(p.depth ?? 0.3, Caricature.proud), colour = p.colour ?? wall
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
                 guard len > p.spacing + width else { continue }
@@ -773,8 +797,8 @@ public enum LandmarkGenerator {
         /// a floor and a ceiling), then the bands, pilasters and roof as
         /// closed solids of their own, for the union to join.
         func mass(_ ring: [P2], _ m: LandmarkRecipe.Mass) {
-            let plinth = m.plinth.map { min($0.height, (m.top - m.base) * 0.4) } ?? 0
-            let cornice = m.cornice.map { min($0.height, (m.top - m.base) * 0.3) } ?? 0
+            let plinth = m.plinth.map { min(max($0.height, Caricature.plinthHeight), (m.top - m.base) * 0.4) } ?? 0
+            let cornice = m.cornice.map { min(max($0.height, Caricature.corniceHeight), (m.top - m.base) * 0.3) } ?? 0
             let lo = m.base + plinth, hi = m.top - cornice
             let doors = place(m.doors ?? [], on: ring)
             begin()
@@ -783,14 +807,15 @@ public enum LandmarkGenerator {
             if cornice > 0 { walls(ring, hi, m.top, m.colour) }
             cap(ring, m.base, up: false, m.colour)
             cap(ring, m.top, up: true, m.roof == nil || m.roof?.shape == "flat" ? "lm_stone" : m.colour)
-            if let p = m.plinth, plinth > 0 { band(ring, grown(ring, p.depth ?? 0.15), m.base, lo, p.colour ?? "lm_stone") }
-            if let c = m.cornice, cornice > 0 { band(ring, grown(ring, c.depth ?? 0.4), hi, m.top, c.colour ?? "lm_white") }
+            if let p = m.plinth, plinth > 0 { band(ring, grown(ring, max(p.depth ?? 0.15, Caricature.proud)), m.base, lo, p.colour ?? "lm_stone") }
+            if let c = m.cornice, cornice > 0 { band(ring, grown(ring, max(c.depth ?? 0.4, Caricature.corniceDepth)), hi, m.top, c.colour ?? "lm_white") }
             if let p = m.pilasters { pilasters(ring, lo, hi, p, windows: m.windows, wall: m.colour) }
             if let b = m.bands, let w = m.windows, w.storeys >= 2 {
-                let storey = (hi - lo) / Double(w.storeys), out = grown(ring, b.depth ?? 0.15)
+                let storey = (hi - lo) / Double(w.storeys), out = grown(ring, max(b.depth ?? 0.15, Caricature.proud))
+                let height = max(b.height, Caricature.bandHeight)
                 for k in 1..<w.storeys {
-                    let z = lo + storey * Double(k) - b.height / 2
-                    band(ring, out, z, z + b.height, b.colour ?? "lm_white")
+                    let z = lo + storey * Double(k) - height / 2
+                    band(ring, out, z, z + height, b.colour ?? "lm_white")
                 }
             }
             roof(ring, m.top, m.roof, wall: m.colour)
@@ -815,9 +840,10 @@ public enum LandmarkGenerator {
         func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?, wall: String) {
             guard let roof, roof.shape != "flat" else {
                 // The body's own ceiling is the flat roof; a parapet is a band on it.
-                if let p = roof?.parapet, p > 0.05 {
+                if let given = roof?.parapet, given > 0.05 {
+                    let p = max(given, Caricature.parapet)
                     let colour = roof?.colour ?? wall
-                    let inner = grown(ring, -0.3)
+                    let inner = grown(ring, -0.45)
                     if inner.count >= 3, inner != ring {
                         band(inner, ring, top, top + p, colour)
                     } else {
@@ -844,9 +870,9 @@ public enum LandmarkGenerator {
                 // The roof a closed solid: its slopes and gables over a flat
                 // underside, with a fascia around the eaves when they overhang.
                 begin()
-                let over = roof.overhang ?? 0.6
+                let over = (roof.overhang ?? 0.6) > 0.05 ? max(roof.overhang ?? 0.6, Caricature.eaves) : 0
                 guard over > 0.05 else { return planes(ring, top, roof.shape, roof.height, colour, wall: wall, bottom: top) }
-                let eave = grown(ring, over), fascia = 0.35
+                let eave = grown(ring, over), fascia = Caricature.fascia
                 planes(eave, top + fascia, roof.shape, roof.height, colour, wall: wall, bottom: top)
             }
         }
