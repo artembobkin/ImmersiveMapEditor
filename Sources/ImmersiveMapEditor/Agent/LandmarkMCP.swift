@@ -542,13 +542,13 @@ enum LandmarkMCP {
                 for (_, e) in judged where asked.contains(e["id"] as! String) { photos[e["id"] as! String] = e }
             } else {
                 for chunk in stride(from: 0, to: asked.count, by: 20).map({ Array(asked[$0..<min($0 + 20, asked.count)]) }) {
-                    let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields])
+                    let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields + ",thumb_1024_url,thumb_2048_url"])
                     if let error = json["error"] as? [String: Any] { throw Failure("Mapillary refused the photos' details: \(error["message"] ?? error)") }
                     for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
                 }
                 // A photo a chunk's answer leaves out is asked for alone.
                 for id in asked where photos[id] == nil {
-                    if let e = try? mapillary(id, ["fields": StreetPhoto.fields]), e["error"] == nil, e["id"] != nil { photos[id] = e }
+                    if let e = try? mapillary(id, ["fields": StreetPhoto.fields + ",thumb_1024_url,thumb_2048_url"]), e["error"] == nil, e["id"] != nil { photos[id] = e }
                 }
             }
             func text(_ s: String) -> [String: Any] { self.text(s) }
@@ -567,6 +567,44 @@ enum LandmarkMCP {
                 guard let confirmed else { final[id] = why; continue }
                 guard let view = StreetView(confirmed, in: scene) else { final[id] = StreetView.reason; continue }
                 views.append(view)
+            }
+            // Then by their pictures: each one's thumbnail, the inside of its
+            // red frame read for a building and set beside its facade's
+            // others (FrameCheck). The dropped never reach the walk.
+            let dir = searchFolder.appendingPathComponent("street")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let thumbFiles: [URL?] = {
+                var out = [URL?](repeating: nil, count: views.count)
+                let lock = NSLock()
+                DispatchQueue.concurrentPerform(iterations: views.count) { k in
+                    let v = views[k]
+                    let file = dir.appendingPathComponent("\(v.photo.id).jpg")
+                    var got: URL? = FileManager.default.fileExists(atPath: file.path) ? file : nil
+                    if got == nil, !offline, let e = photos[v.photo.id],
+                       let url = (v.photo.pano ? e["thumb_2048_url"] : e["thumb_1024_url"] ?? e["thumb_2048_url"]) as? String {
+                        let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "30", "-o", file.path, url])
+                        if status == 0 { got = file }
+                    }
+                    lock.lock(); out[k] = got; lock.unlock()
+                }
+                return out
+            }()
+            let pictures: [CGImage?] = zip(views, thumbFiles).map { v, file in
+                guard let file, let src = CGImageSourceCreateWithURL(file as CFURL, nil),
+                      let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+                return FrameCheck.crop(image, box: v.box)
+            }
+            let verdicts = FrameCheck.judge(pictures, groups: views.map(\.best))
+            var droppedByPicture: [(StreetView, String)] = []
+            views = zip(views, verdicts).compactMap { v, verdict in
+                if verdict.keep { return v }
+                droppedByPicture.append((v, verdict.note))
+                return nil
+            }
+            if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
+                for (v, why) in droppedByPicture {
+                    FileHandle.standardError.write("\(v.photo.id): dropped by its picture: \(why)\n".data(using: .utf8)!)
+                }
             }
             for v in views { confirmed[v.photo.id] = v }
             if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
@@ -587,8 +625,6 @@ enum LandmarkMCP {
             let (report, picks, stations) = StreetPicks.report(views, in: scene, limit: limit)
             guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
             // The contact sheet: a small thumbnail of each pick, framed.
-            let dir = searchFolder.appendingPathComponent("street")
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             // Each pick at a size its eyes can read, framed; the sheet of them
             // all for the user's panel.
             let thumbs: [URL?] = picks.map { pick in
@@ -619,7 +655,7 @@ enum LandmarkMCP {
                 }
             }
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count) are borne out again by Mapillary's computed pose. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track:\n"
+                "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count + droppedByPicture.count) are borne out again by Mapillary's computed pose; of those, \(droppedByPicture.count) dropped by their pictures (no building in the red frame, or a blank: the Mac's scene classifier and the facade's other photos). A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track:\n"
                 + report
                 + "\nEvery station's photos are kept already, each in the folder of its facade (north-facade/, ...), framed in red, the rest painted black. The first of each station follows as a picture, the others by name: show_reference(name) to look at one. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
