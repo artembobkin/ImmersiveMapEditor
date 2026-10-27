@@ -113,8 +113,16 @@ struct ContentView: View {
             // baked here with the same settings and the engine's sun.
             let workspace = session.workspace
             if workspace.previewSubject != "tile" {
-                Group {
-                    if let view = session.previewView { MetalHost(view: view) }
+                // Something fills the region before the view exists: on an
+                // empty view the task never runs, and the console takes the
+                // place of the region.
+                ZStack {
+                    if let view = session.previewView {
+                        MetalHost(view: view)
+                    } else {
+                        ContentUnavailableView("Baking the light", systemImage: "sun.max",
+                                               description: Text("The landmark alone, lit as the engine will light it, comes in a moment."))
+                    }
                 }
                 .task(id: "\(workspace.previewSubject) \(session.lightSettings.arguments) \(workspace.tilesRevision) \(session.candidates.map { $0.model?.path ?? "" })") {
                     // A moment after the last change, so a slider's drag bakes once.
