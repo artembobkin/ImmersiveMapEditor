@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import SwiftUI
+import TileKit
 
 /// What the editor does without a window, for checks from the command line:
 /// a road document read and written again, the tiles in 3D or the map
@@ -64,7 +65,8 @@ enum Headless {
                 source = .boxes(id: landmark.id, landmark.boxes)
             } else {
                 guard let model = landmark.model else { return fail("no model in \(folder.path)") }
-                source = .model(model)
+                // --lit: as the engine will show it, its light baked here.
+                source = arguments.contains("--lit") ? .lit(model, Lighting.Settings()) : .model(model)
             }
             do {
                 for url in try view.views(source, to: URL(fileURLWithPath: arguments[i + 2])) { print(url.path) }
@@ -84,7 +86,7 @@ enum Headless {
             if arguments.contains("--boxes") || landmark.model == nil {
                 source = .boxes(id: landmark.id, landmark.boxes)
             } else {
-                source = .model(landmark.model!)
+                source = arguments.contains("--lit") ? .lit(landmark.model!, Lighting.Settings()) : .model(landmark.model!)
             }
             do {
                 try view.look(source, to: URL(fileURLWithPath: arguments[i + 2]), eye: SIMD3(n[0], n[1], n[2]), heading: n[3], pitch: n[4],

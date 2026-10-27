@@ -46,7 +46,7 @@ extension ViewMode {
         switch self {
         case .roads: .roads
         case .tiles: .tile
-        case .light: .light
+        case .preview: .light
         case .landmarks, .buildings, .style: nil
         }
     }

@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// The Light view's sections: how the tile is shown, what light is baked
-/// (the sky with its bounces or ambient occlusion, a sun or none), the
-/// light map's density, and the tile's light map as it is. Bake the Light,
-/// at the top of the panel, bakes it with these, the geometry as built
-/// (`pipeline bake`).
+/// The Preview's sections: what is shown lit (the tile, or one of its
+/// landmarks alone), how, what light is baked (the sky with its bounces or
+/// ambient occlusion, a sun or none), the light map's density, and the
+/// tile's light map as it is. Bake the Light, at the top of the panel,
+/// bakes the tile's with these, the geometry as built (`pipeline bake`); a
+/// landmark's is baked here as soon as a setting changes.
 struct LightSections: View {
     @Environment(Session.self) private var session
 
@@ -12,10 +13,19 @@ struct LightSections: View {
         @Bindable var light = session.lightSettings
         @Bindable var workspace = session.workspace
         Section("Show") {
-            Picker("Shading", selection: $workspace.lightShading) {
-                ForEach([TileShading.lit, .light]) { Text($0.rawValue).tag($0) }
+            Picker("Subject", selection: $workspace.previewSubject) {
+                Text("The tile").tag("tile")
+                ForEach(session.candidates.filter { $0.model != nil }) { Text($0.name).tag($0.id) }
             }
-            .pickerStyle(.segmented)
+            if workspace.previewSubject == "tile" {
+                Picker("Shading", selection: $workspace.lightShading) {
+                    ForEach([TileShading.lit, .light]) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            } else {
+                Text("The landmark alone as the engine will show it: its palette tones times its light, baked here with the settings below over a white ground, and the engine's sun casting its shadows.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
         }
         Section("Light") {
             Picker("Gathered", selection: $light.mode) {
@@ -43,6 +53,11 @@ struct LightSections: View {
             Text(light.sun ? "Its shadows are baked: they stay put whatever the engine's sun does."
                            : "No sun baked: the engine casts the sun's shadows itself, from where its sun is.")
                 .font(.callout).foregroundStyle(.secondary)
+            if !light.sun, workspace.previewSubject != "tile" {
+                slider("Shadow", $light.shadow, 0...1, "%.2f")
+                Text("The engine's shadow on the landmark, from the sun above: how dark where a surface is fully in it, with the engine's cool tint.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
         }
         Section("Quality") {
             Picker("Light map", selection: $light.size) {

@@ -57,10 +57,15 @@ struct StatusLine: View {
                 .lineLimit(1)
             Spacer()
             Text(session.landmarkStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-        case .light:
-            Text("The tile lit by its light map. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames.")
+        case .preview:
+            Text(session.workspace.previewSubject == "tile"
+                 ? "The tile lit by its light map, as the engine shows it. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames."
+                 : "The landmark alone, its light baked here and the engine's sun on it. Drag to move, right-drag to turn and tilt, scroll to zoom. F frames.")
                 .lineLimit(1)
             Spacer()
+            if session.workspace.previewSubject != "tile" {
+                Text(session.previewStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+            }
         case .style:
             Text("The palette every build paints with. Pick a colour or type its hex; a change is saved at once and shows when the tile is built again.")
                 .lineLimit(1)

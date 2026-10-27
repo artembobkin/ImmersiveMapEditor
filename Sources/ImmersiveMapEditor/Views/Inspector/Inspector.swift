@@ -38,7 +38,7 @@ struct Inspector: View {
                         Section { Text("No road document holds the tile.").foregroundStyle(.secondary) }
                     }
                 case .tiles: TilesSections()
-                case .light: LightSections()
+                case .preview: LightSections()
                 case .landmarks: LandmarksSections()
                 case .buildings: BuildingsSections()
                 case .style: StyleSections()
@@ -113,7 +113,7 @@ extension ViewMode {
         switch self {
         case .roads: "road.lanes"
         case .tiles: "cube"
-        case .light: "sun.max"
+        case .preview: "sun.max"
         case .landmarks: "building.columns"
         case .buildings: "building.2"
         case .style: "paintpalette"

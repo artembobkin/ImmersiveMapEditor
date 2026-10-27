@@ -107,11 +107,25 @@ struct ContentView: View {
             BuildingsView()
         case .style:
             StyleView()
-        case .light:
-            // The same 3D tile, lit: its light map on the palette, or alone.
-            if session.workspace.shown.isEmpty {
+        case .preview:
+            // What the engine will show: the tile built and lit by its light
+            // map (or the light alone), or one landmark alone, its light
+            // baked here with the same settings and the engine's sun.
+            let workspace = session.workspace
+            if workspace.previewSubject != "tile" {
+                Group {
+                    if let view = session.previewView { MetalHost(view: view) }
+                }
+                .task(id: "\(workspace.previewSubject) \(session.lightSettings.arguments) \(workspace.tilesRevision) \(session.candidates.map { $0.model?.path ?? "" })") {
+                    // A moment after the last change, so a slider's drag bakes once.
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    session.showPreview()
+                }
+                .onChange(of: session.lightSettings.shadow, initial: true) { session.previewView?.shadowStrength = session.lightSettings.shadow }
+            } else if workspace.shown.isEmpty {
                 ContentUnavailableView("The tile is not built", systemImage: "sun.max",
-                                       description: Text("Build the tile in Tiles 3D, then bake its light here."))
+                                       description: Text("Build the tile in Tiles 3D, then bake its light here. A landmark alone needs no build: pick it on the right."))
             } else if let tiles = session.tiles {
                 MetalHost(view: tiles)
             }

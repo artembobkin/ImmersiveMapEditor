@@ -3,6 +3,7 @@ import Geometry
 import GLTF
 import MetalKit
 import simd
+import TileKit
 
 /// One landmark model in 3D, as Modeling made it: its own materials and
 /// atlas, a soft light from the sun's side so its form reads, over a plain
@@ -18,11 +19,15 @@ final class LandmarkView: MTKView {
     enum Source: Equatable {
         case model(URL)
         case boxes(id: String, [TileLandmark.Box])
+        /// A model lit as the engine lights it: its light baked with these
+        /// settings (the Preview view).
+        case lit(URL, Lighting.Settings)
 
         static func == (a: Source, b: Source) -> Bool {
             switch (a, b) {
             case let (.model(x), .model(y)): x == y
             case let (.boxes(x, _), .boxes(y, _)): x == y
+            case let (.lit(x, s), .lit(y, t)): x == y && s == t
             default: false
             }
         }
@@ -31,6 +36,10 @@ final class LandmarkView: MTKView {
     /// What is shown, and what is on its way.
     private(set) var source: Source?
     private var mesh: LandmarkRenderer.Model?
+    /// The model lit, when the source is `lit`.
+    private var lit: LandmarkRenderer.LitModel?
+    /// The engine's shadow of the sun on the lit model: how dark, 0 for none.
+    var shadowStrength = 0.45 { didSet { renderer.shadowStrength = Float(shadowStrength) } }
     /// The wireframe over the shading, and back faces culled (a model's,
     /// not the OSM boxes': their winding is not kept).
     var wireframe = false
@@ -65,22 +74,30 @@ final class LandmarkView: MTKView {
     /// agent): the camera stays where the user put it.
     func show(_ next: Source?, again: Bool = false) {
         guard again || next != source else { return }
-        let keepCamera = again && next == source && mesh != nil
+        let keepCamera = (again && next == source && mesh != nil) || sameModel(next)
         source = next
-        mesh = nil
-        guard let next else { return }
+        guard let next else {
+            mesh = nil
+            lit = nil
+            return
+        }
         let device = renderer.device
         let name: String
         switch next {
-        case .model(let url): name = url.lastPathComponent
+        case .model(let url), .lit(let url, _): name = url.lastPathComponent
         case .boxes: name = "OSM boxes"
         }
-        status("Reading \(name)…")
+        if case .lit = next { status("Baking the light of \(name)…") } else { status("Reading \(name)…") }
         Task.detached {
-            let result = Result {
+            let result = Result { () throws -> LandmarkRenderer.Model in
                 switch next {
-                case .model(let url): try LandmarkRenderer.Model.load(url, device: device)
-                case .boxes(_, let boxes): try LandmarkRenderer.Model.extruded(boxes, device: device)
+                case .model(let url): return try LandmarkRenderer.Model.load(url, device: device)
+                case .boxes(_, let boxes): return try LandmarkRenderer.Model.extruded(boxes, device: device)
+                case .lit(let url, let settings):
+                    let started = Date()
+                    let baked = try LandmarkLight.bake(url, settings: settings)
+                    let model = try LandmarkRenderer.LitModel.make(baked, device: device)
+                    return model.plain(String(format: ", light %d px in %.1f s", baked.size, Date().timeIntervalSince(started)))
                 }
             }
             await MainActor.run {
@@ -88,14 +105,25 @@ final class LandmarkView: MTKView {
                 switch result {
                 case .success(let model):
                     self.mesh = model
+                    self.lit = model.lit
                     if !keepCamera { self.frameModel() }
                     let s = model.size
-                    self.status(String(format: "%@: %dk triangles, %.0f × %.0f m, %.0f m high",
-                                       name, model.triangles / 1000, s.x, s.z, s.y))
+                    self.status(String(format: "%@: %dk triangles, %.0f × %.0f m, %.0f m high%@",
+                                       name, model.triangles / 1000, s.x, s.z, s.y, model.note))
                 case .failure(let error):
                     self.status("Cannot read \(name): \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    /// Whether `next` shows the same model as now, lit or not (the light
+    /// baked again): the camera stays.
+    private func sameModel(_ next: Source?) -> Bool {
+        guard mesh != nil, let next, let source else { return false }
+        switch (source, next) {
+        case let (.lit(a, _), .lit(b, _)), let (.model(a), .lit(b, _)), let (.lit(a, _), .model(b)): return a == b
+        default: return false
         }
     }
 
@@ -116,10 +144,8 @@ final class LandmarkView: MTKView {
     /// Returns the files, named by where they look from.
     func views(_ next: Source, to dir: URL, width: Int = 1024, height: Int = 768) throws -> [URL] {
         source = next
-        switch next {
-        case .model(let url): mesh = try LandmarkRenderer.Model.load(url, device: renderer.device)
-        case .boxes(_, let boxes): mesh = try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
-        }
+        mesh = try loadPlain(next)
+        lit = try loadLit(next)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var out: [URL] = []
         // From the south, east, north, west, at eye level and a slant, and
@@ -136,7 +162,7 @@ final class LandmarkView: MTKView {
             let vp = controller.camera.viewProjection(aspect: Double(width) / Double(height))
             let url = dir.appendingPathComponent("\(name).png")
             try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: url, width: width, height: height) { enc in
-                renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
+                encodeStill(enc, vp)
             }
             out.append(url)
         }
@@ -150,10 +176,8 @@ final class LandmarkView: MTKView {
     func look(_ next: Source, to out: URL, eye: SIMD3<Double>, heading: Double, pitch: Double, hfov: Double,
               width: Int, height: Int) throws {
         source = next
-        switch next {
-        case .model(let url): mesh = try LandmarkRenderer.Model.load(url, device: renderer.device)
-        case .boxes(_, let boxes): mesh = try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
-        }
+        mesh = try loadPlain(next)
+        lit = try loadLit(next)
         let aspect = Double(width) / Double(height)
         controller.camera.yaw = heading
         controller.camera.pitch = pitch
@@ -164,9 +188,33 @@ final class LandmarkView: MTKView {
         let vp = controller.camera.viewProjection(aspect: aspect)
         try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
         try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: out, width: width, height: height) { enc in
-            renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
+            encodeStill(enc, vp)
         }
         controller.camera.fovDegrees = 50
+    }
+
+    /// A source read as a plain model (a lit one unlit), for the renders
+    /// without a window.
+    private func loadPlain(_ next: Source) throws -> LandmarkRenderer.Model {
+        switch next {
+        case .model(let url), .lit(let url, _): try LandmarkRenderer.Model.load(url, device: renderer.device)
+        case .boxes(_, let boxes): try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
+        }
+    }
+
+    /// A lit source baked and read, nil for any other.
+    private func loadLit(_ next: Source) throws -> LandmarkRenderer.LitModel? {
+        guard case let .lit(url, settings) = next else { return nil }
+        return try LandmarkRenderer.LitModel.make(try LandmarkLight.bake(url, settings: settings), device: renderer.device)
+    }
+
+    /// One frame without a window, lit when the source is.
+    private func encodeStill(_ enc: MTLRenderCommandEncoder, _ vp: simd_float4x4) {
+        if let lit {
+            renderer.encodeLit(enc, model: lit, viewProjection: vp, wireframe: wireframe)
+        } else {
+            renderer.encode(enc, model: mesh, viewProjection: vp, cull: cull)
+        }
     }
 
     func frameModel() {
@@ -233,7 +281,11 @@ extension LandmarkView: MTKViewDelegate {
               let buffer = renderer.queue.makeCommandBuffer(),
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
-        renderer.encode(enc, model: mesh, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe, cull: cull)
+        if let lit {
+            renderer.encodeLit(enc, model: lit, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe)
+        } else {
+            renderer.encode(enc, model: mesh, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe, cull: cull)
+        }
         enc.endEncoding()
         buffer.present(drawable)
         buffer.commit()
@@ -246,9 +298,18 @@ final class LandmarkRenderer {
     let device: MTLDevice
     let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
+    private let litPipeline: MTLRenderPipelineState
+    private let shadowPipeline: MTLRenderPipelineState
     private let depth: MTLDepthStencilState
     private let sampler: MTLSamplerState
+    private let shadowSampler: MTLSamplerState
     private let white: MTLTexture
+    private let shadowMap: MTLTexture
+    static let shadowSize = 4096
+    /// The engine's shadow of the sun: how dark it is where a surface is
+    /// fully in shadow, with the engine's cool tint.
+    var shadowStrength: Float = ProcessInfo.processInfo.environment["LANDMARK_SHADOW"].flatMap(Float.init) ?? 0.45
+    static let shadowTint = SIMD3<Float>(0.88, 0.92, 1.0)
 
     private static let source = """
     #include <metal_stdlib>
@@ -269,12 +330,128 @@ final class LandmarkRenderer {
         float light = 0.62 + 0.38 * max(dot(n, u.sun.xyz), 0.0) + 0.08 * n.y;
         return float4(t.sample(s, i.uv).rgb * u.colour.rgb * light, 1);
     }
+
+    // The model lit as the engine lights it: its palette tone times its
+    // light map, times the sun's shadow (a shadow map from the sun, with
+    // the engine's cool tint), no lighting of its own.
+    // Packed throughout: 11 floats a vertex, as the buffer is laid.
+    struct LV { packed_float3 position; packed_float3 normal; packed_float3 colour; packed_float2 uv; };
+    struct LU { float4x4 viewProjection; float4x4 sun; float4 sunDirection; float4 shadow; float4 colour; };
+    struct LOut { float4 position [[position]]; float3 normal; float3 colour; float2 uv; float4 inSun; };
+    vertex LOut lvs(uint vid [[vertex_id]], const device LV* v [[buffer(0)]], constant LU& u [[buffer(1)]]) {
+        LOut o;
+        float4 p = float4(float3(v[vid].position), 1);
+        o.position = u.viewProjection * p;
+        o.normal = float3(v[vid].normal);
+        o.colour = float3(v[vid].colour);
+        o.uv = float2(v[vid].uv);
+        // Pulled along the normal a little, against acne on the faces facing the sun.
+        o.inSun = u.sun * float4(p.xyz + o.normal * 0.08, 1);
+        return o;
+    }
+    vertex float4 svs(uint vid [[vertex_id]], const device LV* v [[buffer(0)]], constant LU& u [[buffer(1)]]) {
+        return u.sun * float4(float3(v[vid].position), 1);
+    }
+    fragment float4 lfs(LOut i [[stage_in]], texture2d<float> light [[texture(0)]], depth2d<float> shadow [[texture(1)]],
+                        sampler s [[sampler(0)]], sampler sc [[sampler(1)]], constant LU& u [[buffer(1)]]) {
+        float3 n = normalize(i.normal);
+        float3 c = i.colour * (u.colour.a > 0.5 ? light.sample(s, i.uv).rgb : u.colour.rgb);
+        // Where the sun's shadow falls: a surface turned from the sun is in it whole.
+        float facing = dot(n, u.sunDirection.xyz);
+        float2 st = i.inSun.xy * float2(0.5, -0.5) + 0.5;
+        float z = i.inSun.z - 0.0004;
+        float lit = 0;
+        for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++)
+            lit += shadow.sample_compare(sc, st + float2(dx, dy) * u.shadow.y, z);
+        lit /= 9;
+        if (facing <= 0.02) lit = 0;
+        if (st.x < 0 || st.x > 1 || st.y < 0 || st.y > 1) lit = 1;
+        if (u.shadow.w > 0.5) return float4(u.colour.rgb, 1);   // the wireframe's lines
+        float3 shaded = u.shadow.x > 0 ? mix(float3(1), float3(0.88, 0.92, 1.0) * (1 - u.shadow.x), 1 - lit) : float3(1);
+        return float4(c * shaded, 1);
+    }
     """
 
     private struct Uniforms {
         var viewProjection: simd_float4x4
         var colour: SIMD4<Float>
         var sun: SIMD4<Float>
+    }
+
+    private struct LitUniforms {
+        var viewProjection: simd_float4x4
+        var sun: simd_float4x4
+        var sunDirection: SIMD4<Float>
+        /// Strength, a texel of the shadow map, 0, and 1 for the wireframe's lines.
+        var shadow: SIMD4<Float>
+        /// The ground's colour, alpha 0; alpha 1 takes the light map.
+        var colour: SIMD4<Float>
+    }
+
+    /// A model lit: every triangle with its palette tone and its place in
+    /// the light map, one buffer, and the light map as a texture.
+    struct LitModel {
+        let vertices: MTLBuffer
+        let count: Int
+        let light: MTLTexture
+        let ground: MTLBuffer
+        let centre: SIMD3<Double>
+        let size: SIMD3<Double>
+        let triangles: Int
+        /// Toward the sun, when the light baked has none: the engine's sun
+        /// casts the shadows. Nil when the sun is baked in.
+        let sun: SIMD3<Float>?
+
+        static func make(_ r: LandmarkLight.Result, device: MTLDevice) throws -> LitModel {
+            var v: [Float] = []
+            v.reserveCapacity(r.triangles * 33)
+            var lo = SIMD3<Double>(repeating: .infinity), hi = -lo
+            for t in 0..<r.triangles {
+                // The build's east, north, up to the view's east, up, south.
+                let p = (0..<3).map { SIMD3(r.positions[t * 9 + $0 * 3], r.positions[t * 9 + $0 * 3 + 2], -r.positions[t * 9 + $0 * 3 + 1]) }
+                let n = simd_normalize(simd_cross(p[1] - p[0], p[2] - p[0]))
+                let c = (0..<3).map { Float(r.colours[t * 3 + $0]) / 255 }
+                for k in 0..<3 {
+                    lo = simd_min(lo, p[k])
+                    hi = simd_max(hi, p[k])
+                    // The map's row 0 is the north: V turned.
+                    v += [Float(p[k].x), Float(p[k].y), Float(p[k].z), Float(n.x), Float(n.y), Float(n.z), c[0], c[1], c[2],
+                          Float(r.uv1[t * 6 + k * 2]), Float(1 - r.uv1[t * 6 + k * 2 + 1])]
+                }
+            }
+            guard !v.isEmpty, let buffer = device.makeBuffer(bytes: v, length: v.count * 4) else { throw TileModel.Failure.glb("no triangles") }
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: r.size, height: r.size, mipmapped: true)
+            d.usage = [.shaderRead]
+            guard let texture = device.makeTexture(descriptor: d) else { throw TileModel.Failure.glb("no texture") }
+            var px = [UInt8](repeating: 255, count: r.size * r.size * 4)
+            for i in 0..<(r.size * r.size) {
+                px[i * 4] = r.light[i * 3]
+                px[i * 4 + 1] = r.light[i * 3 + 1]
+                px[i * 4 + 2] = r.light[i * 3 + 2]
+            }
+            texture.replace(region: MTLRegionMake2D(0, 0, r.size, r.size), mipmapLevel: 0, withBytes: px, bytesPerRow: r.size * 4)
+            if let queue = device.makeCommandQueue(), let cmd = queue.makeCommandBuffer(), let blit = cmd.makeBlitCommandEncoder() {
+                blit.generateMipmaps(for: texture)
+                blit.endEncoding()
+                cmd.commit()
+                cmd.waitUntilCompleted()
+            }
+            let centre = (lo + hi) / 2
+            let radius = Float(max(hi.x - lo.x, hi.z - lo.z) * 1.5 + 40)
+            let (gx, gy, gz) = (Float(centre.x), Float(lo.y) - 0.02, Float(centre.z))
+            var g: [Float] = []
+            for (x, z) in [(-1, -1), (-1, 1), (1, 1), (-1, -1), (1, 1), (1, -1)] as [(Float, Float)] {
+                g += [gx + x * radius, gy, gz + z * radius, 0, 1, 0, 1, 1, 1, 0, 0]
+            }
+            return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
+                            centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
+        }
+
+        /// As a plain model's record (its size, its count), for the view's
+        /// status and framing.
+        func plain(_ note: String) -> Model {
+            Model(parts: [], ground: ground, centre: centre, size: size, triangles: triangles, lit: self, note: note)
+        }
     }
 
     /// A model on the GPU: one buffer of vertices per part, with its texture.
@@ -285,6 +462,9 @@ final class LandmarkRenderer {
         let centre: SIMD3<Double>
         let size: SIMD3<Double>
         let triangles: Int
+        /// The same model lit, when it was baked.
+        var lit: LitModel? = nil
+        var note = ""
 
         static func load(_ url: URL, device: MTLDevice) throws -> Model {
             let loader = MTKTextureLoader(device: device)
@@ -387,6 +567,14 @@ final class LandmarkRenderer {
             d.depthAttachmentPixelFormat = TileRenderer.depthFormat
             d.rasterSampleCount = TileRenderer.samples
             pipeline = try device.makeRenderPipelineState(descriptor: d)
+            d.vertexFunction = library.makeFunction(name: "lvs")
+            d.fragmentFunction = library.makeFunction(name: "lfs")
+            litPipeline = try device.makeRenderPipelineState(descriptor: d)
+            let sd = MTLRenderPipelineDescriptor()
+            sd.vertexFunction = library.makeFunction(name: "svs")
+            sd.fragmentFunction = nil
+            sd.depthAttachmentPixelFormat = .depth32Float
+            shadowPipeline = try device.makeRenderPipelineState(descriptor: sd)
         } catch {
             NSLog("ImmersiveMapEditor: landmark shaders: \(error)")
             return nil
@@ -402,10 +590,98 @@ final class LandmarkRenderer {
         s.sAddressMode = .repeat
         s.tAddressMode = .repeat
         sampler = device.makeSamplerState(descriptor: s)!
+        let c = MTLSamplerDescriptor()
+        c.minFilter = .linear
+        c.magFilter = .linear
+        c.compareFunction = .lessEqual
+        c.sAddressMode = .clampToEdge
+        c.tAddressMode = .clampToEdge
+        shadowSampler = device.makeSamplerState(descriptor: c)!
+        let sm = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: Self.shadowSize, height: Self.shadowSize, mipmapped: false)
+        sm.usage = [.renderTarget, .shaderRead]
+        sm.storageMode = .private
+        shadowMap = device.makeTexture(descriptor: sm)!
         let w = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
         white = device.makeTexture(descriptor: w)!
         white.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 255, count: 4),
                       bytesPerRow: 4)
+    }
+
+    /// Draws the model lit as the engine draws it: first the shadow map from
+    /// the sun (an orthographic look at the model along the sun's rays),
+    /// then the model, its tones times its light map times the shadow, and
+    /// the ground plain with the shadow on it (the engine's ground is the
+    /// vector tile, with no light of ours on it).
+    func encodeLit(_ enc: MTLRenderCommandEncoder, model: LitModel, viewProjection: simd_float4x4, wireframe: Bool) {
+        // The sun's look: orthographic over the model's bounds.
+        let c = SIMD3<Float>(Float(model.centre.x), Float(model.centre.y), Float(model.centre.z))
+        let radius = Float(simd_length(model.size) / 2) + 2
+        let dir = model.sun ?? simd_normalize(SIMD3<Float>(-0.5, 0.707, 0.5))
+        let eye = c + dir * (radius * 2)
+        let f = -dir
+        let r = simd_normalize(simd_cross(f, SIMD3<Float>(0, 1, 0)))
+        let u = simd_cross(r, f)
+        let view = simd_float4x4(rows: [SIMD4(r.x, r.y, r.z, -simd_dot(r, eye)), SIMD4(u.x, u.y, u.z, -simd_dot(u, eye)),
+                                        SIMD4(-f.x, -f.y, -f.z, simd_dot(f, eye)), SIMD4(0, 0, 0, 1)])
+        // The ground's shadow reaches beyond the model: the map covers twice its radius.
+        let ext = radius * 2.2, near: Float = 0.1, far = radius * 4.5
+        let ortho = simd_float4x4(rows: [SIMD4(1 / ext, 0, 0, 0), SIMD4(0, 1 / ext, 0, 0),
+                                         SIMD4(0, 0, -1 / (far - near), -near / (far - near)), SIMD4(0, 0, 0, 1)])
+        let sun = ortho * view
+        var uniforms = LitUniforms(viewProjection: viewProjection, sun: sun, sunDirection: SIMD4(dir, 0),
+                                   shadow: SIMD4(model.sun == nil ? 0 : shadowStrength, 1 / Float(Self.shadowSize), 1, 0),
+                                   colour: SIMD4(0.86, 0.85, 0.82, 0))
+        if model.sun != nil, shadowStrength > 0 {
+            let pass = MTLRenderPassDescriptor()
+            pass.depthAttachment.texture = shadowMap
+            pass.depthAttachment.loadAction = .clear
+            pass.depthAttachment.clearDepth = 1
+            pass.depthAttachment.storeAction = .store
+            // The view's pass is already begun on `buffer`, so the shadow
+            // pass goes on a buffer of its own, committed and done first.
+            if let own = queue.makeCommandBuffer(), let s = own.makeRenderCommandEncoder(descriptor: pass) {
+                s.setRenderPipelineState(shadowPipeline)
+                s.setDepthStencilState(depth)
+                s.setCullMode(.none)
+                s.setDepthBias(2, slopeScale: 2, clamp: 0.01)
+                s.setVertexBuffer(model.vertices, offset: 0, index: 0)
+                s.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+                s.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: model.count)
+                s.endEncoding()
+                own.commit()
+                own.waitUntilCompleted()
+            }
+        }
+        enc.setRenderPipelineState(litPipeline)
+        enc.setDepthStencilState(depth)
+        enc.setFragmentSamplerState(sampler, index: 0)
+        enc.setFragmentSamplerState(shadowSampler, index: 1)
+        enc.setFragmentTexture(model.light, index: 0)
+        enc.setFragmentTexture(shadowMap, index: 1)
+        enc.setFrontFacing(.counterClockwise)
+        enc.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+        enc.setFragmentBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+        enc.setCullMode(.none)
+        enc.setVertexBuffer(model.ground, offset: 0, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+        uniforms.colour.w = 1
+        enc.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+        enc.setFragmentBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+        enc.setCullMode(.back)
+        enc.setVertexBuffer(model.vertices, offset: 0, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: model.count)
+        if wireframe {
+            enc.setTriangleFillMode(.lines)
+            enc.setDepthBias(-1, slopeScale: -1, clamp: 0)
+            uniforms.colour = SIMD4(0.12, 0.1, 0.1, 0)
+            uniforms.shadow.w = 1
+            enc.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+            enc.setFragmentBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: model.count)
+            enc.setTriangleFillMode(.fill)
+            enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+        }
+        enc.setCullMode(.none)
     }
 
     /// Draws the model shaded, and over it its wireframe when asked. A

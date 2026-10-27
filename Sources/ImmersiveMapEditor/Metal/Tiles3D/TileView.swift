@@ -182,7 +182,7 @@ extension TileView: MTKViewDelegate {
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
         renderer.encode(enc, tiles: library, viewProjection: controller.camera.viewProjection(aspect: aspect),
-                        shading: model.viewMode == .light ? model.lightShading : .palette)
+                        shading: model.viewMode == .preview ? model.lightShading : .palette)
         enc.endEncoding()
         buffer.present(drawable)
         buffer.commit()

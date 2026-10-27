@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import Observation
+import TileKit
 
 /// The light maps of built tiles, as the Light view shows them: each cut to
 /// its own tile (a light map reaches over the edge by the tile's overhang),
@@ -78,6 +79,25 @@ final class LightSettings {
     var sunAzimuth: Double = value("sunAzimuth", 225.0) { didSet { Self.keep("sunAzimuth", sunAzimuth) } }
     var sunElevation: Double = value("sunElevation", 45.0) { didSet { Self.keep("sunElevation", sunElevation) } }
     var sunStrength: Double = value("sunStrength", 1.0) { didSet { Self.keep("sunStrength", sunStrength) } }
+    /// The engine's shadow of the sun on a landmark previewed alone: how
+    /// dark where a surface is fully in shadow (not baked: the engine's).
+    var shadow: Double = value("shadow", 0.45) { didSet { Self.keep("shadow", shadow) } }
+
+    /// These as TileKit's settings, for a bake in the app.
+    var settings: Lighting.Settings {
+        var s = Lighting.Settings()
+        s.size = size
+        s.samples = samples
+        s.bounces = bounces
+        s.mode = mode
+        s.aoRadius = aoRadius
+        s.skyStrength = skyStrength
+        s.sun = sun
+        s.sunAzimuth = sunAzimuth
+        s.sunElevation = sunElevation
+        s.sunStrength = sunStrength
+        return s
+    }
 
     /// The bake command's options for these settings.
     var arguments: [String] {

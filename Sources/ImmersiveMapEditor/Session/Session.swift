@@ -49,6 +49,9 @@ final class Session {
     var imageryCapture: String?
     /// What the Landmarks view shows: the model's size, or what went wrong.
     var landmarkStatus = ""
+    /// The Preview's view of a landmark lit, and what it shows.
+    private(set) var previewView: LandmarkView?
+    var previewStatus = ""
     private(set) var tiles: TileView?
     private(set) var model: RoadEditor?
     private(set) var roads: RoadsView?
@@ -174,6 +177,22 @@ final class Session {
         agent.start(folder: landmark.folder, name: landmark.name, request: request, console: build)
     }
 
+    /// The Preview's landmark lit: its light baked with the Preview's
+    /// settings, off the main thread, the model shown as it was meanwhile.
+    func showPreview() {
+        guard workspace.previewSubject != "tile" else { return }
+        if previewView == nil {
+            previewView = LandmarkView.make()
+            previewView?.status = { [weak self] in self?.previewStatus = $0 }
+        }
+        previewView?.shadowStrength = lightSettings.shadow
+        guard let landmark = candidates.first(where: { $0.id == workspace.previewSubject }), let glb = landmark.model else {
+            previewView?.show(nil)
+            return
+        }
+        previewView?.show(.lit(glb, lightSettings.settings))
+    }
+
     func showLandmark(again: Bool = false) {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
@@ -193,7 +212,7 @@ final class Session {
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
-        if phase == .working, mode == .landmarks { readCandidates() }
+        if phase == .working, mode == .landmarks || mode == .preview { readCandidates() }
         if phase == .working, mode == .buildings {
             let tile = workspace.tile, paths = workspace.paths
             Task { @MainActor in
@@ -201,7 +220,7 @@ final class Session {
                 self.readCandidates()
             }
         }
-        if phase == .working, mode == .tiles || mode == .light {
+        if phase == .working, mode == .tiles || mode == .preview {
             // The 3D view where the others looked, once it is laid out.
             Task { @MainActor in self.tiles?.takeSharedCamera() }
         }

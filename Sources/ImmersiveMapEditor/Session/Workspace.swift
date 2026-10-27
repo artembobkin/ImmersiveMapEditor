@@ -13,7 +13,7 @@ struct TileKey: Hashable, Codable, Comparable {
 enum ViewMode: String, CaseIterable, Identifiable {
     case roads = "Roads"
     case tiles = "Tiles 3D"
-    case light = "Light"
+    case preview = "Preview"
     case landmarks = "Landmarks"
     case buildings = "Buildings"
     case style = "Style"
@@ -46,8 +46,11 @@ final class Workspace {
         didSet { tilesRevision += 1 }
     }
     var flying = false
-    /// How the Light view colours the tile: lit, or its light alone.
+    /// How the Preview colours the tile: lit, or its light alone.
     var lightShading = TileShading.lit
+    /// What the Preview shows lit: the tile ("tile"), or a landmark of it by
+    /// its id, alone.
+    var previewSubject = "tile"
     var tileStatus = ""
     /// Bumped when the tiles shown or their builds change, so the 3D view
     /// reloads them.
