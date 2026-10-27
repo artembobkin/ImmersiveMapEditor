@@ -8,28 +8,52 @@ import TileKit
 
 /// Street-level photos of a landmark (Mapillary's) judged by geometry: from
 /// where each camera stands, which way it looks and how wide (its focal
-/// length), against the landmark's outlines and height from OSM and the
-/// other buildings of the tile, where the landmark is in the frame, how
-/// much of the frame it fills, how much of it shows, and whether a
-/// neighbour stands in the way. The best are picked track by track (a
-/// Mapillary sequence: one car's or walker's pass), a track or two for each
-/// side the landmark is seen from, a frame or two from each. A kept photo
-/// gets the landmark framed in red, and a panorama is cut to it, so the
-/// agent knows which building it is looking at.
+/// length), against the landmark's facades (the sides of its convex hull)
+/// and height from OSM and the other buildings of the tile, which facades
+/// are in the frame, how much of each, how square on, and whether a
+/// neighbour stands in the way. The candidates are chosen facade by facade:
+/// for every facade the photo that shows it best, then a second from
+/// another track (a Mapillary sequence: one car's or walker's pass) or
+/// another angle, so a landmark the street photos surround is seen from all
+/// its sides, and a facade no photo shows is named. A kept photo gets the
+/// landmark framed in red, and a panorama is cut to it, so the agent knows
+/// which building it is looking at.
 struct StreetScene {
     /// Longitude and latitude of the landmark's centre.
     let lon: Double, lat: Double
     /// Metres a degree, east and north.
     let kx: Double, ky: Double
-    /// The corners of the landmark's convex hull, in metres around its
-    /// centre: enough for where it is seen from, a few dozen instead of
-    /// the thousands of corners of a landmark of many parts.
+    /// The corners of the landmark's convex hull, counter-clockwise, in
+    /// metres around its centre: enough for where it is seen from, a few
+    /// dozen instead of the thousands of corners of a landmark of many parts.
     let corners: [P2]
+    /// The hull's sides: what a photo can show.
+    let facades: [Facade]
     /// How tall it is at most.
     let top: Double
     /// The other buildings of the tile, to see what hides it, each with its
     /// bounds (west, south, east, north).
     let others: [(shape: Geometry, bounds: (Double, Double, Double, Double))]
+
+    /// One side of the hull: a wall a camera can face. A chain of the
+    /// hull's edges running one way, the short ones (a corner's chamfer,
+    /// a portico's step) in with their longer neighbours.
+    struct Facade {
+        /// Its ends, the chord from the first edge's start to the last's end.
+        let a: P2, b: P2
+        /// Outward, unit length, of the chord.
+        let normal: P2
+        /// Along its edges.
+        let length: Double
+        /// The compass side it faces: "north", "north-east", ...
+        let side: String
+        /// "the north facade", with its end when two face one way.
+        let name: String
+        /// Points along its edges every few metres, each with its edge's
+        /// outward normal: how much of it a camera sees is how many of them
+        /// it sees.
+        let samples: [(p: P2, n: P2)]
+    }
 
     init(folder: URL) throws {
         let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
@@ -38,7 +62,10 @@ struct StreetScene {
         ky = 110_574.0
         let all = source.buildings.flatMap { $0.polygons.flatMap { $0.first ?? [] } }
         let hull = Geometry.collection(all.map { Geometry.point($0) }).convexHull
-        corners = hull.kind == .polygon ? Array(hull.exterior.dropLast()) : all
+        var ring = hull.kind == .polygon ? Array(hull.exterior.dropLast()) : all
+        if signedArea(ring) < 0 { ring.reverse() }
+        corners = ring
+        facades = Self.facades(of: ring)
         top = source.buildings.compactMap(\.height).max() ?? 15
         let own = Set(source.buildings.map(\.osm))
         var others: [(shape: Geometry, bounds: (Double, Double, Double, Double))] = []
@@ -58,6 +85,92 @@ struct StreetScene {
 
     /// Metres east and north of the centre.
     func metres(lon: Double, lat: Double) -> P2 { P2((lon - self.lon) * kx, (lat - self.lat) * ky) }
+
+    /// Whether a point stands inside the hull (counter-clockwise).
+    func inside(_ p: P2) -> Bool {
+        guard corners.count >= 3 else { return false }
+        for k in corners.indices {
+            let a = corners[k], b = corners[(k + 1) % corners.count]
+            if (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) < 0 { return false }
+        }
+        return true
+    }
+
+    /// The hull's sides as facades: its edges, each short one (under 6 m, or
+    /// a twelfth of the perimeter: a corner's chamfer, a portico's step) and
+    /// each running within 15° of a neighbour joined to the neighbour nearest
+    /// its direction, the shortest first, until only the real sides are
+    /// left, each named by the side it faces.
+    static func facades(of ring: [P2]) -> [Facade] {
+        guard ring.count >= 3 else { return [] }
+        typealias Edge = (a: P2, b: P2)
+        var chains: [[Edge]] = ring.indices.map { [(ring[$0], ring[($0 + 1) % ring.count])] }
+        func length(_ c: [Edge]) -> Double { c.reduce(0) { $0 + simd_length($1.b - $1.a) } }
+        func direction(_ c: [Edge]) -> Double { atan2(c.last!.b.y - c.first!.a.y, c.last!.b.x - c.first!.a.x) * 180 / .pi }
+        func turn(_ k: Int, _ j: Int) -> Double { abs(StreetView.wrap(direction(chains[k]) - direction(chains[j]))) }
+        let small = max(6, chains.reduce(0) { $0 + length($1) } / 12)
+        while chains.count > 1 {
+            let n = chains.count
+            // Two neighbours running one way join first, the straightest
+            // pair of them; then the shortest small chain joins the
+            // neighbour nearest its direction.
+            if let k = (0..<n).filter({ turn($0, ($0 + 1) % n) < 15 }).min(by: { turn($0, ($0 + 1) % n) < turn($1, ($1 + 1) % n) }) {
+                let next = (k + 1) % n
+                chains[k] += chains[next]
+                chains.remove(at: next)
+                continue
+            }
+            guard let k = chains.indices.filter({ length(chains[$0]) < small }).min(by: { length(chains[$0]) < length(chains[$1]) }) else { break }
+            let next = (k + 1) % n, prev = (k + n - 1) % n
+            if n == 2 || turn(k, next) <= turn(k, prev) {
+                chains[k] += chains[next]
+                chains.remove(at: next)
+            } else {
+                chains[prev] += chains[k]
+                chains.remove(at: k)
+            }
+        }
+        var out: [Facade] = []
+        for c in chains {
+            let a = c.first!.a, b = c.last!.b
+            let d = b - a
+            guard simd_length(d) > 0.1 else { continue }
+            let n = P2(d.y, -d.x) / simd_length(d)
+            var samples: [(p: P2, n: P2)] = []
+            for e in c {
+                let ed = e.b - e.a, el = simd_length(ed)
+                guard el > 0.1 else { continue }
+                let count = max(2, min(40, Int(el / 4)))
+                let en = P2(ed.y, -ed.x) / el
+                samples += (0..<count).map { (e.a + ed * ((Double($0) + 0.5) / Double(count)), en) }
+            }
+            let side = StreetView.side(atan2(n.x, n.y) * 180 / .pi)
+            out.append(Facade(a: a, b: b, normal: n, length: length(c), side: side, name: "the \(side) facade", samples: samples))
+        }
+        // Two facing one way are told apart by their ends.
+        var named: [Facade] = []
+        for f in out {
+            let alike = out.filter { $0.side == f.side }
+            guard alike.count > 1 else { named.append(f); continue }
+            let t = P2(f.normal.y, -f.normal.x)
+            let along = alike.map { simd_dot(($0.a + $0.b) / 2, t) }.sorted()
+            let mine = simd_dot((f.a + f.b) / 2, t)
+            let end = mine <= along.first! ? StreetView.side(atan2(-t.x, -t.y) * 180 / .pi)
+                : mine >= along.last! ? StreetView.side(atan2(t.x, t.y) * 180 / .pi) : "middle"
+            named.append(Facade(a: f.a, b: f.b, normal: f.normal, length: f.length, side: f.side,
+                                name: "the \(f.side) facade, \(end == "middle" ? "the middle" : "\(end) end")", samples: f.samples))
+        }
+        return named
+    }
+
+    /// What a perspective camera there sees of the landmark: a kept photo's
+    /// pose, or any place.
+    func view(x: Double, y: Double, heading: Double, hfov: Double, width: Int, height: Int) -> StreetView? {
+        let w = Double(width), h = Double(height), l = max(w, h)
+        let focal = 0.5 * w / l / tan(max(10, min(170, hfov)) / 2 * .pi / 180)
+        let photo = StreetPhoto(id: "pose", at: P2(x, y), compass: heading, focal: focal, width: width, height: height)
+        return StreetView(photo, in: self)
+    }
 }
 
 /// One photo, as Mapillary describes it.
@@ -115,6 +228,25 @@ struct StreetPhoto {
         hour = captured.map { Int(($0.timeIntervalSince1970 / 3600 + (scene.lon / 15).rounded()).truncatingRemainder(dividingBy: 24)) }
     }
 
+    /// A perspective camera at a place: a kept photo's pose.
+    init(id: String, at: P2, compass: Double, focal: Double, width: Int, height: Int) {
+        self.id = id
+        self.at = at
+        self.compass = compass
+        pano = false
+        camera = "perspective"
+        self.focal = focal
+        self.width = width
+        self.height = height
+        captured = nil
+        author = ""
+        sequence = id
+        thumb = nil
+        poseDoubt = false
+        quality = nil
+        hour = nil
+    }
+
     var date: String {
         guard let captured else { return "?" }
         let f = DateFormatter()
@@ -123,18 +255,25 @@ struct StreetPhoto {
     }
 }
 
-/// Where the landmark is in a photo's frame, and how good a look it is.
+/// What a photo shows of the landmark, facade by facade, and how good a
+/// look it is.
 struct StreetView {
     let photo: StreetPhoto
-    /// Metres to the nearest corner.
+    /// Metres to the nearest point of a facade it sees.
     let distance: Double
     /// The side of the centre the camera stands on (a compass bearing).
     let from: Double
     /// Degrees between where the camera looks and the centre (0 for a panorama).
     let off: Double
-    /// The landmark's bearings from the camera, relative to the view, and
-    /// the part of that span within the frame.
-    let span: ClosedRange<Double>
+    /// Of each facade of the scene, the part in the frame (0 to 1).
+    let seen: [Double]
+    /// Of each facade, how good a look the photo gives of it (0 to 1): the
+    /// part seen, how square on, how large in the frame, how near, and the
+    /// photo's own worth (its date, pose, quality, daylight).
+    let looks: [Double]
+    /// The facade it shows best.
+    let best: Int
+    /// The part of the whole perimeter in the frame.
     let coverage: Double
     /// The frame it takes, as fractions of width and height (0 to 1), in
     /// a panorama the cut taken around it.
@@ -160,135 +299,211 @@ struct StreetView {
 
     static func wrap(_ a: Double) -> Double { ((a + 180).truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360) - 180 }
 
-    /// The look a photo gives of the scene's landmark, nil when it does not
-    /// show it (behind the camera, out of the frame, hidden). A quick look
+    /// A look at a facade counts from this much of it in the frame.
+    static let enough = 0.2
+
+    /// The look a photo gives of the scene's landmark, nil when it shows no
+    /// facade (behind the camera, out of the frame, hidden). A quick look
     /// leaves out what hides it, for sorting thousands.
     init?(_ photo: StreetPhoto, in scene: StreetScene, quick: Bool = false) {
         self.photo = photo
-        guard !scene.corners.isEmpty else { return nil }
+        guard !scene.facades.isEmpty, !scene.inside(photo.at) else { return nil }
         let toCentre = (atan2(-photo.at.x, -photo.at.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
         from = (toCentre + 180).truncatingRemainder(dividingBy: 360)
-        var bearings: [(angle: Double, far: Double)] = []
-        for c in scene.corners {
-            let d = c - photo.at
-            bearings.append((Self.wrap(atan2(d.x, d.y) * 180 / .pi - toCentre), simd_length(d)))
-        }
-        var nearest = Double.infinity, lo = Double.infinity, hi = -Double.infinity
-        for b in bearings {
-            nearest = min(nearest, b.far)
-            lo = min(lo, b.angle)
-            hi = max(hi, b.angle)
-        }
-        distance = nearest
-        guard distance > 5 else { return nil }
-        guard hi - lo < 300 else { return nil }   // standing inside it
         // The view's direction: the compass. A panorama looks everywhere, so
         // it is never off, but its picture is still laid out from its compass.
         let look = photo.compass ?? toCentre
         off = photo.pano ? 0 : abs(Self.wrap(look - toCentre))
-        let rel = Self.wrap(toCentre - look)
-        span = (lo + rel)...(hi + rel)
-        let top = atan2(scene.top - 2, max(distance, 1)) * 180 / .pi, bottom = atan2(-2.0, max(distance, 1)) * 180 / .pi
         let w = Double(photo.width), h = Double(photo.height), l = max(w, h)
-        var x0 = 0.0, x1 = 0.0, y0 = 0.0, y1 = 0.0, half = 0.0
+        var half = 0.0
         switch photo.pano ? "spherical" : photo.camera {
-        case "spherical", "equirectangular":
-            half = 180
-            // Wide margins: a panorama's compass is often some degrees off.
-            x0 = 0.5 + (span.lowerBound - 20) / 360
-            x1 = 0.5 + (span.upperBound + 20) / 360
-            y0 = 0.5 - min(top + 10, 80) / 180
-            y1 = 0.5 - max(bottom - 12, -60) / 180
-        case "fisheye":
-            half = 0.5 / photo.focal * 180 / .pi
-            func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * (a * .pi / 180) }
-            x0 = x(span.lowerBound); x1 = x(span.upperBound)
-            y0 = 0.5 - photo.focal * l / h * (top * .pi / 180); y1 = 0.5 - photo.focal * l / h * (bottom * .pi / 180)
-        default:
-            half = atan(0.5 * w / l / photo.focal) * 180 / .pi
-            func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * tan(max(-80, min(80, a)) * .pi / 180) }
-            x0 = x(span.lowerBound); x1 = x(span.upperBound)
-            y0 = 0.5 - photo.focal * l / h * tan(min(top, 80) * .pi / 180); y1 = 0.5 - photo.focal * l / h * tan(bottom * .pi / 180)
+        case "spherical", "equirectangular": half = 180
+        case "fisheye": half = min(90, 0.5 / photo.focal * 180 / .pi)
+        default: half = atan(0.5 * w / l / photo.focal) * 180 / .pi
         }
         heading = look
         hfov = min(360, 2 * half)
-        let visible = max(0, min(span.upperBound, half) - max(span.lowerBound, -half))
-        coverage = visible / max(span.upperBound - span.lowerBound, 1)
-        guard coverage > 0.15 else { return nil }
-        let bx0 = max(0, min(1, x0)), bx1 = max(0, min(1, x1)), by0 = max(0, min(1, y0)), by1 = max(0, min(1, y1))
-        box = CGRect(x: bx0, y: by0, width: max(0, bx1 - bx0), height: max(0, by1 - by0))
-        share = photo.pano ? min(1, visible / 90) : box.width
-        guard share > 0.08 else { return nil }
-        // What hides it: rays to the corners in view, through the other buildings.
-        var rays = 0, blocked = 0
-        if !quick {
-            for (b, c) in zip(bearings, scene.corners) where b.angle + rel >= max(span.lowerBound, -half) && b.angle + rel <= min(span.upperBound, half) {
-                rays += 1
-                let d = c - photo.at
-                let p0 = photo.at + d * (3 / max(b.far, 3)), p1 = photo.at + d * (1 - 1.5 / max(b.far, 1.5))
-                let (x0, x1) = (min(p0.x, p1.x), max(p0.x, p1.x)), (y0, y1) = (min(p0.y, p1.y), max(p0.y, p1.y))
-                let ray = Geometry.lineString([p0, p1])
-                if scene.others.contains(where: { o in
-                    o.bounds.0 <= x1 && o.bounds.2 >= x0 && o.bounds.1 <= y1 && o.bounds.3 >= y0 && o.shape.intersects(ray) }) { blocked += 1 }
-            }
-        }
-        hidden = quick ? 0 : rays == 0 ? 1 : Double(blocked) / Double(rays)
-        guard hidden < 0.6 else { return nil }
-        let fill = min(share / 0.35, 1) * (share > 0.97 && !photo.pano ? 0.7 : 1)
-        let frontal = max(0.2, 1 - off / 75)
-        let near = distance < 12 ? 0.4 : distance > 160 ? 0.5 : 1
+        // The photo's own worth, the same for every facade.
         let years: Double = photo.captured.map { Date().timeIntervalSince($0) / 31_557_600 } ?? 8
         let fresh = max(0.6, 1 - years * 0.05)
         let sure = photo.poseDoubt ? 0.4 : 1.0
         let good = photo.quality.map { 0.5 + 0.5 * $0 } ?? 0.9
         let day = photo.hour.map { $0 >= 7 && $0 <= 19 ? 1.0 : 0.4 } ?? 1
-        score = fill * (0.4 + 0.6 * coverage) * frontal * near * (1 - hidden) * fresh * sure * good * day * (photo.pano ? 0.9 : 1)
+        let worth = fresh * sure * good * day * (photo.pano ? 0.9 : 1)
+        // Each facade's samples: facing the camera, not glancing, in the
+        // frame, not hidden by another building.
+        var seen: [Double] = [], looks: [Double] = []
+        var lo = Double.infinity, hi = -Double.infinity, nearest = Double.infinity
+        var rays = 0, blocked = 0
+        var perimeter = 0.0, inFrame = 0.0
+        // A camera is never really inside a building: a pose that puts it
+        // in one (a narrow street, the GPS astray) does not let that
+        // building hide the landmark.
+        let others = quick ? [] : scene.others.filter { o in
+            !(o.bounds.0 <= photo.at.x && o.bounds.2 >= photo.at.x && o.bounds.1 <= photo.at.y && o.bounds.3 >= photo.at.y && o.shape.contains(photo.at))
+        }
+        for f in scene.facades {
+            perimeter += f.length
+            var count = 0, rels: [Double] = [], incidence = 0.0, near = Double.infinity, blockedHere = 0
+            for (s, normal) in f.samples {
+                let d = s - photo.at, dist = simd_length(d)
+                guard dist > 2, dist <= 300 else { continue }
+                let sine = simd_dot(normal, -d) / dist
+                guard sine >= 0.12 else { continue }   // behind the wall's plane, or along it
+                let rel = Self.wrap(atan2(d.x, d.y) * 180 / .pi - look)
+                guard photo.pano || abs(rel) <= half else { continue }
+                if !quick {
+                    rays += 1
+                    let p0 = photo.at + d * (3 / max(dist, 3)), p1 = photo.at + d * (1 - 1.5 / max(dist, 1.5))
+                    let (x0, x1) = (min(p0.x, p1.x), max(p0.x, p1.x)), (y0, y1) = (min(p0.y, p1.y), max(p0.y, p1.y))
+                    let ray = Geometry.lineString([p0, p1])
+                    if others.contains(where: { o in
+                        o.bounds.0 <= x1 && o.bounds.2 >= x0 && o.bounds.1 <= y1 && o.bounds.3 >= y0 && o.shape.intersects(ray) }) {
+                        blocked += 1
+                        blockedHere += 1
+                        continue
+                    }
+                }
+                count += 1
+                rels.append(rel)
+                incidence += sine
+                near = min(near, dist)
+            }
+            let part = Double(count) / Double(f.samples.count)
+            seen.append(part)
+            guard count > 0 else { looks.append(0); continue }
+            inFrame += part * f.length
+            nearest = min(nearest, near)
+            lo = min(lo, rels.min()!)
+            hi = max(hi, rels.max()!)
+            // Square on from 45°, half as good at 20°; large from 20° of the
+            // frame; too near to see it whole (within a fifth of its length),
+            // or too far to see its detail.
+            let square = min(1, incidence / Double(count) / 0.7)
+            let step = f.length / Double(f.samples.count)
+            let width = rels.max()! - rels.min()! + atan2(step, near) * 180 / .pi
+            let large = min(1, width / 20)
+            let close = near < max(8, f.length / 5) ? 0.5 : near > 180 ? 0.5 : 1
+            let clear = count + blockedHere > 0 ? Double(count) / Double(count + blockedHere) : 1
+            looks.append(part * square * large * close * clear * worth)
+        }
+        guard let best = looks.indices.max(by: { looks[$0] < looks[$1] }), looks[best] > 0, seen[best] >= Self.enough else { return nil }
+        self.seen = seen
+        self.looks = looks
+        self.best = best
+        distance = nearest
+        guard distance > 5 else { return nil }
+        coverage = perimeter > 0 ? inFrame / perimeter : 0
+        hidden = quick ? 0 : rays == 0 ? 1 : Double(blocked) / Double(rays)
+        guard hidden < 0.7 else { return nil }
+        // The frame: the seen part's bearings across, the top and the foot
+        // at the nearest point down.
+        let top = atan2(scene.top - 2, max(distance, 1)) * 180 / .pi, bottom = atan2(-2.0, max(distance, 1)) * 180 / .pi
+        var x0 = 0.0, x1 = 0.0, y0 = 0.0, y1 = 0.0
+        switch photo.pano ? "spherical" : photo.camera {
+        case "spherical", "equirectangular":
+            // Wide margins: a panorama's compass is often some degrees off.
+            x0 = 0.5 + (lo - 20) / 360
+            x1 = 0.5 + (hi + 20) / 360
+            y0 = 0.5 - min(top + 10, 80) / 180
+            y1 = 0.5 - max(bottom - 12, -60) / 180
+        case "fisheye":
+            func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * (a * .pi / 180) }
+            x0 = x(lo - 2); x1 = x(hi + 2)
+            y0 = 0.5 - photo.focal * l / h * (top * .pi / 180); y1 = 0.5 - photo.focal * l / h * (bottom * .pi / 180)
+        default:
+            func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * tan(max(-80, min(80, a)) * .pi / 180) }
+            x0 = x(lo - 2); x1 = x(hi + 2)
+            y0 = 0.5 - photo.focal * l / h * tan(min(top, 80) * .pi / 180); y1 = 0.5 - photo.focal * l / h * tan(bottom * .pi / 180)
+        }
+        let bx0 = max(0, min(1, x0)), bx1 = max(0, min(1, x1)), by0 = max(0, min(1, y0)), by1 = max(0, min(1, y1))
+        box = CGRect(x: bx0, y: by0, width: max(0, bx1 - bx0), height: max(0, by1 - by0))
+        share = photo.pano ? min(1, (hi - lo) / 90) : box.width
+        guard share > 0.06 else { return nil }
+        // The photo's worth as a whole: its best look, and what else it shows.
+        let mean = perimeter > 0 ? zip(looks, scene.facades).reduce(0.0) { $0 + $1.0 * $1.1.length } / perimeter : 0
+        score = 0.6 * looks[best] + 0.4 * mean
     }
 
-    var line: String {
-        let what = coverage > 0.9 ? "the whole of it" : "\(Int(coverage * 100))% of it"
+    /// The facades it shows, best first: "the north facade whole, a third
+    /// of the east facade".
+    func shows(_ scene: StreetScene) -> String {
+        let order = looks.indices.filter { seen[$0] >= Self.enough && looks[$0] > 0 }.sorted { looks[$0] > looks[$1] }
+        return order.map { k -> String in
+            let part = seen[k]
+            let how = part > 0.9 ? "whole" : part > 0.6 ? "most of it" : part > 0.4 ? "half" : part > 0.25 ? "a third" : "a little"
+            return "\(scene.facades[k].name) \(how)"
+        }.joined(separator: ", ")
+    }
+
+    func line(_ scene: StreetScene) -> String {
         let how = photo.pano ? "a panorama, cut to it" : "\(Int(share * 100))% of the frame, \(Int(off))° off"
         let doubts = [photo.poseDoubt ? "its pose is doubtful" : nil, (photo.hour ?? 12) < 7 || (photo.hour ?? 12) > 19 ? "at night" : nil]
             .compactMap { $0 }
-        return "\(photo.id): \(Int(distance)) m, from the \(Self.side(from)), \(what), \(how), \(photo.date)"
+        return "\(photo.id): \(Int(distance)) m, from the \(Self.side(from)), shows \(shows(scene)), \(how), \(photo.date), by \(photo.author)"
             + (doubts.isEmpty ? "" : " (" + doubts.joined(separator: ", ") + ")")
     }
 }
 
 enum StreetPicks {
-    /// The best looks, a track or two for each side the landmark is seen
-    /// from, a frame or two from each track: lines for the agent.
-    static func report(_ views: [StreetView], limit: Int) -> (text: String, picks: [StreetView]) {
+    /// A look worth a candidate.
+    static let worthwhile = 0.05
+
+    /// The candidates, facade by facade: for every facade the photo that
+    /// shows it best, then a second from another track or from well apart,
+    /// within `limit` in all, and the facades no photo shows: lines for the
+    /// agent, and the picks as they are numbered.
+    static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView]) {
         guard !views.isEmpty else { return ("", []) }
-        var bySequence: [String: [StreetView]] = [:]
-        // A poor look (glancing, too close, a sliver) is not worth a track.
-        for v in views where v.score >= 0.04 { bySequence[v.photo.sequence, default: []].append(v) }
-        // A track's worth: its best frame, and a little for having several.
-        let tracks = bySequence.values.map { frames -> (score: Double, frames: [StreetView]) in
-            let sorted = frames.sorted { $0.score > $1.score }
-            return (sorted[0].score + 0.05 * Double(min(frames.count, 4)), sorted)
-        }.sorted { $0.score > $1.score }
-        var perSide: [String: Int] = [:]
-        var out: [String] = []
+        let facades = scene.facades
+        var byTrack: [String: [StreetView]] = [:]
+        for v in views { byTrack[v.photo.sequence, default: []].append(v) }
+        let tracks = Array(byTrack.values)
+        /// Each track's best frame for a facade, the best track first.
+        func candidates(_ f: Int) -> [(track: Int, view: StreetView)] {
+            tracks.indices.compactMap { t in
+                tracks[t].filter { $0.looks[f] >= worthwhile && $0.seen[f] >= StreetView.enough }
+                    .max { $0.looks[f] < $1.looks[f] }.map { (t, $0) }
+            }.sorted { $0.view.looks[f] > $1.view.looks[f] }
+        }
         var picks: [StreetView] = []
-        var taken = 0
-        for track in tracks where taken < limit {
-            let best = track.frames[0], side = StreetView.side(best.from)
-            guard perSide[side, default: 0] < 2 else { continue }
-            perSide[side, default: 0] += 1
-            var picked = [best]
-            // A second frame of the track when it looks from another side, or
-            // from well apart.
-            if let other = track.frames.dropFirst().first(where: {
-                StreetView.side($0.from) != side || simd_length($0.photo.at - best.photo.at) > 25 }), other.score > best.score * 0.6 {
-                picked.append(other)
+        var taken: [String: Int] = [:]   // photo id to its number
+        var perFacade: [[(track: Int, view: StreetView)]] = Array(repeating: [], count: facades.count)
+        let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
+        func take(_ c: (track: Int, view: StreetView), for f: Int) {
+            if taken[c.view.photo.id] == nil {
+                picks.append(c.view)
+                taken[c.view.photo.id] = picks.count
             }
-            taken += picked.count
-            out.append("Track by \(best.photo.author), \(best.photo.date), \(track.frames.count) frames show it from the \(side):\n"
-                       + picked.map { v -> String in
-                           picks.append(v)
-                           return "  #\(picks.count) " + v.line
-                       }.joined(separator: "\n"))
+            perFacade[f].append(c)
+        }
+        // The best look at every facade first.
+        for f in order where picks.count < limit {
+            if let c = candidates(f).first { take(c, for: f) }
+        }
+        // Then a second look, from another track, or from the same one well
+        // apart, at least two fifths as good.
+        for f in order where picks.count < limit && perFacade[f].count == 1 {
+            let first = perFacade[f][0]
+            let other = candidates(f).dropFirst().first { c in
+                taken[c.view.photo.id] == nil && c.view.looks[f] >= first.view.looks[f] * 0.4
+            } ?? tracks[first.track].filter {
+                taken[$0.photo.id] == nil && $0.looks[f] >= max(worthwhile, first.view.looks[f] * 0.4)
+                    && $0.seen[f] >= StreetView.enough && simd_length($0.photo.at - first.view.photo.at) > 25
+            }.max { $0.looks[f] < $1.looks[f] }.map { (first.track, $0) }
+            if let other { take(other, for: f) }
+        }
+        var out: [String] = []
+        for f in order {
+            let name = facades[f].name.prefix(1).uppercased() + facades[f].name.dropFirst()
+            if perFacade[f].isEmpty {
+                let any = views.filter { $0.seen[f] >= StreetView.enough }.count
+                out.append("\(name) (\(Int(facades[f].length)) m): " + (any == 0 ? "no photo shows it." : "no photo gives a good look at it (\(any) glance at it)."))
+                continue
+            }
+            out.append("\(name) (\(Int(facades[f].length)) m):\n" + perFacade[f].map { c in
+                "  #\(taken[c.view.photo.id]!) " + c.view.line(scene) + " (\(tracks[c.track].count) frames of its track show the landmark)"
+            }.joined(separator: "\n"))
         }
         return (out.joined(separator: "\n"), picks)
     }
@@ -296,10 +511,10 @@ enum StreetPicks {
     /// A contact sheet of the picks: their thumbnails in a grid, the landmark
     /// framed in red on each, numbered as the report numbers them, so the
     /// agent sees at once which really show it.
-    static func sheet(_ picks: [StreetView], thumbs: [URL?], to file: URL) throws {
+    static func sheet(_ picks: [StreetView], in scene: StreetScene, thumbs: [URL?], to file: URL) throws {
         let cells = picks.enumerated().map { k, view -> ContactSheet.Cell in
             ContactSheet.Cell(image: thumbs[k], box: view.box, cut: view.photo.pano,
-                              label: "#\(k + 1)  \(view.photo.id)  \(Int(view.distance)) m, from the \(StreetView.side(view.from))")
+                              label: "#\(k + 1)  \(view.photo.id)  \(Int(view.distance)) m, \(scene.facades[view.best].name)")
         }
         try ContactSheet.draw(cells, to: file)
     }

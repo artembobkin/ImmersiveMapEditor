@@ -140,10 +140,10 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's outlines: the best looks, a track (one pass) at a time, for every side it is seen from, each with its id, distance, side, how much of it and of the frame it fills, date and author; and a contact sheet of them, the landmark framed in red on each, to see which really show it. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): facade by facade, the photo that shows it best and a second from another track (one pass) or angle, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows; and a contact sheet of them, the landmark framed in red on each, to see which really show it. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
-                "limit": ["type": "integer", "description": "How many, 15 by default."]]]],
+                "limit": ["type": "integer", "description": "How many at most, 16 by default: two a facade."]]]],
             ["name": "save_street_photo",
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
@@ -180,19 +180,19 @@ enum LandmarkMCP {
                 let said = try setRecipe(args["recipe"])
                 guard said.hasPrefix("Built") else { return [text(said)] }
                 // The build, and at once the model beside every kept street
-                // photo from that photo's place (one a side, four at most):
-                // what to judge the round by.
+                // photo from that photo's place (the best one of each facade,
+                // six at most): what to judge the round by.
                 var content: [[String: Any]] = [text(said)]
-                let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
-                var sides = Set<String>()
                 var picked: [String] = []
-                for e in list {
-                    guard let file = e["file"] as? String, let pose = e["pose"] as? [String: Any],
-                          let x = pose["x"] as? Double, let y = pose["y"] as? Double else { continue }
-                    let side = StreetView.side((atan2(x, y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360))
-                    if sides.insert(side).inserted { picked.append(file) }
+                if let scene = try? StreetScene(folder: folder) {
+                    let kept = keptViews(scene)
+                    for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
+                        guard let best = kept.filter({ $0.view.seen[f] >= StreetView.enough && $0.view.looks[f] > 0 })
+                            .max(by: { $0.view.looks[f] < $1.view.looks[f] }), !picked.contains(best.file) else { continue }
+                        picked.append(best.file)
+                    }
                 }
-                for file in picked.prefix(4) {
+                for file in picked.prefix(6) {
                     if let shown = try? compare(["file": file]) { content += shown }
                 }
                 if picked.isEmpty { content.append(text("No street photo with a camera pose is kept yet: save some with save_street_photo, and every build will come back beside them.")) }
@@ -399,7 +399,7 @@ enum LandmarkMCP {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let file = dir.appendingPathComponent("\(CoverageTile.zoom)_\(x)_\(y).mvt")
             if let age = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
-               Date().timeIntervalSince(age) < 86_400, let data = try? Data(contentsOf: file), !data.isEmpty { return data }
+               Date().timeIntervalSince(age) < 86_400 || offline, let data = try? Data(contentsOf: file), !data.isEmpty { return data }
             let url = "https://tiles.mapillary.com/maps/vtp/mly1_public/2/\(CoverageTile.zoom)/\(x)/\(y)?access_token=\(try mapillaryToken)"
             var last = ""
             for _ in 0..<2 {
@@ -431,7 +431,7 @@ enum LandmarkMCP {
                 guard tiles.insert("\(t.x)/\(t.y)").inserted else { continue }
                 points += CoverageTile.points(try coverage(x: t.x, y: t.y), x: t.x, y: t.y)
             }
-            var rough: [(Double, [String: Any])] = []
+            var rough: [(StreetView, [String: Any])] = []
             for p in points {
                 let at = scene.metres(lon: p.lon, lat: p.lat)
                 guard simd_length(at) <= radius, let id = p.props["id"].map({ "\($0)" }), !id.isEmpty else { continue }
@@ -445,27 +445,44 @@ enum LandmarkMCP {
                 else if let t = p.props["captured_at"] as? UInt64 { e["captured_at"] = Double(t) }
                 else if let t = p.props["captured_at"] as? Double { e["captured_at"] = t }
                 guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene, quick: true) else { continue }
-                rough.append((view.score, e))
+                rough.append((view, e))
             }
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
-            // The best few hundred judged with what hides them, then the best
-            // of every side, a hundred in all, asked for in full, thirty ids
-            // a call.
-            var judged: [(Double, String, [String: Any])] = []
-            for (_, e) in rough.sorted(by: { $0.0 > $1.0 }).prefix(500) {
-                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene) else { continue }
-                judged.append((view.score, StreetView.side(view.from), e))
+            // Facade by facade, so a facade seen only in passing keeps its
+            // candidates: the best hundred looks at each judged with what
+            // hides them, then the best sixteen of each asked for in full
+            // (camera, computed pose, quality), thirty ids a call.
+            func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
+                var ids = Set<String>()
+                var out: [[String: Any]] = []
+                for f in scene.facades.indices {
+                    for (_, e) in list.filter({ $0.0.seen[f] >= StreetView.enough }).sorted(by: { $0.0.looks[f] > $1.0.looks[f] }).prefix(n)
+                    where ids.insert(e["id"] as! String).inserted { out.append(e) }
+                }
+                return out
             }
-            var perSide: [String: Int] = [:]
-            var asked: [String] = []
-            for (_, side, e) in judged.sorted(by: { $0.0 > $1.0 }) where asked.count < 100 && perSide[side, default: 0] < 16 {
-                perSide[side, default: 0] += 1
-                asked.append(e["id"] as! String)
+            var judged: [(StreetView, [String: Any])] = []
+            for e in bestOfEachFacade(rough, 100) {
+                guard let photo = StreetPhoto(e, scene), let view = StreetView(photo, in: scene) else { continue }
+                judged.append((view, e))
+            }
+            let asked = bestOfEachFacade(judged, 16).map { $0["id"] as! String }
+            if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
+                for (f, facade) in scene.facades.enumerated() {
+                    let glanced = rough.filter { $0.0.seen[f] >= StreetView.enough }.count
+                    let clear = judged.filter { $0.0.seen[f] >= StreetView.enough && $0.0.looks[f] > 0 }.count
+                    let worth = judged.filter { $0.0.looks[f] >= StreetPicks.worthwhile }.count
+                    FileHandle.standardError.write("\(facade.name) (\(Int(facade.length)) m): \(glanced) rough looks, \(clear) judged clear, \(worth) worthwhile\n".data(using: .utf8)!)
+                }
             }
             var photos: [String: [String: Any]] = [:]
-            for chunk in stride(from: 0, to: asked.count, by: 30).map({ Array(asked[$0..<min($0 + 30, asked.count)]) }) {
-                let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields])
-                for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
+            if offline {
+                for (_, e) in judged where asked.contains(e["id"] as! String) { photos[e["id"] as! String] = e }
+            } else {
+                for chunk in stride(from: 0, to: asked.count, by: 30).map({ Array(asked[$0..<min($0 + 30, asked.count)]) }) {
+                    let json = try mapillary("", ["ids": chunk.joined(separator: ","), "fields": StreetPhoto.fields])
+                    for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
+                }
             }
             func text(_ s: String) -> [String: Any] { self.text(s) }
             let photosCount = total
@@ -474,7 +491,7 @@ enum LandmarkMCP {
             guard !views.isEmpty else {
                 return [text("Of \(photosCount) street photos within \(Int(radius)) m none shows the landmark well. Try a larger radius.")]
             }
-            let (report, picks) = StreetPicks.report(views, limit: limit)
+            let (report, picks) = StreetPicks.report(views, in: scene, limit: limit)
             guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
             // The contact sheet: a small thumbnail of each pick, framed.
             let dir = searchFolder.appendingPathComponent("street")
@@ -484,25 +501,42 @@ enum LandmarkMCP {
             let thumbs: [URL?] = picks.map { pick in
                 let file = dir.appendingPathComponent("\(pick.photo.id).jpg")
                 if FileManager.default.fileExists(atPath: file.path) { return file }
-                guard let json = try? mapillary(pick.photo.id, ["fields": pick.photo.pano ? "thumb_2048_url" : "thumb_1024_url"]),
+                guard !offline, let json = try? mapillary(pick.photo.id, ["fields": pick.photo.pano ? "thumb_2048_url" : "thumb_1024_url"]),
                       let url = (json["thumb_2048_url"] ?? json["thumb_1024_url"]) as? String else { return nil }
                 let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--max-time", "30", "-o", file.path, url])
                 return status == 0 ? file : nil
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
-            try StreetPicks.sheet(picks, thumbs: thumbs, to: sheet)
+            try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m, \(views.count) show the landmark. The best, a track (one pass of a car or a walker) at a time:\n"
+                "\(photosCount) street photos within \(Int(radius)) m, the \(views.count) best looks judged in full. Facade by facade (the sides of its outline, the longest first), the best look at each and a second from another track (one pass of a car or a walker) or angle:\n"
                 + report
-                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows). A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows), one for every facade first. A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
                 try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
                 PeopleMask.erase(framed)
-                content.append(text("#\(k + 1) " + pick.line))
+                content.append(text("#\(k + 1) " + pick.line(scene)))
                 if let img = image(framed) { content.append(img) }
             }
             return content
+        }
+
+        /// Without Mapillary (`LANDMARK_STREET_OFFLINE`): the coverage tiles
+        /// of the cache however old, the photos as the tiles describe them,
+        /// no thumbnails fetched. For checking the choice without the token.
+        var offline: Bool { ProcessInfo.processInfo.environment["LANDMARK_STREET_OFFLINE"] != nil }
+
+        /// The kept street photos as looks at the landmark, from their poses.
+        func keptViews(_ scene: StreetScene) -> [(file: String, view: StreetView)] {
+            let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+            return list.compactMap { e in
+                guard let file = e["file"] as? String, let pose = e["pose"] as? [String: Any],
+                      let x = pose["x"] as? Double, let y = pose["y"] as? Double,
+                      let heading = pose["heading"] as? Double, let hfov = pose["hfov"] as? Double else { return nil }
+                let width = pose["width"] as? Int ?? 1280, height = pose["height"] as? Int ?? 720
+                return scene.view(x: x, y: y, heading: heading, hfov: hfov, width: width, height: height).map { (file, $0) }
+            }
         }
 
         // MARK: Wikimedia Commons
@@ -552,32 +586,27 @@ enum LandmarkMCP {
             return kept.enumerated().map { k, item in k == 0 ? text((item["text"] as? String ?? "") + ". " + coverage()) : item }
         }
 
-        /// What the references cover so far: the street photos by the side
-        /// their camera stood on, the Commons photos and the satellite apart,
-        /// and the sides with nothing yet. Told after every keep, so the
-        /// agent sees the gaps.
+        /// What the references cover so far: the street photos by the
+        /// facades their cameras see, the Commons photos and the satellite
+        /// apart, and the facades with nothing yet. Told after every keep,
+        /// so the agent sees the gaps.
         func coverage() -> String {
             let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
-            var sides: [String: Int] = [:]
-            var commons = 0, satellite = 0
+            var street = 0, commons = 0, satellite = 0
             for e in list {
-                if let pose = e["pose"] as? [String: Any], let x = pose["x"] as? Double, let y = pose["y"] as? Double {
-                    let from = (atan2(x, y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
-                    sides[StreetView.side(from), default: 0] += 1
-                } else if e["file"] as? String == "satellite.jpg" {
-                    satellite += 1
-                } else {
-                    commons += 1
-                }
+                if e["pose"] != nil { street += 1 } else if e["file"] as? String == "satellite.jpg" { satellite += 1 } else { commons += 1 }
             }
-            let order = StreetView.sides
-            let have = order.filter { sides[$0] != nil }.map { "\($0) ×\(sides[$0]!)" }
-            let missing = ["north", "east", "south", "west"].filter { s in
-                !order.enumerated().contains { k, name in sides[name] != nil && (abs(k - order.firstIndex(of: s)!) <= 1 || abs(k - order.firstIndex(of: s)!) == 7) }
+            guard let scene = try? StreetScene(folder: folder) else { return "" }
+            var counts = [Int](repeating: 0, count: scene.facades.count)
+            for (_, view) in keptViews(scene) {
+                for f in counts.indices where view.seen[f] >= StreetView.enough && view.looks[f] > 0 { counts[f] += 1 }
             }
-            return "Kept so far: " + (have.isEmpty ? "no street photo" : "street photos from the " + have.joined(separator: ", "))
+            let order = scene.facades.indices.sorted { scene.facades[$0].length > scene.facades[$1].length }
+            let have = order.filter { counts[$0] > 0 }.map { "\(scene.facades[$0].name) ×\(counts[$0])" }
+            let missing = order.filter { counts[$0] == 0 }.map { "\(scene.facades[$0].name) (\(Int(scene.facades[$0].length)) m)" }
+            return "Kept so far: " + (street == 0 ? "no street photo" : "street photos of " + have.joined(separator: ", "))
                 + ", \(commons) from Commons (their side unknown)" + (satellite > 0 ? ", the satellite view" : "")
-                + (missing.isEmpty ? "." : ". Nothing from the \(missing.joined(separator: ", ")) yet: a side the candidates offer is worth one photo, even a dashcam's.")
+                + (missing.isEmpty ? "." : ". Nothing of \(missing.joined(separator: ", ")) yet: a candidate that shows one is worth keeping, even a dashcam's glancing look.")
         }
 
         /// A kept photo that turned out not to show the landmark: gone, with
@@ -614,7 +643,7 @@ enum LandmarkMCP {
                                             "pitch": r1(pose.pitch), "hfov": r1(pose.hfov)]
                 if let size = Self.size(of: file) { entry["width"] = size.0; entry["height"] = size.1 }
                 try credit(String(name), set: "pose", to: entry)
-                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line). compare_with_photo(\"\(name)\") shows the model from the same place. " + coverage())]
+                return [text("Kept as \(name): the landmark is framed in red, everything else painted black, \(view.line(scene)). compare_with_photo(\"\(name)\") shows the model from the same place. " + coverage())]
                     + (image(file).map { [$0] } ?? [])
             }
             return kept

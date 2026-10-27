@@ -179,12 +179,13 @@ final class LandmarkAgent {
         references, in this order:
            a. find_commons_photos (Wikimedia Commons, its category and around it): keep one classic view of the whole \
         (two at most, and not two alike) with save_commons_photo, to know the building and to judge the street photos by.
-           b. find_street_photos (Mapillary, street level all around it): the best candidates a track at a time, each \
-        with the landmark framed in red by the camera's pose, the rest dimmed. Poses are sometimes wrong: judge from the \
-        pictures which frames really hold the landmark, keep those with save_street_photo: one from every side the \
-        candidates offer before a second from any side (every keep tells you which sides you have and which you lack), a \
-        dashcam's glancing look at a side being worth more than a fourth view of the front; a kept photo comes back with \
-        everything outside the frame painted black, so look at it and drop_reference any whose frame holds another building.
+           b. find_street_photos (Mapillary, street level all around it): the candidates facade by facade (the sides of \
+        the outline), the best look at each and a second from another track or angle, each with the landmark framed in \
+        red by the camera's pose, the rest dimmed. Poses are sometimes wrong: judge from the pictures which frames really \
+        hold the landmark, keep those with save_street_photo: one for every facade the candidates offer before a second \
+        for any (every keep tells you which facades you have and which you lack), a dashcam's glancing look at a facade \
+        being worth more than a fourth view of the front; a kept photo comes back with everything outside the frame \
+        painted black, so look at it and drop_reference any whose frame holds another building.
            c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
         and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
            d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \

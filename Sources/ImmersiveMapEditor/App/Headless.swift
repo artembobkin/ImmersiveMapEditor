@@ -10,7 +10,7 @@ import TileKit
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--erase-people"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--erase-people", "--street-photos"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -41,6 +41,25 @@ enum Headless {
                 return 0
             } catch {
                 return fail(error.localizedDescription)
+            }
+        }
+        if let i = arguments.firstIndex(of: "--street-photos"), arguments.count > i + 1 {
+            // The agent's find_street_photos for a landmark's folder, its
+            // report printed (with LANDMARK_STREET_OFFLINE, from the cached
+            // coverage tiles alone, no token needed).
+            let folder = URL(fileURLWithPath: arguments[i + 1]).standardizedFileURL
+            let server = LandmarkMCP.Server(folder: folder)
+            Segmenter.folder = server.root.appendingPathComponent("config/models")
+            var args: [String: Any] = [:]
+            if let r = arguments.firstIndex(of: "--radius"), arguments.count > r + 1, let v = Double(arguments[r + 1]) { args["radius"] = v }
+            if let l = arguments.firstIndex(of: "--limit"), arguments.count > l + 1, let v = Int(arguments[l + 1]) { args["limit"] = v }
+            do {
+                for item in try server.streetPhotos(args) {
+                    if let s = item["text"] as? String { print(s) }
+                }
+                return 0
+            } catch {
+                return fail("\(error)")
             }
         }
         if let i = arguments.firstIndex(of: "--landmark-snapshot"), arguments.count > i + 2 {
