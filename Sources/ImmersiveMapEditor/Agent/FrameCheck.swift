@@ -107,12 +107,14 @@ enum FrameCheck {
     }
 
     /// How sure the Mac's scene classifier is that a picture holds a
-    /// building: its most confident of structure, building, arch, window.
-    static func building(_ picture: CGImage) -> Double {
+    /// building (its most confident of structure, building, arch, window)
+    /// and that it shows the sky.
+    static func classify(_ picture: CGImage) -> (building: Double, sky: Double) {
         let request = VNClassifyImageRequest()
         try? VNImageRequestHandler(cgImage: picture, options: [:]).perform([request])
         let found = request.results ?? []
-        return Double(["structure", "building", "arch", "window"].map { id in found.first { $0.identifier == id }?.confidence ?? 0 }.max() ?? 0)
+        func sure(_ id: String) -> Double { Double(found.first { $0.identifier == id }?.confidence ?? 0) }
+        return (["structure", "building", "arch", "window"].map(sure).max() ?? 0, sure("sky"))
     }
 
     struct Verdict {
@@ -123,24 +125,30 @@ enum FrameCheck {
 
     /// The candidates' pictures judged, each in the group of its facade.
     /// Dropped: a blank (hardly an edge, mostly smooth: burnt out, a sun
-    /// flare); a picture the classifier sees no building in (under 0.3)
-    /// that is also further from its three most alike pictures of the
-    /// facade than the facade's pictures typically are (the sky, a
-    /// windscreen, an empty street; the likeness of their upper parts, the
-    /// facade, not the street at its foot). One the classifier misses but that
-    /// looks like its facade's others (a night view) stays. Measured on
-    /// Detsky Mir's 48 photos marked by eye (2026-10-27): every one of the
-    /// five bad dropped, one good of 37 (a night view) lost. A picture not
-    /// read stays.
+    /// flare); the sky (the classifier sure of the sky, over 0.9, and not
+    /// of a building, under 0.4); a picture the classifier is unsure holds
+    /// a building (under 0.5) that is also further from its three most
+    /// alike pictures of the facade than the facade's pictures typically
+    /// are (a windscreen, a car filling the frame, an empty street; the
+    /// likeness of their upper parts, the facade, not the street at its
+    /// foot). One the classifier is unsure of but that looks like its
+    /// facade's others (a night view) stays. The classifier alone (a
+    /// building over 0.6) was tried and lost a quarter of the good photos:
+    /// it names a building unsurely at night, in a panorama or behind
+    /// people. Measured on Detsky Mir (2026-10-27, the user's choice of
+    /// the compromise): of 58 photos marked by eye the two bad dropped and
+    /// four good of 50 lost; on an earlier 48, the five bad dropped. A
+    /// picture not read stays.
     static func judge(_ pictures: [CGImage?], groups: [Int]) -> [Verdict] {
         let n = pictures.count
         var signs: [Signs?] = Array(repeating: nil, count: n)
         var sure = [Double](repeating: 1, count: n)
+        var sky = [Double](repeating: 0, count: n)
         var prints: [VNFeaturePrintObservation?] = Array(repeating: nil, count: n)
         for i in 0..<n {
             guard let p = pictures[i] else { continue }
             signs[i] = Self.signs(p)
-            sure[i] = building(p)
+            (sure[i], sky[i]) = classify(p)
             // Its upper part, the facade: the street, the cars and the
             // people at its foot differ from photo to photo of one facade.
             prints[i] = crop(p, box: CGRect(x: 0, y: 0, width: 1, height: 0.6)).flatMap(featurePrint)
@@ -161,12 +169,13 @@ enum FrameCheck {
         }
         return (0..<n).map { i in
             guard let s = signs[i] else { return Verdict(keep: true, note: "its picture not read") }
-            let read = String(format: "building %.2f, edges %.2f, smooth %.2f", sure[i], s.edges, s.smooth)
+            let read = String(format: "building %.2f, sky %.2f, edges %.2f, smooth %.2f", sure[i], sky[i], s.edges, s.smooth)
                 + (near[i].isNaN ? "" : String(format: ", %.2f from its three most alike (the facade's typical %.2f)", near[i], typical[groups[i]] ?? .nan))
             if s.edges < 0.1 && s.smooth > 0.6 { return Verdict(keep: false, note: "a blank picture: burnt out or a sun flare (\(read))") }
-            if sure[i] < 0.3 {
-                // No building to the classifier: kept only when it looks
-                // like its facade's others.
+            if sky[i] > 0.9 && sure[i] < 0.4 { return Verdict(keep: false, note: "the sky (\(read))") }
+            if sure[i] < 0.5 {
+                // Unsure of a building to the classifier: kept only when it
+                // looks like its facade's others.
                 guard let t = typical[groups[i]], !near[i].isNaN else { return Verdict(keep: false, note: "no building in it (\(read))") }
                 if near[i] > t { return Verdict(keep: false, note: "no building in it, and unlike its facade's other photos (\(read))") }
             }
