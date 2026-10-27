@@ -785,7 +785,8 @@ enum StreetPicks {
     /// they show, how square on, large and near, the photo's own worth
     /// (date, pose, quality, daylight) and how sure the scene classifier is
     /// of a building (`building`, by photo id); the best first, then the
-    /// best from another station (another angle: square on, from a corner),
+    /// best from another station (another angle: square on, from a corner)
+    /// when it is three fifths as good, else the next best from any,
     /// each photo the best of one facade only, the longest facade first.
     static func best(_ stations: [(facade: Int, station: Int, view: StreetView)], in scene: StreetScene,
                      building: [String: Double], count: Int = 3) -> [Int: [StreetView]] {
@@ -795,7 +796,12 @@ enum StreetPicks {
             func worth(_ v: StreetView) -> Double { v.looks[f] * v.seen[f] * (0.5 + 0.5 * (building[v.photo.id] ?? 1)) }
             let mine = stations.filter { $0.facade == f && !used.contains($0.view.photo.id) }.sorted { worth($0.view) > worth($1.view) }
             var taken: [(station: Int, view: StreetView)] = []
-            for c in mine where taken.count < count && !taken.contains(where: { $0.station == c.station || $0.view.photo.id == c.view.photo.id }) {
+            // Another angle only when it is a good look too: three fifths of
+            // the best at least (a station whose best is a sliver under the
+            // sky gives way to a second look from a good one).
+            let floor = 0.6 * (mine.first.map { worth($0.view) } ?? 0)
+            for c in mine where taken.count < count && worth(c.view) >= floor
+                && !taken.contains(where: { $0.station == c.station || $0.view.photo.id == c.view.photo.id }) {
                 taken.append((c.station, c.view))
             }
             // Short of stations, the next best from any.
