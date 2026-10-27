@@ -48,7 +48,13 @@ public enum LandmarkGenerator {
     /// - a window is cut `windowDepth` in, and drawn `windowScale` wider
     ///   and `windowRise` taller than given, within its bay and storey;
     /// - a parapet is at least `parapet`, eaves reach `eaves` with a fascia
-    ///   `fascia` deep, a door is cut `doorDepth` in.
+    ///   `fascia` deep, a door is cut `doorDepth` in;
+    /// - every convex corner of a mass or a box is chamfered `chamfer`
+    ///   across (a toy's rounded edge, the user, 2026-10-27: a sharp corner
+    ///   melts two flat faces into one from afar, the chamfer catches the
+    ///   light between them), within a third of its edges;
+    /// - windows come every `windowStep` metres at least (the bays merged
+    ///   to that), so they read as windows and not as a texture.
     enum Caricature {
         static let proud = 0.45
         static let corniceDepth = 0.8, corniceHeight = 0.9
@@ -60,6 +66,8 @@ public enum LandmarkGenerator {
         static let parapet = 0.7
         static let eaves = 0.9, fascia = 0.6
         static let doorDepth = 0.8
+        static let chamfer = 0.5
+        static let windowStep = 4.5
     }
     static let windowDepth = 0.45
     /// From this area a glazed opening is a shop front or a glazed arch,
@@ -277,7 +285,7 @@ public enum LandmarkGenerator {
         let m = Model()
         var rings: [[P2]?] = r.masses.map { mass in
             let ring = mass.outline.flatMap { source.ring($0) } ?? (mass.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
-            return ring.count >= 3 && mass.top > mass.base ? ccw(ring) : nil
+            return ring.count >= 3 && mass.top > mass.base ? chamfered(ccw(ring), Caricature.chamfer) : nil
         }
         sink(&rings, r.masses)
         sinkEdges(&rings, r.masses)
@@ -622,7 +630,8 @@ public enum LandmarkGenerator {
                 var best: (Int, Double, Double)?
                 for i in ring.indices {
                     let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
-                    guard len > 1e-6 else { continue }
+                    // Never a chamfer's edge: a door is on the wall beside it.
+                    guard len > 2 else { continue }
                     let t = max(0, min(len, simd_dot(p - a, b - a) / len))
                     let dist = simd_length(a + (b - a) * (t / len) - p)
                     if best == nil || dist < best!.2 { best = (i, t, dist) }
@@ -752,12 +761,15 @@ public enum LandmarkGenerator {
         func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
             guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
             let storey = (hi - lo) / Double(w.storeys)
-            let height = min(w.height * Caricature.windowRise, storey * 0.7), width = min(w.width * Caricature.windowScale, w.spacing * 0.72)
-            let n = Int((len - 1) / w.spacing)
+            // The bays merged until the windows stand `windowStep` apart at
+            // least, each window drawn wider in its wider bay.
+            let step = w.spacing * max(1, (Caricature.windowStep / w.spacing).rounded(.up))
+            let height = min(w.height * Caricature.windowRise, storey * 0.7), width = min(w.width * Caricature.windowScale * (step / w.spacing).squareRoot(), step * 0.72)
+            let n = Int((len - 1) / step)
             guard n >= 1, height > 0.3 else { return [] }
             var out: [[P2]] = []
             for k in 0..<n {
-                let t = len / 2 + (Double(k) - Double(n - 1) / 2) * w.spacing
+                let t = len / 2 + (Double(k) - Double(n - 1) / 2) * step
                 for s in 0..<w.storeys {
                     let zc = lo + storey * (Double(s) + 0.5)
                     out.append(opening(t, zc - height / 2, width, height, arched: w.arched == true))
@@ -776,7 +788,9 @@ public enum LandmarkGenerator {
                 guard len > p.spacing + width else { continue }
                 let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
                 let n = Int((len - 1) / p.spacing)
-                let between = windows.map { abs($0.spacing - p.spacing) < 1e-6 && n >= 1 } ?? false
+                // Between the windows when they share the spacing and the
+                // windows were not merged to a wider step.
+                let between = windows.map { abs($0.spacing - p.spacing) < 1e-6 && n >= 1 && $0.spacing >= Caricature.windowStep } ?? false
                 var positions: [Double] = []
                 if between {
                     for k in 0...n { positions.append(len / 2 + (Double(k) - Double(n) / 2) * p.spacing) }
@@ -1016,7 +1030,7 @@ public enum LandmarkGenerator {
             case "box":
                 let ring = (f.polygon ?? []).compactMap(p2)
                 guard ring.count >= 3, let top = f.top, top > base else { return }
-                prism(ccw(ring), base, top, colour)
+                prism(LandmarkGenerator.chamfered(ccw(ring), Caricature.chamfer), base, top, colour)
             case "steps":
                 guard let a = p2(f.from), let b = p2(f.to), let height = f.height, height > 0 else { return }
                 // A stack of slabs, the top one at the line, each a step deeper
@@ -1329,6 +1343,29 @@ public enum LandmarkGenerator {
     }
 
     /// A counter-clockwise ring grown outward by `d`, square at its corners.
+    /// A counter-clockwise ring with every convex corner turning more than
+    /// 25° cut across: the corner's point replaced by two, `c` along each
+    /// of its edges (a third of the shorter edge at most). A concave corner
+    /// (a courtyard's, a re-entrant one) is left as it is.
+    static func chamfered(_ ring: [P2], _ c: Double) -> [P2] {
+        let n = ring.count
+        guard n >= 3, c > 0.01 else { return ring }
+        var out: [P2] = []
+        for i in 0..<n {
+            let p = ring[(i + n - 1) % n], q = ring[i], r = ring[(i + 1) % n]
+            let a = q - p, b = r - q, la = simd_length(a), lb = simd_length(b)
+            guard la > 1e-6, lb > 1e-6 else { out.append(q); continue }
+            let cross = a.x * b.y - a.y * b.x
+            let turn = atan2(cross, simd_dot(a, b)) * 180 / .pi
+            guard turn > 25 else { out.append(q); continue }
+            let d = min(c, la / 3, lb / 3)
+            guard d > 0.05 else { out.append(q); continue }
+            out.append(q - a / la * d)
+            out.append(q + b / lb * d)
+        }
+        return out
+    }
+
     static func grown(_ ring: [P2], _ d: Double) -> [P2] {
         let g = Geometry.polygon(ring + [ring[0]]).buffer(d, quadSegs: 1, join: .mitre).polygons
             .max { $0.area < $1.area }

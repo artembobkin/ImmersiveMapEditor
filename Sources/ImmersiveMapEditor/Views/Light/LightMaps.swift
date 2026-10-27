@@ -82,6 +82,10 @@ final class LightSettings {
     /// The engine's shadow of the sun on a landmark previewed alone: how
     /// dark where a surface is fully in shadow (not baked: the engine's).
     var shadow: Double = value("shadow", 0.45) { didSet { Self.keep("shadow", shadow) } }
+    /// The preview camera's lens on a landmark alone: its vertical field of
+    /// view in degrees, the engine's 45 by default. Narrow flattens the
+    /// building like a telephoto, wide makes what is near loom.
+    var lens: Double = value("lens", 45) { didSet { Self.keep("lens", lens) } }
 
     /// These as TileKit's settings, for a bake in the app.
     var settings: Lighting.Settings {

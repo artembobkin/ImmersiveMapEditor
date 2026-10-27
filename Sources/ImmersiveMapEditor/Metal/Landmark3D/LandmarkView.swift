@@ -40,6 +40,16 @@ final class LandmarkView: MTKView {
     private var lit: LandmarkRenderer.LitModel?
     /// The engine's shadow of the sun on the lit model: how dark, 0 for none.
     var shadowStrength = 0.45 { didSet { renderer.shadowStrength = Float(shadowStrength) } }
+    /// The camera's lens: its vertical field of view in degrees. Changed,
+    /// the camera moves so the model stays the same size in the frame: the
+    /// lens alone changes, as a photographer's would.
+    var lens = 50.0 {
+        didSet {
+            guard lens > 1, lens < 179 else { lens = oldValue; return }
+            controller.camera.distance *= tan(oldValue / 2 * .pi / 180) / tan(lens / 2 * .pi / 180)
+            controller.camera.fovDegrees = lens
+        }
+    }
     /// The wireframe over the shading, and back faces culled (a model's,
     /// not the OSM boxes': their winding is not kept).
     var wireframe = false
@@ -190,7 +200,7 @@ final class LandmarkView: MTKView {
         try TileRenderer.renderPNG(device: renderer.device, queue: renderer.queue, to: out, width: width, height: height) { enc in
             encodeStill(enc, vp)
         }
-        controller.camera.fovDegrees = 50
+        controller.camera.fovDegrees = lens
     }
 
     /// A source read as a plain model (a lit one unlit), for the renders

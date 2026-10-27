@@ -185,6 +185,7 @@ final class Session {
             previewView?.status = { [weak self] in self?.previewStatus = $0 }
         }
         previewView?.shadowStrength = lightSettings.shadow
+        previewView?.lens = lightSettings.lens
         guard let landmark = candidates.first(where: { $0.id == workspace.previewSubject }), let glb = landmark.model else {
             previewView?.show(nil)
             return

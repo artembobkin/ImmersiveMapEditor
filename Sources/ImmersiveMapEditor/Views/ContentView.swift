@@ -131,6 +131,7 @@ struct ContentView: View {
                     session.showPreview()
                 }
                 .onChange(of: session.lightSettings.shadow, initial: true) { session.previewView?.shadowStrength = session.lightSettings.shadow }
+                .onChange(of: session.lightSettings.lens, initial: true) { session.previewView?.lens = session.lightSettings.lens }
             } else if workspace.shown.isEmpty {
                 ContentUnavailableView("The tile is not built", systemImage: "sun.max",
                                        description: Text("Build the tile in Tiles 3D, then bake its light here. A landmark alone needs no build: pick it on the right."))

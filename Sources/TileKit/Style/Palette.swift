@@ -49,6 +49,12 @@ public enum Palette {
     ]
     static let reveal = 0.82    // a window's reveals against its wall
     static let glass = 0.52     // a window's glass against its wall
+    /// A landmark's window: its glass a light pane of sky (the toy's window,
+    /// the user, 2026-10-27: a window lighter than its wall reads as a
+    /// window from afar, a dark one as a hole), its reveal darker than an
+    /// ordinary building's, so the pane has a rim.
+    static let landmarkGlass = "#D3E4F0"
+    static let landmarkReveal = 0.72
 
     /// The things of a construction site and the street, sided like walls.
     public private(set) static var props: [(String, String)] = [
@@ -154,8 +160,8 @@ public enum Palette {
         for (name, hex) in landmark {
             for (side, f) in sides {
                 out.append(("\(name).\(side)", tone(hex, f)))
-                out.append(("\(name).reveal.\(side)", tone(tone(hex, reveal), f)))
-                out.append(("\(name).glass.\(side)", tone(tone(hex, glassTint), f)))
+                out.append(("\(name).reveal.\(side)", tone(tone(hex, landmarkReveal), f)))
+                out.append(("\(name).glass.\(side)", tone(landmarkGlass, f)))
             }
         }
         out.append(("lm_glass", "#7E9DB0"))
