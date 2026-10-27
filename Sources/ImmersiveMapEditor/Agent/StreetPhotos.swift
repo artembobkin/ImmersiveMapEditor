@@ -211,17 +211,25 @@ struct StreetPhoto {
     let poseDoubt: Bool
     /// Mapillary's own quality score, 0 to 1, when it has one.
     let quality: Double?
+    /// Whether the pose is the device's alone (no computed one): Mapillary
+    /// has not placed the photo by structure from motion.
+    let fromDevice: Bool
     /// The local hour it was taken, to tell night from day.
     let hour: Int?
 
     static let fields = "id,computed_geometry,geometry,computed_compass_angle,compass_angle,captured_at,creator,is_pano,camera_type,camera_parameters,width,height,sequence,quality_score"
 
     init?(_ e: [String: Any], _ scene: StreetScene) {
-        guard let id = e["id"] as? String,
-              let c = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double], c.count == 2 else { return nil }
+        // The computed pose (structure from motion), or the device's own
+        // when Mapillary has none: a photo the coverage tile places is as
+        // good a candidate by its device's pose.
+        let computed = (e["computed_geometry"] as? [String: Any])?["coordinates"] as? [Double]
+        let device = (e["geometry"] as? [String: Any])?["coordinates"] as? [Double]
+        guard let id = e["id"] as? String, let c = computed ?? device, c.count == 2 else { return nil }
         self.id = id
         at = scene.metres(lon: c[0], lat: c[1])
-        compass = (e["computed_compass_angle"] as? NSNumber)?.doubleValue
+        fromDevice = computed == nil
+        compass = ((e["computed_compass_angle"] ?? e["compass_angle"]) as? NSNumber)?.doubleValue
         let flagged = e["is_pano"] as? Bool ?? false, type = e["camera_type"] as? String
         pano = flagged || ["spherical", "equirectangular"].contains(type ?? "")
         camera = type ?? (pano ? "spherical" : "perspective")
@@ -259,6 +267,7 @@ struct StreetPhoto {
         thumb = nil
         poseDoubt = false
         quality = nil
+        fromDevice = false
         hour = nil
     }
 
@@ -349,7 +358,7 @@ struct StreetView {
         let sure = photo.poseDoubt ? 0.4 : 1.0
         let good = photo.quality.map { 0.5 + 0.5 * $0 } ?? 0.9
         let day = photo.hour.map { $0 >= 7 && $0 <= 19 ? 1.0 : 0.4 } ?? 1
-        let worth = fresh * sure * good * day * (photo.pano ? 0.9 : 1)
+        let worth = fresh * sure * good * day * (photo.pano ? 0.9 : 1) * (photo.fromDevice ? 0.8 : 1)
         // Each facade's samples: facing the camera, not glancing, in the
         // frame, not hidden by another building.
         var seen: [Double] = [], looks: [Double] = [], seenSamples: [[Bool]] = []
@@ -461,7 +470,8 @@ struct StreetView {
 
     func line(_ scene: StreetScene) -> String {
         let how = photo.pano ? "a panorama, cut to it" : "\(Int(share * 100))% of the frame, \(Int(off))° off"
-        let doubts = [photo.poseDoubt ? "its pose is doubtful" : nil, (photo.hour ?? 12) < 7 || (photo.hour ?? 12) > 19 ? "at night" : nil]
+        let doubts = [photo.poseDoubt ? "its pose is doubtful" : nil, photo.fromDevice ? "its pose is the device's alone" : nil,
+                      (photo.hour ?? 12) < 7 || (photo.hour ?? 12) > 19 ? "at night" : nil]
             .compactMap { $0 }
         return "\(photo.id): \(Int(distance)) m, from the \(Self.side(from)), shows \(shows(scene)), \(how), \(photo.date), by \(photo.author)"
             + (doubts.isEmpty ? "" : " (" + doubts.joined(separator: ", ") + ")")

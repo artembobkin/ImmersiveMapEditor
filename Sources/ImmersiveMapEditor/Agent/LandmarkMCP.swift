@@ -484,6 +484,10 @@ enum LandmarkMCP {
                     if let error = json["error"] as? [String: Any] { throw Failure("Mapillary refused the photos' details: \(error["message"] ?? error)") }
                     for (id, e) in json where chunk.contains(id) { if let e = e as? [String: Any] { photos[id] = e } }
                 }
+                // A photo a chunk's answer leaves out is asked for alone.
+                for id in asked where photos[id] == nil {
+                    if let e = try? mapillary(id, ["fields": StreetPhoto.fields]), e["error"] == nil, e["id"] != nil { photos[id] = e }
+                }
             }
             func text(_ s: String) -> [String: Any] { self.text(s) }
             let photosCount = total
@@ -496,7 +500,7 @@ enum LandmarkMCP {
                         if let photo = StreetPhoto(e, scene) {
                             why = simd_length(photo.at) > radius ? "beyond the radius" : StreetView(photo, in: scene) == nil ? StreetView.reason : "?"
                             why += " (\(photo.camera), focal \(photo.focal), compass \(photo.compass.map { Int($0) } ?? -1), at \(Int(photo.at.x)), \(Int(photo.at.y)))"
-                        } else { why = "no computed pose" }
+                        } else { why = "no pose at all" }
                     }
                     FileHandle.standardError.write("\(id): no look: \(why)\n".data(using: .utf8)!)
                 }
