@@ -269,8 +269,11 @@ struct StreetPhoto {
     let fromDevice: Bool
     /// The local hour it was taken, to tell night from day.
     let hour: Int?
+    /// How far the camera is tilted up (degrees, down negative), from the
+    /// rotation Mapillary computed; nil when it has none.
+    var pitch: Double? = nil
 
-    static let fields = "id,computed_geometry,geometry,computed_compass_angle,compass_angle,captured_at,creator,is_pano,camera_type,camera_parameters,width,height,sequence,quality_score"
+    static let fields = "id,computed_geometry,geometry,computed_compass_angle,compass_angle,captured_at,creator,is_pano,camera_type,camera_parameters,width,height,sequence,quality_score,computed_rotation"
 
     /// Whether Mapillary has both poses and they disagree (by 20 m or 35°).
     static func posesDisagree(_ e: [String: Any], _ scene: StreetScene) -> Bool {
@@ -308,6 +311,9 @@ struct StreetPhoto {
         poseDoubt = Self.posesDisagree(e, scene)
         quality = (e["quality_score"] as? NSNumber)?.doubleValue
         hour = captured.map { Int(($0.timeIntervalSince1970 / 3600 + (scene.lon / 15).rounded()).truncatingRemainder(dividingBy: 24)) }
+        if !pano, let r = (e["computed_rotation"] as? [Any])?.compactMap({ ($0 as? NSNumber)?.doubleValue }), r.count == 3 {
+            pitch = Self.pitch(rotation: r, compass: compass)
+        }
     }
 
     /// A perspective camera (or a panorama) at a place: a kept photo's pose,
@@ -329,6 +335,30 @@ struct StreetPhoto {
         quality = nil
         fromDevice = false
         hour = nil
+    }
+
+    /// The camera's tilt from Mapillary's computed rotation (an angle-axis
+    /// vector, OpenSfM's: the world's east, north, up into the camera's
+    /// right, down, forward). Its forward axis in the world is the
+    /// rotation's third row; the third column is tried too, and whichever
+    /// points where the compass does (within 20°) is taken, so a reading of
+    /// the convention the other way round is never trusted. nil when
+    /// neither agrees.
+    static func pitch(rotation r: [Double], compass: Double?) -> Double? {
+        let v = SIMD3(r[0], r[1], r[2]), angle = simd_length(v)
+        var m = [[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]]
+        if angle > 1e-9 {
+            let k = v / angle, c = cos(angle), s = sin(angle), t = 1 - c
+            m = [[c + k.x * k.x * t, k.x * k.y * t - k.z * s, k.x * k.z * t + k.y * s],
+                 [k.y * k.x * t + k.z * s, c + k.y * k.y * t, k.y * k.z * t - k.x * s],
+                 [k.z * k.x * t - k.y * s, k.z * k.y * t + k.x * s, c + k.z * k.z * t]]
+        }
+        for d in [SIMD3(m[2][0], m[2][1], m[2][2]), SIMD3(m[0][2], m[1][2], m[2][2])] {
+            let heading = (atan2(d.x, d.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+            if let compass, abs(StreetView.wrap(heading - compass)) > 20 { continue }
+            return asin(max(-1, min(1, d.z))) * 180 / .pi
+        }
+        return nil
     }
 
     var date: String {
@@ -375,7 +405,7 @@ struct StreetView {
     /// is): heading, pitch (up positive) and horizontal field of view, to
     /// render the model from the same place.
     var pose: (heading: Double, pitch: Double, hfov: Double) {
-        guard photo.pano else { return (heading, 0, hfov) }
+        guard photo.pano else { return (heading, photo.pitch ?? 0, hfov) }
         let (cx0, cx1, cy0, cy1) = StreetMarking.cutBounds(box)
         return (heading + ((cx0 + cx1) / 2 - 0.5) * 360, (0.5 - (cy0 + cy1) / 2) * 180, (cx1 - cx0) * 360)
     }
@@ -502,6 +532,9 @@ struct StreetView {
         // The frame: the seen part's bearings across, the top and the foot
         // at the nearest point down.
         let top = atan2(scene.top - 2, max(distance, 1)) * 180 / .pi, bottom = atan2(-2.0, max(distance, 1)) * 180 / .pi
+        // Up and down in the frame by the camera's tilt, when known.
+        let tilt = photo.pano ? 0 : photo.pitch ?? 0
+        let up = top - tilt, down = bottom - tilt
         var x0 = 0.0, x1 = 0.0, y0 = 0.0, y1 = 0.0
         switch photo.pano ? "spherical" : photo.camera {
         case "spherical", "equirectangular":
@@ -513,11 +546,11 @@ struct StreetView {
         case "fisheye":
             func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * (a * .pi / 180) }
             x0 = x(lo - 2); x1 = x(hi + 2)
-            y0 = 0.5 - photo.focal * l / h * (top * .pi / 180); y1 = 0.5 - photo.focal * l / h * (bottom * .pi / 180)
+            y0 = 0.5 - photo.focal * l / h * (up * .pi / 180); y1 = 0.5 - photo.focal * l / h * (down * .pi / 180)
         default:
             func x(_ a: Double) -> Double { 0.5 + photo.focal * l / w * tan(max(-80, min(80, a)) * .pi / 180) }
             x0 = x(lo - 2); x1 = x(hi + 2)
-            y0 = 0.5 - photo.focal * l / h * tan(min(top, 80) * .pi / 180); y1 = 0.5 - photo.focal * l / h * tan(bottom * .pi / 180)
+            y0 = 0.5 - photo.focal * l / h * tan(max(-80, min(up, 80)) * .pi / 180); y1 = 0.5 - photo.focal * l / h * tan(max(-80, min(down, 80)) * .pi / 180)
         }
         let bx0 = max(0, min(1, x0)), bx1 = max(0, min(1, x1)), by0 = max(0, min(1, y0)), by1 = max(0, min(1, y1))
         box = CGRect(x: bx0, y: by0, width: max(0, bx1 - bx0), height: max(0, by1 - by0))
@@ -531,6 +564,15 @@ struct StreetView {
             let margin = min(Self.edgeMargin, half * 0.35)
             let inner = max(0, min(hi, half - margin) - max(lo, -half + margin))
             guard inner >= 0.25 * 2 * half else { Self.reason = "at the frame's edge"; return nil }
+            // Up and down the same, by its tilt: a camera turned to the sky
+            // or the pavement holds the landmark in a strip at the frame's
+            // edge, or not at all (the user, 2026-10-27). A quarter of the
+            // frame's height must hold it.
+            if photo.pitch != nil {
+                let vhalf = (photo.camera == "fisheye" ? 0.5 * h / l / photo.focal * 180 / .pi : atan(0.5 * h / l / photo.focal) * 180 / .pi)
+                let held = max(0, min(up, vhalf) - max(down, -vhalf))
+                guard held >= 0.25 * 2 * vhalf else { Self.reason = "tilted away from it"; return nil }
+            }
         }
         // The photo's worth as a whole: its best look, and what else it shows.
         let mean = perimeter > 0 ? zip(looks, scene.facades).reduce(0.0) { $0 + $1.0 * $1.1.length } / perimeter : 0
