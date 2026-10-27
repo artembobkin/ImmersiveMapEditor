@@ -844,7 +844,14 @@ enum LandmarkMCP {
                 try? FileManager.default.removeItem(at: raw)
                 throw Failure("that is not a JPEG, PNG or WebP image: give the direct image URL")
             }
-            let file = references.appendingPathComponent(String(format: "photo-%02d.jpg", list.count + 1))
+            // The first free number: after a drop_reference the count of the
+            // credits would name a photo that is still there.
+            let taken = Set(list.compactMap { $0["file"] as? String })
+            let number = (1...).first { k in
+                let name = String(format: "photo-%02d.jpg", k)
+                return !taken.contains(name) && !FileManager.default.fileExists(atPath: references.appendingPathComponent(name).path)
+            }!
+            let file = references.appendingPathComponent(String(format: "photo-%02d.jpg", number))
             _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "\(maxSide)", "-s", "format", "jpeg", raw.path, "--out", file.path])
             try? FileManager.default.removeItem(at: raw)
             guard FileManager.default.fileExists(atPath: file.path) else { throw Failure("cannot read the image") }
