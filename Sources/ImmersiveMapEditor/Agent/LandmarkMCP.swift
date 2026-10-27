@@ -140,10 +140,10 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): facade by facade, the photo that shows it best and the ones that show the rest of it, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. The best candidate of every facade is kept into the references at once (framed in red, the rest painted black); the others come framed, to keep with save_street_photo. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. The best candidate of every facade is kept into the references at once (framed in red, the rest painted black); the others come framed, to keep with save_street_photo. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
-                "limit": ["type": "integer", "description": "How many at most, 16 by default: two a facade."]]]],
+                "limit": ["type": "integer", "description": "How many at most, 24 by default: up to five stations a facade."]]]],
             ["name": "save_street_photo",
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
@@ -416,7 +416,7 @@ enum LandmarkMCP {
         func streetPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
             let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
-            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 16))
+            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 24))
             // Every photo around, from Mapillary's coverage tiles (the Graph
             // API's box search answers with a different sample every time),
             // judged first by its raw pose, then the best few dozen asked for
@@ -449,9 +449,10 @@ enum LandmarkMCP {
             }
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
             // Facade by facade, so a facade seen only in passing keeps its
-            // candidates: the best five hundred looks at each judged with what
-            // hides them, then the best two dozen of each asked for in full
-            // (camera, computed pose, quality), thirty ids a call.
+            // candidates: the best five hundred looks at each judged with
+            // what hides them, then the best six at every station of each
+            // asked for in full (camera, computed pose, quality), twenty ids
+            // a call.
             func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
                 var ids = Set<String>()
                 var out: [[String: Any]] = []
@@ -466,7 +467,17 @@ enum LandmarkMCP {
                 guard let view = StreetView.best(e, in: scene) else { continue }
                 judged.append((view, e))
             }
-            let asked = bestOfEachFacade(judged, 24).map { $0["id"] as! String }
+            // The best few at every station of every facade asked for in
+            // full, so each station keeps its candidates.
+            var askedIds = Set<String>()
+            var asked: [String] = []
+            for f in scene.facades.indices {
+                for k in 0..<StreetScene.stations {
+                    for (_, e) in judged.filter({ $0.0.seen[f] >= StreetView.enough && scene.station(f, of: $0.0.photo.at) == k })
+                        .sorted(by: { $0.0.looks[f] * $0.0.seen[f] > $1.0.looks[f] * $1.0.seen[f] }).prefix(6)
+                    where askedIds.insert(e["id"] as! String).inserted { asked.append(e["id"] as! String) }
+                }
+            }
             if ProcessInfo.processInfo.environment["LANDMARK_STREET_DEBUG"] != nil {
                 for (f, facade) in scene.facades.enumerated() {
                     let glanced = rough.filter { $0.0.seen[f] >= StreetView.enough }.count
@@ -543,7 +554,7 @@ enum LandmarkMCP {
                 }
             }
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. Facade by facade (the sides of its outline, the longest first), the best look at each and a second from another track (one pass of a car or a walker) or angle:\n"
+                "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best:\n"
                 + report
                 + "\nThe first candidate of every facade is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it and keep the facade's next candidate with save_street_photo(id, shows). Keep the other candidates a facade needs to be seen whole, as listed. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {

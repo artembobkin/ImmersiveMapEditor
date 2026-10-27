@@ -179,9 +179,9 @@ final class LandmarkAgent {
         references, in this order:
            a. find_commons_photos (Wikimedia Commons, its category and around it): keep one classic view of the whole \
         (two at most, and not two alike) with save_commons_photo, to know the building and to judge the street photos by.
-           b. find_street_photos (Mapillary, street level all around it): the candidates facade by facade (the sides of \
-        the outline), the best look at each and the ones that show the rest of it, each with the landmark framed in red \
-        by the camera's pose. The best candidate of every facade is kept for you at once. Poses are sometimes wrong: look \
+           b. find_street_photos (Mapillary, street level all around it): a walk around it, facade by facade (the sides of \
+        the outline) and station by station along each (from beyond one end, its thirds, from beyond the other end), at \
+        each the photo standing there that shows the facade best, with the landmark framed in red by the camera's pose. The best candidate of every facade is kept for you at once. Poses are sometimes wrong: look \
         at every kept photo (everything outside its frame is painted black), and where the frame holds another building, \
         drop_reference it and keep the facade's next candidate with save_street_photo; then keep what a facade still \
         needs to be seen whole (every keep tells you how much of each facade the kept photos show and what is not seen \

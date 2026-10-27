@@ -96,6 +96,32 @@ struct StreetScene {
         return true
     }
 
+    /// The stations a facade is looked at from, in order along it: from
+    /// beyond one end, its first third, its middle, its last third, from
+    /// beyond the other end. A camera stands at the station its foot of
+    /// perpendicular on the facade falls in, in front of the facade and
+    /// within 150 m of it.
+    static let stations = 5
+    func station(_ f: Int, of at: P2) -> Int? {
+        let facade = facades[f]
+        let d = facade.b - facade.a, length = simd_length(d)
+        guard length > 0, simd_dot(at - facade.a, facade.normal) > 0, simd_dot(at - facade.a, facade.normal) <= 150 else { return nil }
+        let t = simd_dot(at - facade.a, d) / length
+        return t < 0 ? 0 : t < length / 3 ? 1 : t < 2 * length / 3 ? 2 : t <= length ? 3 : 4
+    }
+    func stationName(_ f: Int, _ k: Int) -> String {
+        let facade = facades[f]
+        let d = facade.b - facade.a
+        let toB = StreetView.side(atan2(d.x, d.y) * 180 / .pi), toA = StreetView.side(atan2(-d.x, -d.y) * 180 / .pi)
+        switch k {
+        case 0: return "from beyond its \(toA) end"
+        case 1: return "from its \(toA) third"
+        case 2: return "from its middle"
+        case 3: return "from its \(toB) third"
+        default: return "from beyond its \(toB) end"
+        }
+    }
+
     /// How much of a facade some samples are, in words, with the end they
     /// are at when they are a part: "whole", "half (its east end)".
     func part(_ f: Int, _ flags: [Bool]) -> String {
@@ -500,75 +526,56 @@ enum StreetPicks {
     /// A look worth a candidate.
     static let worthwhile = 0.05
 
-    /// The candidates, facade by facade: for every facade the photo that
-    /// shows it best, then the photos that show what that one does not,
-    /// until the facade is seen whole (three at most), or a second look
-    /// from another track or from well apart when the first sees it whole,
-    /// within `limit` in all, and the facades no photo shows: lines for the
-    /// agent, and the picks as they are numbered.
+    /// The candidates, a walk around the landmark: facade by facade, station
+    /// by station along it (from beyond one end, its thirds, from beyond
+    /// the other end), at each the photo standing there that shows the
+    /// facade best, none where no photo stands; within `limit` in all.
+    /// Lines for the agent, the picks as they are numbered, and for every
+    /// facade the pick showing most of it (kept at once).
     static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView], firsts: [(facade: Int, view: StreetView)]) {
         guard !views.isEmpty else { return ("", [], []) }
         let facades = scene.facades
         var picks: [StreetView] = []
         var taken: [String: Int] = [:]   // photo id to its number
-        var perFacade: [[StreetView]] = Array(repeating: [], count: facades.count)
-        var covered: [[Bool]] = facades.map { [Bool](repeating: false, count: $0.samples.count) }
-        func fraction(_ f: Int) -> Double { Double(covered[f].filter { $0 }.count) / Double(max(1, covered[f].count)) }
-        func gain(_ v: StreetView, _ f: Int) -> Double {
-            Double(covered[f].indices.filter { v.seenSamples[f][$0] && !covered[f][$0] }.count) / Double(max(1, covered[f].count))
-        }
-        func take(_ v: StreetView, for f: Int) {
-            if taken[v.photo.id] == nil {
-                picks.append(v)
-                taken[v.photo.id] = picks.count
-            }
-            perFacade[f].append(v)
-            for i in covered[f].indices where v.seenSamples[f][i] { covered[f][i] = true }
-        }
-        func pool(_ f: Int) -> [StreetView] {
-            views.filter { v in v.looks[f] >= worthwhile && v.seen[f] >= StreetView.enough && !perFacade[f].contains { $0.photo.id == v.photo.id } }
-        }
+        var atStation: [[StreetView?]] = facades.map { _ in [StreetView?](repeating: nil, count: StreetScene.stations) }
         let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
-        // The best look at every facade first, the part of it seen counting
-        // twice: a whole facade from a corner before half of it square on.
-        for f in order where picks.count < limit {
-            if let v = pool(f).max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) { take(v, for: f) }
-        }
-        // Then the rest of each facade: what shows most of what is not seen
-        // yet (a pick made for another facade costs nothing), or a second
-        // look at a facade seen whole, at least two fifths as good.
-        for f in order where !perFacade[f].isEmpty {
-            while picks.count < limit && perFacade[f].count < 3 {
-                let rest = pool(f)
-                if fraction(f) < 0.85 {
-                    guard let v = rest.max(by: { gain($0, f) * (0.5 + $0.looks[f]) < gain($1, f) * (0.5 + $1.looks[f]) }), gain(v, f) >= 0.15 else { break }
-                    take(v, for: f)
-                } else {
-                    guard perFacade[f].count == 1 else { break }
-                    let first = perFacade[f][0]
-                    guard let v = rest.filter({ $0.looks[f] >= first.looks[f] * 0.4
-                        && ($0.photo.sequence != first.photo.sequence || simd_length($0.photo.at - first.photo.at) > 25) })
-                        .max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) else { break }
-                    take(v, for: f)
+        // The facades in turn, the longest first, so the limit falls on the
+        // short ones; at every station the best look at the facade from it,
+        // the part seen counting twice.
+        for f in order {
+            for k in 0..<StreetScene.stations where picks.count < limit {
+                let here = views.filter { $0.looks[f] >= worthwhile && $0.seen[f] >= StreetView.enough && scene.station(f, of: $0.photo.at) == k }
+                guard let v = here.max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) else { continue }
+                atStation[f][k] = v
+                if taken[v.photo.id] == nil {
+                    picks.append(v)
+                    taken[v.photo.id] = picks.count
                 }
             }
         }
         var out: [String] = []
+        var firsts: [(facade: Int, view: StreetView)] = []
         for f in order {
             let name = facades[f].name.prefix(1).uppercased() + facades[f].name.dropFirst()
-            if perFacade[f].isEmpty {
+            let mine = atStation[f].compactMap { $0 }
+            guard !mine.isEmpty else {
                 let any = views.filter { $0.seen[f] >= StreetView.enough }.count
                 out.append("\(name) (\(Int(facades[f].length)) m): " + (any == 0 ? "no photo shows it." : "no photo gives a good look at it (\(any) glance at it)."))
                 continue
             }
-            let whole = fraction(f) > 0.85
-            out.append("\(name) (\(Int(facades[f].length)) m), " + (whole ? "seen whole by these:" : "these show \(scene.part(f, covered[f])), no photo the rest:") + "\n"
-                       + perFacade[f].map { v in
+            var covered = [Bool](repeating: false, count: facades[f].samples.count)
+            for v in mine { for i in covered.indices where v.seenSamples[f][i] { covered[i] = true } }
+            let whole = Double(covered.filter { $0 }.count) / Double(max(1, covered.count)) > 0.85
+            firsts.append((f, mine.max { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }!))
+            out.append("\(name) (\(Int(facades[f].length)) m), " + (whole ? "seen whole from these stations:" : "these stations show \(scene.part(f, covered)), no photo the rest:") + "\n"
+                       + (0..<StreetScene.stations).map { k -> String in
+                           let station = scene.stationName(f, k)
+                           guard let v = atStation[f][k] else { return "  \(station): no photo stands there." }
                            let frames = views.filter { $0.photo.sequence == v.photo.sequence }.count
-                           return "  #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
+                           return "  \(station): #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
                        }.joined(separator: "\n"))
         }
-        return (out.joined(separator: "\n"), picks, order.compactMap { f in perFacade[f].first.map { (f, $0) } })
+        return (out.joined(separator: "\n"), picks, firsts)
     }
 
     /// A contact sheet of the picks: their thumbnails in a grid, the landmark
