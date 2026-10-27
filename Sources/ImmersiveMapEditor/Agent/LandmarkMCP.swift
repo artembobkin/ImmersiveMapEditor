@@ -140,7 +140,7 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): facade by facade, the photo that shows it best and a second from another track (one pass) or angle, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows; and a contact sheet of them, the landmark framed in red on each, to see which really show it. Keep one with save_street_photo. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): facade by facade, the photo that shows it best and the ones that show the rest of it, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. The best candidate of every facade is kept into the references at once (framed in red, the rest painted black); the others come framed, to keep with save_street_photo. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
                 "limit": ["type": "integer", "description": "How many at most, 16 by default: two a facade."]]]],
@@ -449,7 +449,7 @@ enum LandmarkMCP {
             }
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
             // Facade by facade, so a facade seen only in passing keeps its
-            // candidates: the best hundred looks at each judged with what
+            // candidates: the best five hundred looks at each judged with what
             // hides them, then the best two dozen of each asked for in full
             // (camera, computed pose, quality), thirty ids a call.
             func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
@@ -462,7 +462,7 @@ enum LandmarkMCP {
                 return out
             }
             var judged: [(StreetView, [String: Any])] = []
-            for e in bestOfEachFacade(rough, 100) {
+            for e in bestOfEachFacade(rough, 500) {
                 guard let view = StreetView.best(e, in: scene) else { continue }
                 judged.append((view, e))
             }
@@ -514,7 +514,7 @@ enum LandmarkMCP {
             guard !views.isEmpty else {
                 return [text("Of \(photosCount) street photos within \(Int(radius)) m none shows the landmark well. Try a larger radius.")]
             }
-            let (report, picks) = StreetPicks.report(views, in: scene, limit: limit)
+            let (report, picks, firsts) = StreetPicks.report(views, in: scene, limit: limit)
             guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
             // The contact sheet: a small thumbnail of each pick, framed.
             let dir = searchFolder.appendingPathComponent("street")
@@ -531,11 +531,27 @@ enum LandmarkMCP {
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
+            // The best candidate of every facade is kept at once, so every
+            // facade the photos show gets its reference whatever the agent
+            // makes of the list; the agent drops one whose frame is wrong.
+            var keptNow: [String: [[String: Any]]] = [:]
+            let already = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? [])
+                .compactMap { $0["page"] as? String }
+            for (f, view) in firsts where !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
+                if let kept = try? keepStreet(view.photo.id, shows: "\(scene.facades[f].name): \(view.shows(scene)), kept by find_street_photos") {
+                    keptNow[view.photo.id] = kept
+                }
+            }
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. Facade by facade (the sides of its outline, the longest first), the best look at each and a second from another track (one pass of a car or a walker) or angle:\n"
                 + report
-                + "\nEach follows, numbered, the landmark framed in red by Mapillary's camera pose, which is sometimes wrong: keep only the ones whose red frame really holds the landmark (compare with the photos you know), with save_street_photo(id, shows): for every facade, the picks that together show it whole, as listed. A kept photo comes back with everything but the frame painted black (a panorama cut to it first): if the frame is on the wrong building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nThe first candidate of every facade is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it and keep the facade's next candidate with save_street_photo(id, shows). Keep the other candidates a facade needs to be seen whole, as listed. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
+                if let kept = keptNow[pick.photo.id] {
+                    content.append(text("#\(k + 1) " + (kept.first?["text"] as? String ?? "")))
+                    content += kept.dropFirst()
+                    continue
+                }
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
                 try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
                 PeopleMask.erase(framed)
@@ -653,6 +669,13 @@ enum LandmarkMCP {
         func saveStreetPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
             guard let id = args["id"] as? String, !id.isEmpty, id.allSatisfy(\.isNumber) else { throw Failure("give the photo's id from find_street_photos") }
             guard let shows = args["shows"] as? String, !shows.isEmpty else { throw Failure("say what it shows") }
+            return try keepStreet(id, shows: shows)
+        }
+
+        /// A Mapillary photo kept by its id: downloaded, the landmark framed
+        /// in red and the rest painted black, credited with its camera's
+        /// pose; the text says what it shows and what the references cover.
+        func keepStreet(_ id: String, shows: String) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
             let json = try mapillary(id, ["fields": StreetPhoto.fields + ",thumb_2048_url,thumb_original_url"])
             if let error = json["error"] as? [String: Any] { throw Failure("Mapillary: \(error["message"] ?? error)") }

@@ -506,8 +506,8 @@ enum StreetPicks {
     /// from another track or from well apart when the first sees it whole,
     /// within `limit` in all, and the facades no photo shows: lines for the
     /// agent, and the picks as they are numbered.
-    static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView]) {
-        guard !views.isEmpty else { return ("", []) }
+    static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView], firsts: [(facade: Int, view: StreetView)]) {
+        guard !views.isEmpty else { return ("", [], []) }
         let facades = scene.facades
         var picks: [StreetView] = []
         var taken: [String: Int] = [:]   // photo id to its number
@@ -568,7 +568,7 @@ enum StreetPicks {
                            return "  #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
                        }.joined(separator: "\n"))
         }
-        return (out.joined(separator: "\n"), picks)
+        return (out.joined(separator: "\n"), picks, order.compactMap { f in perFacade[f].first.map { (f, $0) } })
     }
 
     /// A contact sheet of the picks: their thumbnails in a grid, the landmark
