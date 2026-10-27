@@ -530,9 +530,9 @@ enum StreetPicks {
     /// by station along it (from beyond one end, its thirds, from beyond
     /// the other end), at each the photo standing there that shows the
     /// facade best, none where no photo stands; within `limit` in all.
-    /// Lines for the agent, the picks as they are numbered, and for every
-    /// facade the pick showing most of it (kept at once).
-    static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView], firsts: [(facade: Int, view: StreetView)]) {
+    /// Lines for the agent, the picks as they are numbered, and each pick
+    /// with the facade and station it was taken for (kept at once).
+    static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView], stations: [(facade: Int, station: Int, view: StreetView)]) {
         guard !views.isEmpty else { return ("", [], []) }
         let facades = scene.facades
         var picks: [StreetView] = []
@@ -554,8 +554,9 @@ enum StreetPicks {
             }
         }
         var out: [String] = []
-        var firsts: [(facade: Int, view: StreetView)] = []
+        var stations: [(facade: Int, station: Int, view: StreetView)] = []
         for f in order {
+            for k in 0..<StreetScene.stations { if let v = atStation[f][k] { stations.append((f, k, v)) } }
             let name = facades[f].name.prefix(1).uppercased() + facades[f].name.dropFirst()
             let mine = atStation[f].compactMap { $0 }
             guard !mine.isEmpty else {
@@ -566,7 +567,6 @@ enum StreetPicks {
             var covered = [Bool](repeating: false, count: facades[f].samples.count)
             for v in mine { for i in covered.indices where v.seenSamples[f][i] { covered[i] = true } }
             let whole = Double(covered.filter { $0 }.count) / Double(max(1, covered.count)) > 0.85
-            firsts.append((f, mine.max { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }!))
             out.append("\(name) (\(Int(facades[f].length)) m), " + (whole ? "seen whole from these stations:" : "these stations show \(scene.part(f, covered)), no photo the rest:") + "\n"
                        + (0..<StreetScene.stations).map { k -> String in
                            let station = scene.stationName(f, k)
@@ -575,7 +575,7 @@ enum StreetPicks {
                            return "  \(station): #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
                        }.joined(separator: "\n"))
         }
-        return (out.joined(separator: "\n"), picks, firsts)
+        return (out.joined(separator: "\n"), picks, stations)
     }
 
     /// A contact sheet of the picks: their thumbnails in a grid, the landmark

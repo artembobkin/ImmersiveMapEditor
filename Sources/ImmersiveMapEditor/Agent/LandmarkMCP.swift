@@ -140,7 +140,7 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. The best candidate of every facade is kept into the references at once (framed in red, the rest painted black); the others come framed, to keep with save_street_photo. Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. Every station's photo is kept into the references at once (framed in red, the rest painted black). Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
                 "limit": ["type": "integer", "description": "How many at most, 24 by default: up to five stations a facade."]]]],
@@ -525,7 +525,7 @@ enum LandmarkMCP {
             guard !views.isEmpty else {
                 return [text("Of \(photosCount) street photos within \(Int(radius)) m none shows the landmark well. Try a larger radius.")]
             }
-            let (report, picks, firsts) = StreetPicks.report(views, in: scene, limit: limit)
+            let (report, picks, stations) = StreetPicks.report(views, in: scene, limit: limit)
             guard !picks.isEmpty else { return [text("Of \(photosCount) street photos within \(Int(radius)) m none gives a good look at the landmark.")] }
             // The contact sheet: a small thumbnail of each pick, framed.
             let dir = searchFolder.appendingPathComponent("street")
@@ -542,21 +542,21 @@ enum LandmarkMCP {
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
-            // The best candidate of every facade is kept at once, so every
-            // facade the photos show gets its reference whatever the agent
-            // makes of the list; the agent drops one whose frame is wrong.
+            // The photo of every station is kept at once, so every side a
+            // photo stands at gets its reference whatever the agent makes of
+            // the list; the agent drops one whose frame is wrong.
             var keptNow: [String: [[String: Any]]] = [:]
             let already = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? [])
                 .compactMap { $0["page"] as? String }
-            for (f, view) in firsts where !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
-                if let kept = try? keepStreet(view.photo.id, shows: "\(scene.facades[f].name): \(view.shows(scene)), kept by find_street_photos") {
+            for (f, k, view) in stations where keptNow[view.photo.id] == nil && !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
+                if let kept = try? keepStreet(view.photo.id, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos") {
                     keptNow[view.photo.id] = kept
                 }
             }
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m; of the \(asked.count) best looks asked for in full, \(photos.count) came back and \(views.count) show the landmark. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best:\n"
                 + report
-                + "\nThe first candidate of every facade is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it and keep the facade's next candidate with save_street_photo(id, shows). Keep the other candidates a facade needs to be seen whole, as listed. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEvery station's photo is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 if let kept = keptNow[pick.photo.id] {
                     content.append(text("#\(k + 1) " + (kept.first?["text"] as? String ?? "")))
