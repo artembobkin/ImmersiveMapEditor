@@ -181,10 +181,12 @@ final class LandmarkAgent {
         (two at most, and not two alike) with save_commons_photo, to know the building and to judge the street photos by.
            b. find_street_photos (Mapillary, street level all around it): a walk around it, facade by facade (the sides of \
         the outline) and station by station along each (from beyond one end, its thirds, from beyond the other end), at \
-        each the photo standing there that shows the facade best, with the landmark framed in red by the camera's pose. Every station's photo is kept for you at once. Poses are sometimes wrong: look at every kept \
-        photo (everything outside its frame is painted black), and where the frame holds another building, \
-        drop_reference it; save_street_photo keeps any other candidate you want, and every keep tells you how much of \
-        each facade the kept photos show.
+        each the photos standing there that show the facade best, each from another track, with the landmark framed in \
+        red by the camera's pose. Every station's photos are kept for you at once, in a folder for each facade \
+        (north-facade/photo-03.jpg: give that path to show_reference, compare_with_photo and drop_reference). Poses are \
+        sometimes wrong: look at the kept photos (everything outside a frame is painted black), and where a frame holds \
+        another building, drop_reference it; save_street_photo keeps any other candidate you want, and every keep tells \
+        you how much of each facade the kept photos show.
            c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
         and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
            d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \

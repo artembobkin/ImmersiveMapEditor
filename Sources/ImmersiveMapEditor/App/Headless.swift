@@ -10,7 +10,7 @@ import TileKit
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--erase-people", "--street-photos"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--street-photos"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -54,7 +54,6 @@ enum Headless {
                 if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
             }
             let server = LandmarkMCP.Server(folder: folder)
-            Segmenter.folder = server.root.appendingPathComponent("config/models")
             var args: [String: Any] = [:]
             if let r = arguments.firstIndex(of: "--radius"), arguments.count > r + 1, let v = Double(arguments[r + 1]) { args["radius"] = v }
             if let l = arguments.firstIndex(of: "--limit"), arguments.count > l + 1, let v = Int(arguments[l + 1]) { args["limit"] = v }
@@ -119,14 +118,6 @@ enum Headless {
             } catch {
                 return fail(error.localizedDescription)
             }
-        }
-        if let i = arguments.firstIndex(of: "--erase-people"), arguments.count > i + 2 {
-            // A photo's people and traffic painted black, to check the models.
-            Segmenter.folder = DataFolder.current.appendingPathComponent("config/models")
-            let out = URL(fileURLWithPath: arguments[i + 2])
-            try? FileManager.default.copyItem(at: URL(fileURLWithPath: arguments[i + 1]), to: out)
-            print(PeopleMask.erase(out) ? "people painted" : "no people found")
-            return 0
         }
         if let i = arguments.firstIndex(of: "--map-snapshot"), arguments.count > i + 2 {
             // The map as it opens, once OpenStreetMap's tiles in view are here.

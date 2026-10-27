@@ -68,7 +68,6 @@ final class Session {
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         palette.load(workspace.paths)
-        Segmenter.folder = workspace.paths.config.appendingPathComponent("models")
         agent.modelChanged = { [weak self] in self?.showLandmark(again: true) }
     }
 

@@ -17,7 +17,6 @@ enum LandmarkMCP {
         var root = folder.standardizedFileURL
         for _ in 0..<6 { root = root.deletingLastPathComponent() }
         Palette.load(WorkspacePaths(root: root))
-        Segmenter.folder = root.appendingPathComponent("config/models")
         let server = Server(folder: folder.standardizedFileURL)
         while let line = readLine(strippingNewline: true) {
             guard let data = line.data(using: .utf8),
@@ -140,10 +139,10 @@ enum LandmarkMCP {
                 "licence": ["type": "string"], "shows": ["type": "string"]],
                              "required": ["url", "page", "author", "licence", "shows"]]],
             ["name": "find_street_photos",
-             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best, each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. Every station's photo is kept into the references at once (framed in red, the rest painted black). Needs the Mapillary token of Settings.",
+             "description": "Street-level photos of the landmark from Mapillary (CC BY-SA 4.0, credited when kept), judged by their camera poses against the landmark's facades (the sides of its outline): a walk around it, facade by facade and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track (three at most), each with its id, distance, which facades it shows and how much of each, how much of the frame it fills, date and author, and the facades no photo shows. Every station's photos are kept into the references at once, each into the folder of its facade (north-facade/ and so on), framed in red, the rest painted black. Needs the Mapillary token of Settings.",
              "inputSchema": ["type": "object", "properties": [
                 "radius": ["type": "number", "description": "Metres around the centre, 150 by default."],
-                "limit": ["type": "integer", "description": "How many at most, 24 by default: up to five stations a facade."]]]],
+                "limit": ["type": "integer", "description": "How many at most, 60 by default: up to five stations a facade, three photos a station."]]]],
             ["name": "save_street_photo",
              "description": "Downloads one of find_street_photos' pictures by its id into the references, credited (Mapillary, its author, CC BY-SA 4.0), and returns it to look at.",
              "inputSchema": ["type": "object", "properties": ["id": ["type": "string"], "shows": ["type": "string", "description": "What it shows: which side, from where."]],
@@ -216,8 +215,8 @@ enum LandmarkMCP {
                 guard let shown = image(url) else { throw Failure("no picture \(file) in the requests") }
                 return [text("The user's picture \(file.lastPathComponent)"), shown]
             case "show_reference":
-                let file = (args["file"] as? String ?? "") as NSString
-                guard let shown = image(references.appendingPathComponent(file.lastPathComponent)) else { throw Failure("no reference \(file)") }
+                let file = args["file"] as? String ?? ""
+                guard let found = reference(file), let shown = image(found.url) else { throw Failure("no reference \(file)") }
                 return [shown]
             default: throw Failure("no tool \(name)")
             }
@@ -416,7 +415,7 @@ enum LandmarkMCP {
         func streetPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
             let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 150))
-            let limit = max(1, min(40, (args["limit"] as? NSNumber)?.intValue ?? 24))
+            let limit = max(1, min(120, (args["limit"] as? NSNumber)?.intValue ?? 60))
             // Every photo around, from Mapillary's coverage tiles (the Graph
             // API's box search answers with a different sample every time),
             // judged first by its raw pose, then the best few dozen asked for
@@ -473,7 +472,7 @@ enum LandmarkMCP {
             let total = points.filter { simd_length(scene.metres(lon: $0.lon, lat: $0.lat)) <= radius }.count
             // Facade by facade, so a facade seen only in passing keeps its
             // candidates: the best five hundred looks at each judged with
-            // what hides them, then the best six at every station of each
+            // what hides them, then the best fifteen at every station of each
             // asked for in full (camera, computed pose, quality), twenty ids
             // a call.
             func bestOfEachFacade(_ list: [(StreetView, [String: Any])], _ n: Int) -> [[String: Any]] {
@@ -497,14 +496,14 @@ enum LandmarkMCP {
                 guard let view = StreetView(confirmed, in: scene) else { continue }
                 judged.append((view, e))
             }
-            // The best few at every station of every facade asked for in
-            // full, so each station keeps its candidates.
+            // The best fifteen at every station of every facade asked for in
+            // full, so each station keeps candidates from several tracks.
             var askedIds = Set<String>()
             var asked: [String] = []
             for f in scene.facades.indices {
                 for k in 0..<StreetScene.stations {
                     for (_, e) in judged.filter({ $0.0.seen[f] >= StreetView.enough && scene.station(f, of: $0.0.photo.at) == k })
-                        .sorted(by: { $0.0.looks[f] * $0.0.seen[f] > $1.0.looks[f] * $1.0.seen[f] }).prefix(6)
+                        .sorted(by: { $0.0.looks[f] * $0.0.seen[f] > $1.0.looks[f] * $1.0.seen[f] }).prefix(15)
                     where askedIds.insert(e["id"] as! String).inserted { asked.append(e["id"] as! String) }
                 }
             }
@@ -583,30 +582,35 @@ enum LandmarkMCP {
             }
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
-            // The photo of every station is kept at once, so every side a
-            // photo stands at gets its reference whatever the agent makes of
-            // the list; the agent drops one whose frame is wrong.
+            // Every station's photos are kept at once, each into the folder
+            // of the facade it was taken for, so every side a photo stands at
+            // gets its references whatever the agent makes of the list; the
+            // agent drops one whose frame is wrong. Only the first of each
+            // station comes back as a picture, the others by name.
             var keptNow: [String: [[String: Any]]] = [:]
+            var shown = Set<String>()
+            var stationsSeen = Set<String>()
             let already = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? [])
                 .compactMap { $0["page"] as? String }
             for (f, k, view) in stations where keptNow[view.photo.id] == nil && !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
-                if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos") {
+                if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos",
+                                              into: Self.facadeFolder(scene.facades[f].name)) {
                     keptNow[view.photo.id] = kept
+                    if stationsSeen.insert("\(f) \(k)").inserted { shown.insert(view.photo.id) }
                 }
             }
             var content: [[String: Any]] = [text(
-                "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count) are borne out again by Mapillary's computed pose. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photo standing there that shows the facade best:\n"
+                "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count) are borne out again by Mapillary's computed pose. A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track:\n"
                 + report
-                + "\nEvery station's photo is kept already (below, framed in red, the rest painted black). Mapillary's camera pose is sometimes wrong: look at each kept photo, and if its frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEvery station's photos are kept already, each in the folder of its facade (north-facade/, ...), framed in red, the rest painted black. The first of each station follows as a picture, the others by name: show_reference(name) to look at one. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 if let kept = keptNow[pick.photo.id] {
                     content.append(text("#\(k + 1) " + (kept.first?["text"] as? String ?? "")))
-                    content += kept.dropFirst()
+                    if shown.contains(pick.photo.id) { content += kept.dropFirst() }
                     continue
                 }
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
                 try ContactSheet.one(ContactSheet.Cell(image: thumbs[k], box: pick.box, cut: pick.photo.pano, label: ""), maxSide: 720, to: framed)
-                PeopleMask.erase(framed)
                 content.append(text("#\(k + 1) " + pick.line(scene)))
                 if let img = image(framed) { content.append(img) }
             }
@@ -649,7 +653,7 @@ enum LandmarkMCP {
                 if let thumb = p.thumb {
                     let (status, _) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "60", "-A", CommonsPhotos.agent, "-o", file.path, thumb])
                     _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "640", "-s", "format", "jpeg", file.path, "--out", file.path])
-                    if status == 0 { PeopleMask.erase(file); image = file }
+                    if status == 0 { image = file }
                 }
                 return ContactSheet.Cell(image: image, box: nil, cut: false, label: "#\(k + 1)  \(String(p.title.dropFirst("File:".count).prefix(40)))")
             }
@@ -709,13 +713,17 @@ enum LandmarkMCP {
         /// A kept photo that turned out not to show the landmark: gone, with
         /// its credit.
         func dropReference(_ name: String) throws -> String {
-            let file = references.appendingPathComponent((name as NSString).lastPathComponent)
-            guard file.pathExtension == "jpg", FileManager.default.fileExists(atPath: file.path) else { throw Failure("no reference \(name)") }
+            guard let (file, relative) = reference(name), file.pathExtension == "jpg" else { throw Failure("no reference \(name)") }
             try FileManager.default.removeItem(at: file)
+            // A folder of a facade left empty goes too.
+            let dir = file.deletingLastPathComponent()
+            if dir.standardizedFileURL != references.standardizedFileURL, (try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty == true {
+                try? FileManager.default.removeItem(at: dir)
+            }
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
-            list.removeAll { $0["file"] as? String == file.lastPathComponent }
+            list.removeAll { $0["file"] as? String == relative }
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
-            return "Dropped \(file.lastPathComponent)"
+            return "Dropped \(relative)"
         }
 
         func saveStreetPhoto(_ args: [String: Any]) throws -> [[String: Any]] {
@@ -724,7 +732,15 @@ enum LandmarkMCP {
             guard let view = confirmed[id] else {
                 throw Failure("\(id) is not one find_street_photos bore out by its track in this session: only those are kept")
             }
-            return try keepStreet(view, shows: shows)
+            let scene = try StreetScene(folder: folder)
+            return try keepStreet(view, shows: shows, into: Self.facadeFolder(scene.facades[view.best].name))
+        }
+
+        /// The folder of a facade's street photos: "the south facade, east
+        /// end" is south-facade-east-end.
+        static func facadeFolder(_ name: String) -> String {
+            let words = name.replacingOccurrences(of: "the ", with: "").replacingOccurrences(of: ",", with: "")
+            return words.split(separator: " ").joined(separator: "-")
         }
 
         /// The street photos find_street_photos bore out by their tracks in
@@ -734,7 +750,7 @@ enum LandmarkMCP {
         /// A Mapillary photo kept by its id: downloaded, the landmark framed
         /// in red and the rest painted black, credited with its camera's
         /// pose; the text says what it shows and what the references cover.
-        func keepStreet(_ view: StreetView, shows: String) throws -> [[String: Any]] {
+        func keepStreet(_ view: StreetView, shows: String, into sub: String) throws -> [[String: Any]] {
             let scene = try StreetScene(folder: folder)
             let id = view.photo.id
             let json = try mapillary(id, ["fields": "id,thumb_2048_url,thumb_original_url"])
@@ -745,7 +761,7 @@ enum LandmarkMCP {
             let kept = try keep(photo.pano ? url : (json["thumb_2048_url"] as? String ?? url),
                                 page: "https://www.mapillary.com/app/?pKey=\(id)", author: "\(photo.author) (Mapillary)",
                                 licence: "CC BY-SA 4.0", shows: shows + " (the landmark is the building framed in red, the rest painted black)",
-                                maxSide: photo.pano ? 8192 : 1280)
+                                maxSide: photo.pano ? 8192 : 1280, into: sub)
             if let name = (kept.first?["text"] as? String)?.split(separator: " ").last {
                 let file = references.appendingPathComponent(String(name))
                 try StreetMarking.mark(file, view)
@@ -819,22 +835,22 @@ enum LandmarkMCP {
 
         /// A kept street photo beside the model from its camera's place.
         func compare(_ args: [String: Any]) throws -> [[String: Any]] {
-            let name = ((args["file"] as? String ?? "") as NSString).lastPathComponent
+            let given = args["file"] as? String ?? ""
+            guard let (photo, name) = reference(given) else { throw Failure("no reference \(given)") }
             let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             guard let entry = list.first(where: { $0["file"] as? String == name }) else { throw Failure("no reference \(name)") }
             guard let pose = entry["pose"] as? [String: Any], let x = pose["x"] as? Double, let y = pose["y"] as? Double,
                   let heading = pose["heading"] as? Double, let hfov = pose["hfov"] as? Double else {
                 throw Failure("\(name) has no camera pose (only street photos have one): render_from a place of your choice instead")
             }
-            let photo = references.appendingPathComponent(name)
             let size = Self.size(of: photo) ?? (1024, 768)
             let scale = min(1, 1024.0 / Double(size.0))
             let w = Int(Double(size.0) * scale), h = Int(Double(size.1) * scale)
             let dir = currentRound.appendingPathComponent("compare")
-            let render = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".render.png")
+            let render = dir.appendingPathComponent(((name as NSString).lastPathComponent as NSString).deletingPathExtension + ".render.png")
             try look(eye: (x, y, pose["z"] as? Double ?? 2), heading: heading, pitch: pose["pitch"] as? Double ?? 0, hfov: hfov,
                      width: w, height: h, to: render)
-            let both = dir.appendingPathComponent((name as NSString).deletingPathExtension + ".compare.jpg")
+            let both = dir.appendingPathComponent(((name as NSString).lastPathComponent as NSString).deletingPathExtension + ".compare.jpg")
             try SideBySide.draw(photo, render, to: both)
             var content: [[String: Any]] = [text("\(name) and the model from its camera's place (\(Int(x)) m east, \(Int(y)) m north of the centre, looking \(Int(heading))°, \(Int(hfov))° wide): the photo on the left, the model on the right. Mapillary's pose can be some metres and degrees off, and a panorama's cut is not a perspective picture, so judge the shapes and the counts (columns, windows, storeys), not the exact overlap or size.")]
             if let img = image(both) { content.append(img) }
@@ -877,9 +893,13 @@ enum LandmarkMCP {
                 + (image(FileManager.default.fileExists(atPath: small.path) ? small : out).map { [$0] } ?? [])
         }
 
-        /// Downloads a photo into the references with its credit.
-        func keep(_ url: String, page: String, author: String, licence: String, shows: String, maxSide: Int = 1280) throws -> [[String: Any]] {
-            try FileManager.default.createDirectory(at: references, withIntermediateDirectories: true)
+        /// Downloads a photo into the references (into `sub`, a folder of
+        /// them, when given) with its credit, its file in the credits by its
+        /// path within the references.
+        func keep(_ url: String, page: String, author: String, licence: String, shows: String, maxSide: Int = 1280,
+                  into sub: String? = nil) throws -> [[String: Any]] {
+            let dir = sub.map { references.appendingPathComponent($0) } ?? references
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             var list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
             let raw = references.appendingPathComponent("download.tmp")
             let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"),
@@ -892,22 +912,36 @@ enum LandmarkMCP {
                 try? FileManager.default.removeItem(at: raw)
                 throw Failure("that is not a JPEG, PNG or WebP image: give the direct image URL")
             }
-            // The first free number: after a drop_reference the count of the
-            // credits would name a photo that is still there.
-            let taken = Set(list.compactMap { $0["file"] as? String })
-            let number = (1...).first { k in
-                let name = String(format: "photo-%02d.jpg", k)
-                return !taken.contains(name) && !FileManager.default.fileExists(atPath: references.appendingPathComponent(name).path)
-            }!
-            let file = references.appendingPathComponent(String(format: "photo-%02d.jpg", number))
+            // The first number free in every folder: after a drop_reference
+            // the count of the credits would name a photo still there, and a
+            // name stays one photo whatever folder it is in.
+            let taken = Set(list.compactMap { ($0["file"] as? String).map { ($0 as NSString).lastPathComponent } })
+                .union(FileManager.default.enumerator(atPath: references.path)?.compactMap { ($0 as? NSString)?.lastPathComponent } ?? [])
+            let number = (1...).first { !taken.contains(String(format: "photo-%02d.jpg", $0)) }!
+            let name = String(format: "photo-%02d.jpg", number)
+            let relative = sub.map { "\($0)/\(name)" } ?? name
+            let file = references.appendingPathComponent(relative)
             _ = Self.run(URL(fileURLWithPath: "/usr/bin/sips"), ["-Z", "\(maxSide)", "-s", "format", "jpeg", raw.path, "--out", file.path])
             try? FileManager.default.removeItem(at: raw)
             guard FileManager.default.fileExists(atPath: file.path) else { throw Failure("cannot read the image") }
-            // The people in it painted black, by the Mac's own model.
-            PeopleMask.erase(file)
-            list.append(["file": file.lastPathComponent, "url": url, "page": page, "author": author, "licence": licence, "shows": shows])
+            list.append(["file": relative, "url": url, "page": page, "author": author, "licence": licence, "shows": shows])
             try JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]).write(to: credits)
-            return [text("Kept as \(file.lastPathComponent)")] + (image(file).map { [$0] } ?? [])
+            return [text("Kept as \(relative)")] + (image(file).map { [$0] } ?? [])
+        }
+
+        /// A kept reference by the name the agent gives: its path within the
+        /// references ("north-facade/photo-03.jpg"), or its file name alone,
+        /// found by the credits. Never outside the references.
+        func reference(_ name: String) -> (url: URL, relative: String)? {
+            var path = name.hasPrefix("references/") ? String(name.dropFirst("references/".count)) : name
+            guard !path.split(separator: "/").contains("..") else { return nil }
+            if !FileManager.default.fileExists(atPath: references.appendingPathComponent(path).path) {
+                let list = (try? JSONSerialization.jsonObject(with: Data(contentsOf: credits))) as? [[String: Any]] ?? []
+                guard let found = list.compactMap({ $0["file"] as? String }).first(where: { ($0 as NSString).lastPathComponent == (path as NSString).lastPathComponent }) else { return nil }
+                path = found
+            }
+            let url = references.appendingPathComponent(path)
+            return FileManager.default.fileExists(atPath: url.path) ? (url, path) : nil
         }
 
         /// Runs a program, its output and errors together.

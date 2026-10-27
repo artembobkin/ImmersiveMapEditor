@@ -653,11 +653,14 @@ struct StreetTrack {
 enum StreetPicks {
     /// A look worth a candidate.
     static let worthwhile = 0.05
+    /// Looks at each station, each from another track.
+    static let perStation = 3
 
     /// The candidates, a walk around the landmark: facade by facade, station
     /// by station along it (from beyond one end, its thirds, from beyond
-    /// the other end), at each the photo standing there that shows the
-    /// facade best, none where no photo stands; within `limit` in all.
+    /// the other end), at each the photos standing there that show the
+    /// facade best, each from another track (`perStation` at most), none
+    /// where no photo stands; within `limit` in all.
     /// Lines for the agent, the picks as they are numbered, and each pick
     /// with the facade and station it was taken for (kept at once).
     static func report(_ views: [StreetView], in scene: StreetScene, limit: Int) -> (text: String, picks: [StreetView], stations: [(facade: Int, station: Int, view: StreetView)]) {
@@ -665,28 +668,39 @@ enum StreetPicks {
         let facades = scene.facades
         var picks: [StreetView] = []
         var taken: [String: Int] = [:]   // photo id to its number
-        var atStation: [[StreetView?]] = facades.map { _ in [StreetView?](repeating: nil, count: StreetScene.stations) }
+        var atStation: [[[StreetView]]] = facades.map { _ in Array(repeating: [], count: StreetScene.stations) }
         let order = facades.indices.sorted { facades[$0].length > facades[$1].length }
-        // The facades in turn, the longest first, so the limit falls on the
-        // short ones; at every station the best look at the facade from it,
-        // the part seen counting twice.
-        for f in order {
-            for k in 0..<StreetScene.stations where picks.count < limit {
-                let here = views.filter { $0.looks[f] >= worthwhile && $0.seen[f] >= StreetView.enough && scene.station(f, of: $0.photo.at) == k }
-                guard let v = here.max(by: { $0.looks[f] * $0.seen[f] < $1.looks[f] * $1.seen[f] }) else { continue }
-                atStation[f][k] = v
-                if taken[v.photo.id] == nil {
-                    picks.append(v)
-                    taken[v.photo.id] = picks.count
+        func take(_ v: StreetView, _ f: Int, _ k: Int) {
+            atStation[f][k].append(v)
+            if taken[v.photo.id] == nil {
+                picks.append(v)
+                taken[v.photo.id] = picks.count
+            }
+        }
+        func here(_ f: Int, _ k: Int) -> [StreetView] {
+            views.filter { $0.looks[f] >= worthwhile && $0.seen[f] >= StreetView.enough && scene.station(f, of: $0.photo.at) == k }
+                .sorted { $0.looks[f] * $0.seen[f] > $1.looks[f] * $1.seen[f] }
+        }
+        // Round by round, so the limit spreads over every station: first the
+        // best look at every station of every facade (the longest facade
+        // first, the part seen counting twice), then a look from another
+        // track at each, up to `perStation`.
+        for round in 0..<perStation {
+            for f in order {
+                for k in 0..<StreetScene.stations where picks.count < limit {
+                    let tracks = Set(atStation[f][k].map(\.photo.sequence))
+                    guard atStation[f][k].count == round,
+                          let v = here(f, k).first(where: { !tracks.contains($0.photo.sequence) }) else { continue }
+                    take(v, f, k)
                 }
             }
         }
         var out: [String] = []
         var stations: [(facade: Int, station: Int, view: StreetView)] = []
         for f in order {
-            for k in 0..<StreetScene.stations { if let v = atStation[f][k] { stations.append((f, k, v)) } }
+            for k in 0..<StreetScene.stations { for v in atStation[f][k] { stations.append((f, k, v)) } }
             let name = facades[f].name.prefix(1).uppercased() + facades[f].name.dropFirst()
-            let mine = atStation[f].compactMap { $0 }
+            let mine = atStation[f].flatMap { $0 }
             guard !mine.isEmpty else {
                 let any = views.filter { $0.seen[f] >= StreetView.enough }.count
                 out.append("\(name) (\(Int(facades[f].length)) m): " + (any == 0 ? "no photo shows it." : "no photo gives a good look at it (\(any) glance at it)."))
@@ -698,9 +712,11 @@ enum StreetPicks {
             out.append("\(name) (\(Int(facades[f].length)) m), " + (whole ? "seen whole from these stations:" : "these stations show \(scene.part(f, covered)), no photo the rest:") + "\n"
                        + (0..<StreetScene.stations).map { k -> String in
                            let station = scene.stationName(f, k)
-                           guard let v = atStation[f][k] else { return "  \(station): no photo stands there." }
-                           let frames = views.filter { $0.photo.sequence == v.photo.sequence }.count
-                           return "  \(station): #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
+                           guard !atStation[f][k].isEmpty else { return "  \(station): no photo stands there." }
+                           return "  \(station):\n" + atStation[f][k].map { v in
+                               let frames = views.filter { $0.photo.sequence == v.photo.sequence }.count
+                               return "    #\(taken[v.photo.id]!) " + v.line(scene) + " (\(frames) frames of its track show the landmark)"
+                           }.joined(separator: "\n")
                        }.joined(separator: "\n"))
         }
         return (out.joined(separator: "\n"), picks, stations)
