@@ -60,7 +60,7 @@ final class LandmarkAgent {
 
     /// Starts modelling the landmark, or goes on with its conversation when
     /// `request` is given.
-    func start(folder: URL, name: String, request: String?, console: BuildRunner) {
+    func start(folder: URL, name: String, request: String?, console: BuildRunner, followUps: Int = 0) {
         guard !running else { return }
         guard let claude = ClaudeSettings.executable else {
             console.append("No claude found: set its path in Settings > Claude.")
@@ -134,7 +134,23 @@ final class LandmarkAgent {
             console.end(ok && p.terminationStatus == 0)
             running = false
             process = nil
+            // Every facade with best photos reviewed on the final model, or
+            // the conversation goes on, twice at most (the user, 2026-10-27:
+            // the agent must not model from its three best photos and stop).
+            let due = LandmarkMCP.Server.facadesToReview(folder)
+            if ok, p.terminationStatus == 0, followUps < 2, !due.isEmpty,
+               FileManager.default.fileExists(atPath: folder.appendingPathComponent("recipe.json").path) {
+                start(folder: folder, name: name, request: Self.reviewRequest(due), console: console, followUps: followUps + 1)
+            }
         }
+    }
+
+    /// What the editor asks when the agent ends with facades not reviewed.
+    static func reviewRequest(_ due: [String]) -> String {
+        "Not every facade is reviewed on the final model: \(due.joined(separator: ", ")). review_facade each: the model beside "
+            + "every one of its best photos. Count what each photo shows against the model, fix what differs (a new build needs "
+            + "every facade reviewed again), then end with your summary, a line for each facade: what its photos show and what "
+            + "the model has."
     }
 
     func stop() { process?.terminate() }
@@ -182,8 +198,10 @@ final class LandmarkAgent {
            b. find_street_photos (Mapillary, street level all around it): a walk around it, facade by facade (the sides of \
         the outline) and station by station along each (from beyond one end, its thirds, from beyond the other end), at \
         each the photos standing there that show the facade best, each from another track, with the landmark framed in \
-        red by the camera's pose. Every station's photos are kept for you at once, in a folder for each facade \
-        (north-facade/photo-03.jpg: give that path to show_reference, compare_with_photo and drop_reference). Poses are \
+        red by the camera's pose. Every station's photos are kept for you at once, in a folder for each facade: its best \
+        one to three in best/, shown to you as pictures, the others in other/, by name (north-facade/best/photo-03.jpg: \
+        give that path to show_reference, compare_with_photo and drop_reference). Model each facade from its best \
+        photos, and open the others when a detail needs them. Poses are \
         sometimes wrong: look at the kept photos (everything outside a frame is painted black), and where a frame holds \
         another building, drop_reference it; save_street_photo keeps any other candidate you want, and every keep tells \
         you how much of each facade the kept photos show.
@@ -192,8 +210,9 @@ final class LandmarkAgent {
            d. find_commons_photos again for what these do not show: the whole from afar, the roofs at a slant (aerial, \
         drone), the details that make it recognisable (a sculpture, a portal).
         Keep 5 to 9 good ones in all. The web (WebSearch, WebFetch) only when these give nothing.
-        3. Write its recipe with set_recipe: every build comes back with the model rendered from each kept street \
-        photo's own camera beside that photo (one a side) and the satellite view beside the model from above, so what \
+        3. Write its recipe with set_recipe: every build comes back with the model rendered from a best street photo of \
+        each facade from that photo's own camera beside that photo (the next best each round) and the satellite view \
+        beside the model from above, so what \
         differs is plain: count the columns and the windows, check the roof's shape and height and the masses from above, \
         the entrances, the relief of the walls, the colours; compare_with_photo for \
         the other kept photos, render_views for the whole and from above, render_from for a look from any place. \
@@ -204,8 +223,10 @@ final class LandmarkAgent {
         fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
         the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
         the walls' colours of the photos and the roofs' colours satellite_view read, in the palette's words. Fix what is \
-        missing.
-        5. End with a short summary: what the model has, and what you were not sure of.
+        missing. Last, review_facade every facade on the final model: the model beside every one of its best photos; \
+        fix what differs (a new build needs every facade reviewed again). Do not end before every facade is reviewed.
+        5. End with a short summary: a line for each facade, what its photos show and what the model has; then what you \
+        were not sure of.
         """
     }
 

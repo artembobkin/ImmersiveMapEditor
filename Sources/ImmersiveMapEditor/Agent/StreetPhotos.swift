@@ -779,6 +779,35 @@ enum StreetPicks {
         return (out.joined(separator: "\n"), picks, stations)
     }
 
+    /// The best looks at each facade, one to `count` (the user, 2026-10-27:
+    /// of ten photos of a side, the agent and the user know the few that
+    /// count): the photos taken at its stations ranked by how much of it
+    /// they show, how square on, large and near, the photo's own worth
+    /// (date, pose, quality, daylight) and how sure the scene classifier is
+    /// of a building (`building`, by photo id); the best first, then the
+    /// best from another station (another angle: square on, from a corner),
+    /// each photo the best of one facade only, the longest facade first.
+    static func best(_ stations: [(facade: Int, station: Int, view: StreetView)], in scene: StreetScene,
+                     building: [String: Double], count: Int = 3) -> [Int: [StreetView]] {
+        var chosen: [Int: [StreetView]] = [:]
+        var used = Set<String>()
+        for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
+            func worth(_ v: StreetView) -> Double { v.looks[f] * v.seen[f] * (0.5 + 0.5 * (building[v.photo.id] ?? 1)) }
+            let mine = stations.filter { $0.facade == f && !used.contains($0.view.photo.id) }.sorted { worth($0.view) > worth($1.view) }
+            var taken: [(station: Int, view: StreetView)] = []
+            for c in mine where taken.count < count && !taken.contains(where: { $0.station == c.station || $0.view.photo.id == c.view.photo.id }) {
+                taken.append((c.station, c.view))
+            }
+            // Short of stations, the next best from any.
+            for c in mine where taken.count < count && !taken.contains(where: { $0.view.photo.id == c.view.photo.id }) {
+                taken.append((c.station, c.view))
+            }
+            for t in taken { used.insert(t.view.photo.id) }
+            if !taken.isEmpty { chosen[f] = taken.map(\.view) }
+        }
+        return chosen
+    }
+
     /// A contact sheet of the picks: their thumbnails in a grid, the landmark
     /// framed in red on each, numbered as the report numbers them, so the
     /// agent sees at once which really show it.

@@ -124,6 +124,9 @@ enum LandmarkMCP {
             ["name": "compare_with_photo",
              "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
+            ["name": "review_facade",
+             "description": "One facade checked against its references: the model beside every one of its best photos (references/<facade>/best/), each from the photo's own camera. Count what each photo shows (arches, windows, storeys, entrances, the cornice, the relief, the colours) against the model, and fix what differs. Every facade with best photos must be reviewed on the final model before you finish; the editor asks again for any left.",
+             "inputSchema": ["type": "object", "properties": ["facade": ["type": "string", "description": "Its folder: north-facade, south-east-facade, ..."]], "required": ["facade"]]],
             ["name": "compare_with_satellite",
              "description": "The satellite view beside the model rendered from straight above, north up, over the same ground: the masses, roofs and courtyards against the imagery. Needs satellite_view first.",
              "inputSchema": ["type": "object", "properties": [:]]],
@@ -178,17 +181,25 @@ enum LandmarkMCP {
             case "set_recipe":
                 let said = try setRecipe(args["recipe"])
                 guard said.hasPrefix("Built") else { return [text(said)] }
-                // The build, and at once the model beside every kept street
-                // photo from that photo's place (the best one of each facade,
-                // six at most): what to judge the round by.
+                // The build, and at once the model beside a kept street photo
+                // of each facade from that photo's place: one of its best/, the
+                // next one each round, so the rounds go through all of them
+                // (a facade without best/, its best look); six at most.
                 var content: [[String: Any]] = [text(said)]
                 var picked: [String] = []
                 if let scene = try? StreetScene(folder: folder) {
                     let kept = keptViews(scene)
+                    let round = Int(currentRound.lastPathComponent) ?? 0
                     for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
-                        guard let best = kept.filter({ $0.view.seen[f] >= StreetView.enough && $0.view.looks[f] > 0 })
-                            .max(by: { $0.view.looks[f] < $1.view.looks[f] }), !picked.contains(best.file) else { continue }
-                        picked.append(best.file)
+                        let best = bestPhotos(Self.facadeFolder(scene.facades[f].name))
+                        if !best.isEmpty {
+                            let file = best[round % best.count]
+                            if !picked.contains(file) { picked.append(file) }
+                            continue
+                        }
+                        guard let look = kept.filter({ $0.view.seen[f] >= StreetView.enough && $0.view.looks[f] > 0 })
+                            .max(by: { $0.view.looks[f] < $1.view.looks[f] }), !picked.contains(look.file) else { continue }
+                        picked.append(look.file)
                     }
                 }
                 for file in picked.prefix(6) {
@@ -196,7 +207,12 @@ enum LandmarkMCP {
                 }
                 if picked.isEmpty { content.append(text("No street photo with a camera pose is kept yet: save some with save_street_photo, and every build will come back beside them.")) }
                 if let above = try? compareSatellite() { content += above }
+                let due = facadesToReview()
+                if !due.isEmpty {
+                    content.append(text("Facades to review on this model before you finish, each with review_facade (the model beside every one of its best photos): \(due.joined(separator: ", ")). A new build needs them reviewed again."))
+                }
                 return content
+            case "review_facade": return try reviewFacade(args["facade"] as? String ?? "")
             case "render_views": return try render(args)
             case "save_reference_photo": return try savePhoto(args)
             case "find_street_photos": return try streetPhotos(args)
@@ -595,6 +611,8 @@ enum LandmarkMCP {
                 return FrameCheck.crop(image, box: v.box)
             }
             let verdicts = FrameCheck.judge(pictures, groups: views.map(\.best))
+            var buildingOf: [String: Double] = [:]
+            for (v, verdict) in zip(views, verdicts) { buildingOf[v.photo.id] = verdict.building }
             var droppedByPicture: [(StreetView, String)] = []
             views = zip(views, verdicts).compactMap { v, verdict in
                 if verdict.keep { return v }
@@ -638,30 +656,35 @@ enum LandmarkMCP {
             let sheet = dir.appendingPathComponent("sheet.jpg")
             try StreetPicks.sheet(picks, in: scene, thumbs: thumbs, to: sheet)
             // Every station's photos are kept at once, each into the folder
-            // of the facade it was taken for, so every side a photo stands at
-            // gets its references whatever the agent makes of the list; the
-            // agent drops one whose frame is wrong. Only the first of each
-            // station comes back as a picture, the others by name.
+            // of the facade it was taken for: the best one to three of each
+            // facade (StreetPicks.best) into its best/, the others into its
+            // other/, so every side a photo stands at gets its references
+            // whatever the agent makes of the list, and the choice is seen in
+            // the folders. The agent drops one whose frame is wrong. Only the
+            // best come back as pictures, the others by name.
+            let best = StreetPicks.best(stations, in: scene, building: buildingOf)
+            var bestOf: [String: Int] = [:]   // photo id to the facade it is a best of
+            for (f, views) in best { for v in views { bestOf[v.photo.id] = f } }
             var keptNow: [String: [[String: Any]]] = [:]
-            var shown = Set<String>()
-            var stationsSeen = Set<String>()
             let already = (credited())
                 .compactMap { $0["page"] as? String }
             for (f, k, view) in stations where keptNow[view.photo.id] == nil && !already.contains("https://www.mapillary.com/app/?pKey=\(view.photo.id)") && !offline {
-                if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos",
-                                              into: Self.facadeFolder(scene.facades[f].name)) {
+                let facade = bestOf[view.photo.id] ?? f
+                let into = Self.facadeFolder(scene.facades[facade].name) + (bestOf[view.photo.id] != nil ? "/best" : "/other")
+                if let kept = try? keepStreet(view, shows: "\(scene.facades[f].name) \(scene.stationName(f, k)): \(view.shows(scene)), kept by find_street_photos"
+                                                  + (bestOf[view.photo.id] != nil ? ", one of the best of \(scene.facades[facade].name)" : ""),
+                                              into: into) {
                     keptNow[view.photo.id] = kept
-                    if stationsSeen.insert("\(f) \(k)").inserted { shown.insert(view.photo.id) }
                 }
             }
             var content: [[String: Any]] = [text(
                 "\(photosCount) street photos within \(Int(radius)) m; only those borne out by their tracks count (the place smooth with the neighbouring frames, the track clear of buildings, a dashcam's heading the way it went, the facade seen from two neighbouring frames too). Of the \(asked.count) best of them asked for in full, \(photos.count) came back and \(views.count + droppedByPicture.count) are borne out again by Mapillary's computed pose; of those, \(droppedByPicture.count) dropped by their pictures (no building in the red frame, or a blank: the Mac's scene classifier and the facade's other photos). A walk around it, facade by facade (the sides of its outline, the longest first) and station by station along each (from beyond one end, its thirds, from beyond the other end), at each the photos standing there that show the facade best, each from another track:\n"
                 + report
-                + "\nEvery station's photos are kept already, each in the folder of its facade (north-facade/, ...), framed in red, the rest painted black. The first of each station follows as a picture, the others by name: show_reference(name) to look at one. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
+                + "\nEvery station's photos are kept already, framed in red, the rest painted black, each in the folder of its facade: the best one to three of each facade in its best/ (north-facade/best/, chosen by how much of the facade they show, how square on and large, daylight, and how sure the Mac is of a building in them), the others in its other/. The best follow as pictures, the others by name: show_reference(name) to look at one. Mapillary's camera pose is sometimes wrong: if a frame holds another building, drop_reference it. Licence CC BY-SA 4.0, credited to Mapillary and its author.")]
             for (k, pick) in picks.enumerated() {
                 if let kept = keptNow[pick.photo.id] {
                     content.append(text("#\(k + 1) " + (kept.first?["text"] as? String ?? "")))
-                    if shown.contains(pick.photo.id) { content += kept.dropFirst() }
+                    if bestOf[pick.photo.id] != nil { content += kept.dropFirst() }
                     continue
                 }
                 let framed = dir.appendingPathComponent("\(pick.photo.id).framed.jpg")
@@ -788,7 +811,7 @@ enum LandmarkMCP {
                 throw Failure("\(id) is not one find_street_photos bore out by its track in this session: only those are kept")
             }
             let scene = try StreetScene(folder: folder)
-            return try keepStreet(view, shows: shows, into: Self.facadeFolder(scene.facades[view.best].name))
+            return try keepStreet(view, shows: shows, into: Self.facadeFolder(scene.facades[view.best].name) + "/other")
         }
 
         /// The folder of a facade's street photos: "the south facade, east
@@ -796,6 +819,54 @@ enum LandmarkMCP {
         static func facadeFolder(_ name: String) -> String {
             let words = name.replacingOccurrences(of: "the ", with: "").replacingOccurrences(of: ",", with: "")
             return words.split(separator: " ").joined(separator: "-")
+        }
+
+        /// A facade's best photos, by their paths in the references.
+        func bestPhotos(_ facade: String) -> [String] {
+            credited().compactMap { $0["file"] as? String }.filter { $0.hasPrefix("\(facade)/best/") }.sorted()
+        }
+
+        /// The facades with best photos not reviewed on the current model.
+        func facadesToReview() -> [String] {
+            Self.facadesToReview(folder)
+        }
+
+        /// The facades of a landmark's folder with best photos that its
+        /// latest round has no review of: what the editor asks the agent
+        /// for before it ends.
+        static func facadesToReview(_ folder: URL) -> [String] {
+            let references = folder.appendingPathComponent("references")
+            let facades = ((try? FileManager.default.contentsOfDirectory(atPath: references.path)) ?? []).filter { name in
+                let best = references.appendingPathComponent(name).appendingPathComponent("best")
+                return ((try? FileManager.default.contentsOfDirectory(atPath: best.path)) ?? []).contains { $0.hasSuffix(".jpg") }
+            }.sorted()
+            let rounds = folder.appendingPathComponent("rounds")
+            let latest = ((try? FileManager.default.contentsOfDirectory(atPath: rounds.path)) ?? []).filter { Int($0) != nil }.sorted().last
+            guard let latest else { return facades }
+            let file = rounds.appendingPathComponent(latest).appendingPathComponent("reviews.json")
+            let done = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: file))) as? [String: Any]) ?? [:]
+            return facades.filter { done[$0] == nil }
+        }
+
+        /// The model beside every best photo of a facade, and the review
+        /// recorded for the current round.
+        func reviewFacade(_ facade: String) throws -> [[String: Any]] {
+            let best = bestPhotos(facade)
+            guard !best.isEmpty else {
+                let known = ((try? FileManager.default.contentsOfDirectory(atPath: references.path)) ?? []).filter { !$0.hasSuffix(".json") && !$0.hasSuffix(".jpg") }.sorted()
+                throw Failure("\(facade) has no best photos; the facades are: \(known.joined(separator: ", "))")
+            }
+            var content: [[String: Any]] = [text("\(facade): the model beside its \(best.count) best photos. Count what each shows against the model (arches, windows, storeys, entrances, the cornice, the relief, the colours) and fix what differs.")]
+            for file in best { content += (try? compare(["file": file])) ?? [] }
+            let round = currentRound
+            try FileManager.default.createDirectory(at: round, withIntermediateDirectories: true)
+            let file = round.appendingPathComponent("reviews.json")
+            var done = ((try? JSONSerialization.jsonObject(with: Data(contentsOf: file))) as? [String: Any]) ?? [:]
+            done[facade] = ISO8601DateFormatter().string(from: Date())
+            try JSONSerialization.data(withJSONObject: done, options: [.prettyPrinted, .sortedKeys]).write(to: file)
+            let due = facadesToReview()
+            content.append(text(due.isEmpty ? "Every facade is reviewed on this model." : "Still to review on this model: \(due.joined(separator: ", "))."))
+            return content
         }
 
         /// The street photos find_street_photos bore out by their tracks in

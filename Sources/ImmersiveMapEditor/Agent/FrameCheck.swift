@@ -119,6 +119,8 @@ enum FrameCheck {
 
     struct Verdict {
         let keep: Bool
+        /// How sure the classifier is of a building (1 when not read).
+        var building = 1.0
         /// Why it is dropped, or what was read when it is kept.
         let note: String
     }
@@ -169,6 +171,7 @@ enum FrameCheck {
         }
         return (0..<n).map { i in
             guard let s = signs[i] else { return Verdict(keep: true, note: "its picture not read") }
+            let sureOf = sure[i]
             let read = String(format: "building %.2f, sky %.2f, edges %.2f, smooth %.2f", sure[i], sky[i], s.edges, s.smooth)
                 + (near[i].isNaN ? "" : String(format: ", %.2f from its three most alike (the facade's typical %.2f)", near[i], typical[groups[i]] ?? .nan))
             if s.edges < 0.1 && s.smooth > 0.6 { return Verdict(keep: false, note: "a blank picture: burnt out or a sun flare (\(read))") }
@@ -179,7 +182,7 @@ enum FrameCheck {
                 guard let t = typical[groups[i]], !near[i].isNaN else { return Verdict(keep: false, note: "no building in it (\(read))") }
                 if near[i] > t { return Verdict(keep: false, note: "no building in it, and unlike its facade's other photos (\(read))") }
             }
-            return Verdict(keep: true, note: read)
+            return Verdict(keep: true, building: sureOf, note: read)
         }
     }
 
