@@ -12,6 +12,7 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @AppStorage(ClaudeSettings.physicalChecksKey) private var physicalChecks = false
+    @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 5
     @State private var forgetting = false
     /// The landmark about to be deleted, whole.
     @State private var deleting: TileLandmark?
@@ -88,6 +89,9 @@ struct LandmarksSections: View {
                 .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("How hard Claude thinks before each step (Claude Code's --effort): more is slower and dearer, and steadier on the geometry.")
+                Stepper("Turns a facade: \(turnsPerFacade)", value: $turnsPerFacade, in: 0...20)
+                    .disabled(session.agent.running)
+                    .help("The safety stop on Claude's turns, so one landmark never runs away: this many turns a facade and 12 besides (four facades: \(ClaudeSettings.maxTurns(facades: 4))). The plan takes about ten tool calls, each a turn or two. 0 for no stop.")
                 Toggle("Physical checks", isOn: $physicalChecks)
                     .disabled(session.agent.running)
                     .help("After each build, tell Claude what floats and what leads nowhere (a colonnade with nothing under it, steps with no landing), to fix before going on. Off: Claude judges by the photos alone.")

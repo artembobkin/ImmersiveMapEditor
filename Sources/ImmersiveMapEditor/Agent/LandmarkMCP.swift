@@ -125,7 +125,7 @@ enum LandmarkMCP {
              "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
             ["name": "review_facade",
-             "description": "One facade checked against its references: the model beside every one of its best photos (references/<facade>/best/), each from the photo's own camera. Count what each photo shows (arches, windows, storeys, entrances, the cornice, the relief, the colours) against the model, and fix what differs. Every facade with best photos must be reviewed on the final model before you finish; the editor asks again for any left.",
+             "description": "One facade checked against its reference: the model beside the facade's best photo (references/<facade>/best/, the first), from the photo's own camera; its other best photos by name, show_reference for one when a detail needs it. Count what the photo shows (arches, windows, storeys, entrances, the cornice, the relief, the colours) against the model, and fix what differs. Every facade with best photos must be reviewed on the final model before you finish; the editor asks again for any left.",
              "inputSchema": ["type": "object", "properties": ["facade": ["type": "string", "description": "Its folder: north-facade, south-east-facade, ..."]], "required": ["facade"]]],
             ["name": "compare_with_satellite",
              "description": "The satellite view beside the model rendered from straight above, north up, over the same ground: the masses, roofs and courtyards against the imagery. Needs satellite_view first.",
@@ -993,6 +993,12 @@ enum LandmarkMCP {
             Self.facadesToReview(folder)
         }
 
+        /// How many facades the landmark has (its hull's sides), for the
+        /// agent's budget of turns.
+        static func facadeCount(_ folder: URL) -> Int {
+            (try? StreetScene(folder: folder))?.facades.count ?? 4
+        }
+
         /// The facades of a landmark's folder with best photos that its
         /// latest round has no review of: what the editor asks the agent
         /// for before it ends.
@@ -1018,8 +1024,9 @@ enum LandmarkMCP {
                 let known = ((try? FileManager.default.contentsOfDirectory(atPath: references.path)) ?? []).filter { !$0.hasSuffix(".json") && !$0.hasSuffix(".jpg") }.sorted()
                 throw Failure("\(facade) has no best photos; the facades are: \(known.joined(separator: ", "))")
             }
-            var content: [[String: Any]] = [text("\(facade): the model beside its \(best.count) best photos. Count what each shows against the model (arches, windows, storeys, entrances, the cornice, the relief, the colours) and fix what differs.")]
-            for file in best { content += (try? compare(["file": file])) ?? [] }
+            var content: [[String: Any]] = [text("\(facade): the model beside its best photo, \(best[0]). Count what the photo shows against the model (arches, windows, storeys, entrances, the cornice, the relief, the colours) and fix what differs."
+                + (best.count > 1 ? " Its other best photos, by name: \(best.dropFirst().joined(separator: ", ")); show_reference one when a detail needs it." : ""))]
+            content += (try? compare(["file": best[0]])) ?? []
             let round = currentRound
             try FileManager.default.createDirectory(at: round, withIntermediateDirectories: true)
             let file = round.appendingPathComponent("reviews.json")

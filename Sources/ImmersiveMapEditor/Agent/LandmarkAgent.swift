@@ -130,6 +130,9 @@ final class LandmarkAgent {
         if let model = UserDefaults.standard.string(forKey: ClaudeSettings.modelKey), !model.isEmpty {
             args += ["--model", model]
         }
+        // The safety stop on the turns: the plan fits in well under it.
+        let turns = ClaudeSettings.maxTurns(facades: LandmarkMCP.Server.facadeCount(folder))
+        if turns > 0 { args += ["--max-turns", "\(turns)"] }
         if let effort = UserDefaults.standard.string(forKey: ClaudeSettings.effortKey), !effort.isEmpty {
             args += ["--effort", effort]
         }
@@ -196,8 +199,8 @@ final class LandmarkAgent {
     /// What the editor asks when the agent ends with facades not reviewed.
     static func reviewRequest(_ due: [String]) -> String {
         "Not every facade is reviewed on the final model: \(due.joined(separator: ", ")). review_facade each: the model beside "
-            + "every one of its best photos. Count what each photo shows against the model, fix what differs (a new build needs "
-            + "every facade reviewed again), then end with your summary, a line for each facade: what its photos show and what "
+            + "its best photo. Count what the photo shows against the model, fix what differs in one build (a new build needs "
+            + "every facade reviewed again), then end with your summary, a line for each facade: what its photo shows and what "
             + "the model has."
     }
 
@@ -216,7 +219,7 @@ final class LandmarkAgent {
         case "simple":
             level = """
             DETAIL: simple. The masses, their roofs, the main colours and the one or two things that make it recognisable \\
-            (a portico, a dome, a tower). No windows, no small relief. Two rounds. Under 5 000 triangles.
+            (a portico, a dome, a tower). No windows, no small relief. Under 5 000 triangles.
             """
         case "detailed":
             level = """
@@ -225,46 +228,43 @@ final class LandmarkAgent {
             its portal, the plinth, string courses, the cornice with its depth, pilasters and columns where the facade has \\
             them, balustrades and parapets, the sculpture, chimneys and roof lanterns, the attic and its windows. Model from \\
             shapes what the words do not cover (a balustrade of cylinders in a row, a rusticated base as thin boxes, a \\
-            moulding as a loft). Six to eight rounds, each on one facade or one part, checked with compare_with_photo. \\
-            Up to 60 000 triangles (set_recipe tells the count).
+            moulding as a loft). Up to 60 000 triangles (set_recipe tells the count).
             """
         default:
             level = """
             DETAIL: normal. The masses with their roofs, the windows of every facade in their rhythm, the entrances, the \\
             cornice, the plinth, the relief the facade has (pilasters, bands) and the sculpture that makes it recognisable. \\
-            Three to five rounds. Under 25 000 triangles (set_recipe tells the count).
+            Under 25 000 triangles (set_recipe tells the count).
             """
         }
         return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
-        1. get_landmark, then render_views with boxes: true to see its OSM buildings.
-        2. list_references: the references are gathered for you before you start, and this shows them: Mapillary's street \
-        photos of every facade, kept in a folder for each facade (its best one to three in best/, the very best of each \
-        shown as a picture, the others in other/, all by name: north-facade/best/photo-03.jpg, the path to give \
-        show_reference, compare_with_photo and drop_reference), the landmark framed in red on each by the camera's pose; \
-        the satellite view (the roofs from straight above with the OSM outlines and a grid in metres, the recipe's x and \
-        y: the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand); and from Wikimedia Commons \
-        a view of the whole and one from above when it has them. Model each facade from its best photos, and open the \
-        others when a detail needs them. A pose is sometimes wrong: where a frame holds another building, drop_reference \
-        it. If list_references shows nothing, gather_references. Nothing else to search for: the web (WebSearch, \
-        WebFetch) only when a question the photos cannot answer remains.
-        3. Write its recipe with set_recipe: every build comes back with the model rendered from a best street photo of \
-        each facade the recipe changed (all on the first build) from that photo's own camera beside that photo (the next \
-        best each round) and the satellite view beside the model from above, so what \
-        differs is plain: count the columns and the windows, check the roof's shape and height and the masses from above, \
-        the entrances, the relief of the walls, the colours; compare_with_photo for \
-        the other kept photos, render_views for the whole and from above, render_from for a look from any place. \
-        Correct the recipe and build again, until the shapes agree.
-        4. Before you finish, walk the building: render_from 15 m before each entrance at eye level (height 2, looking at \
-        it, hfov 70) and check that the steps lead onto a floor that reaches the doors, that the columns stand on it, that \
-        nothing floats\(ClaudeSettings.physicalChecks ? "; set_recipe's NOT PHYSICAL lines must all be gone" : ""). Then check from above, against this list: every entrance the photos show is a door; every roof reads as a volume (eaves and \
-        fascia on a pitched roof, a parapet or balustrade on a flat one, never a bare flat cap on a historic building); \
-        the cornice, pilasters or bands where the facade has them; the sculpture that makes the building recognisable; \
-        the walls' colours of the photos and the roofs' colours satellite_view read, in the palette's words. Fix what is \
-        missing. Last, review_facade every facade on the final model: the model beside every one of its best photos; \
-        fix what differs (a new build needs every facade reviewed again). Do not end before every facade is reviewed.
-        5. End with a short summary: a line for each facade, what its photos show and what the model has; then what you \
+        The plan, and the budget: one build of the whole from the references, one review of each facade by its best \
+        photo, one build of all the fixes, a summary. About ten tool calls for four facades; three builds at most. Work \
+        from what each call returns; do not ask for more pictures than it gives.
+        1. get_landmark, then list_references. The references are gathered for you before you start, and this shows \
+        them: the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
+        kept in a folder for each facade, its best one to three in best/, the others in other/, all by name: \
+        north-facade/best/photo-03.jpg, the path to give show_reference, compare_with_photo and drop_reference), the \
+        satellite view (the roofs from straight above with the OSM outlines and a grid in metres, the recipe's x and y: \
+        the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand), and from Wikimedia Commons a \
+        view of the whole and one from above when it has them. If it shows nothing, gather_references. Nothing else to \
+        search for.
+        2. The first build: write the whole recipe with set_recipe from these pictures, every facade from its best photo: \
+        the masses and their roofs, the windows of each facade in their rhythm, the entrances with their portals, the \
+        cornice, the plinth, the relief (pilasters, bands), the sculpture that makes it recognisable; the walls' colours \
+        from the photos and the roofs' colours satellite_view read, in the palette's words. The build comes back with the \
+        model rendered beside the best photo of every facade from that photo's own camera, and beside the satellite view \
+        from above. A pose is sometimes wrong: where a frame holds another building, drop_reference it.
+        3. The review: review_facade each facade in turn, the model beside its best photo. Count what the photo shows \
+        against the model (columns, windows, storeys, arches, entrances, the cornice, the relief, the roof, the colours) \
+        and note what differs. Do not rebuild between facades.
+        4. The fixes: one set_recipe with everything the reviews found\(ClaudeSettings.physicalChecks ? ", and set_recipe's NOT PHYSICAL lines gone" : ""). It comes back beside the best photo of \
+        every facade the recipe changed: when something still differs, one more build, the last. Every facade must be \
+        reviewed on the final model (the editor asks again for any left); after the last build, review_facade only the \
+        facades it changed.
+        5. End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.
         """
     }
