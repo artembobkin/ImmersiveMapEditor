@@ -96,6 +96,10 @@ public enum LandmarkGenerator {
             let at = "masses[\(i)]" + (m.id.map { " (\($0))" } ?? "")
             if let o = m.outline, source.ring(o) == nil { out.append("\(at): outline \(o) is not one of the landmark's buildings") }
             if m.outline == nil, (m.polygon?.count ?? 0) < 3 { out.append("\(at): needs an outline or a polygon of 3 points at least") }
+            for (c, cut) in (m.cuts ?? []).enumerated() where cut.from.count != 2 || cut.to.count != 2 || cut.keep.count != 2 {
+                out.append("\(at).cuts[\(c)]: needs from, to and keep, each [x, y]")
+            }
+            for id in m.minus ?? [] where !r.masses.contains(where: { $0.id == id }) { out.append("\(at).minus: no mass with id \(id)") }
             if m.top <= m.base { out.append("\(at): top \(m.top) is not above base \(m.base)") }
             if m.base < 0 { out.append("\(at): base below the ground") }
             if let s = m.roof?.shape, !roofShapes.contains(s) { out.append("\(at): roof shape \(s) is not one of \(roofShapes.joined(separator: ", "))") }
@@ -149,6 +153,13 @@ public enum LandmarkGenerator {
             if (s.base ?? 0) < 0 { out.append("\(at): base below the ground") }
             if let r = s.repeat, r.count < 1 || r.step.count != 3 { out.append("\(at).repeat: needs a count and a step [east, north, up]") }
             if let a = s.around, a.count < 1 || a.centre.count != 2 { out.append("\(at).around: needs a count and a centre [x, y]") }
+        }
+        if out.isEmpty {
+            let rings = footprints(r, source)
+            for (i, m) in r.masses.enumerated() where rings[i] == nil && m.top > m.base {
+                out.append("masses[\(i)]" + (m.id.map { " (\($0))" } ?? "") + ": its cuts or minus leave nothing of it")
+            }
+            if let shared = sharedWall(rings, r.masses) { out.append(shared) }
         }
         for (i, f) in r.features.enumerated() {
             let at = "features[\(i)] (\(f.kind))"
@@ -294,11 +305,7 @@ public enum LandmarkGenerator {
     /// The model of a recipe: its triangles by colour.
     public static func build(_ r: LandmarkRecipe, _ source: LandmarkSource) -> Model {
         let m = Model()
-        var rings: [[P2]?] = r.masses.map { mass in
-            let ring = mass.outline.flatMap { source.ring($0) } ?? (mass.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
-            return ring.count >= 3 && mass.top > mass.base ? ccw(ring) : nil
-        }
-        snapOut(&rings, r.masses)
+        var rings = footprints(r, source)
         sink(&rings, r.masses)
         sinkEdges(&rings, r.masses)
         rings = rings.map { $0.map { chamfered($0, Caricature.chamfer) } }
@@ -1366,65 +1373,114 @@ public enum LandmarkGenerator {
         }
     }
 
-    /// A taller mass's wall running inside a lower neighbour's wall, within
-    /// `snap` of it and along it (a part read off the satellite view and
-    /// placed a metre or two in from the outline, the user, 2026-10-28:
-    /// two walls with two grids of windows, one seen through the other),
-    /// pulled out onto the neighbour's wall along the stretch they share,
-    /// so the facade is one wall from the ground to the taller top; then
-    /// `sinkEdges` sinks the lower wall into it.
-    static func snapOut(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], snap: Double = 2.5) {
-        let original = rings
-        for i in rings.indices {
-            guard let ring = original[i] else { continue }
-            var out: [P2] = []
-            for k in ring.indices {
-                let a = ring[k], b = ring[(k + 1) % ring.count]
+    /// The footprint of every mass: its outline or polygon, cut by its
+    /// `cuts` (the part on the keep side of each), less the footprints of
+    /// its `minus` masses; nil for a mass with none.
+    static func footprints(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [[P2]?] {
+        func base(_ mass: LandmarkRecipe.Mass) -> [P2]? {
+            let ring = mass.outline.flatMap { source.ring($0) } ?? (mass.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
+            guard ring.count >= 3, mass.top > mass.base else { return nil }
+            let first = ccw(ring)
+            var shape = Geometry.polygon(first + [first[0]])
+            for cut in mass.cuts ?? [] where cut.from.count == 2 && cut.to.count == 2 && cut.keep.count == 2 {
+                let a = P2(cut.from[0], cut.from[1]), b = P2(cut.to[0], cut.to[1]), keep = P2(cut.keep[0], cut.keep[1])
                 let d = b - a, len = simd_length(d)
-                guard len > 1e-6 else { out.append(a); continue }
-                let dir = d / len, n = P2(dir.y, -dir.x)
-                var stretches: [(Double, Double, Double)] = []
-                for j in original.indices where j != i {
-                    // Only the taller wall moves, and only out to a neighbour
-                    // that stands outside it.
-                    guard let other = original[j], masses[i].top > masses[j].top + 0.05,
-                          masses[i].base < masses[j].top - 0.05, masses[j].base < masses[i].top - 0.05 else { continue }
-                    for m in other.indices {
-                        let c = other[m], e = other[(m + 1) % other.count]
-                        let f = e - c, flen = simd_length(f)
-                        guard flen > 1e-6, abs(simd_dot(f / flen, dir)) > cos(10 * Double.pi / 180) else { continue }
-                        let dc = simd_dot(c - a, n), de = simd_dot(e - a, n)
-                        guard min(dc, de) > 0.05, max(dc, de) < snap, abs(dc - de) < 0.3 else { continue }
-                        let t0 = max(0, min(simd_dot(c - a, dir), simd_dot(e - a, dir))), t1 = min(len, max(simd_dot(c - a, dir), simd_dot(e - a, dir)))
-                        guard t1 - t0 > 3 else { continue }
-                        stretches.append((t0, t1, (dc + de) / 2))
-                    }
-                }
-                out.append(a)
-                guard !stretches.isEmpty else { continue }
-                stretches.sort { $0.0 < $1.0 }
-                var cursor = 0.0
-                for (t0, t1, far) in stretches where t0 >= cursor - 1e-6 {
-                    let push = n * far
-                    if t0 > cursor + 0.05 { out.append(a + dir * t0) }
-                    out.append(a + dir * max(t0, cursor) + push)
-                    out.append(a + dir * t1 + push)
-                    if t1 < len - 0.05 { out.append(a + dir * t1) }
-                    cursor = t1
-                }
+                guard len > 1e-6 else { continue }
+                // The half-plane on the keep side of the line, large enough.
+                var n = P2(-d.y, d.x) / len
+                if simd_dot(keep - a, n) < 0 { n = -n }
+                let u = d / len, far = 10_000.0
+                let half = [a - u * far, a + u * far, a + u * far + n * far, a - u * far + n * far]
+                shape = shape.intersection(Geometry.polygon(half + [half[0]]))
             }
-            var cleaned: [P2] = []
-            for p in out where cleaned.last.map({ simd_length($0 - p) > 1e-6 }) ?? true { cleaned.append(p) }
-            if cleaned.count > 1, simd_length(cleaned[0] - cleaned[cleaned.count - 1]) < 1e-6 { cleaned.removeLast() }
-            if cleaned.count >= 3 { rings[i] = cleaned }
+            guard let part = shape.polygons.max(by: { $0.area < $1.area }), part.area > 1 else { return nil }
+            return straightened(ccw(Array(part.exterior.dropLast())))
+        }
+        let bases = r.masses.map(base)
+        return r.masses.enumerated().map { k, mass in
+            guard let ring = bases[k], let minus = mass.minus, !minus.isEmpty else { return bases[k] }
+            var shape = Geometry.polygon(ring + [ring[0]])
+            for id in minus {
+                guard let j = r.masses.firstIndex(where: { $0.id == id }), j != k, let other = bases[j] else { continue }
+                shape = shape.difference(Geometry.polygon(other + [other[0]]))
+            }
+            guard let part = shape.polygons.max(by: { $0.area < $1.area }), part.area > 1 else { return nil }
+            return straightened(ccw(Array(part.exterior.dropLast())))
         }
     }
 
+    /// A ring with its slivers gone (a hair-thin spike a cut or a difference
+    /// leaves through a vertex on a wall) and its collinear corners merged
+    /// (an OSM outline has points along a straight wall, and each would
+    /// start a wall of its own with its own row of windows): the ring
+    /// buffered out and in by 2 cm with square corners, then every corner
+    /// within 8 cm of the line through its neighbours dropped.
+    static func straightened(_ ring: [P2]) -> [P2] {
+        guard ring.count >= 3 else { return ring }
+        // Round joins: a mitre at a spike's tip reaches out and leaves a stub.
+        let shape = Geometry.polygon(ring + [ring[0]]).buffer(0.02, quadSegs: 1, join: .round).buffer(-0.02, quadSegs: 1, join: .round)
+        guard let part = shape.polygons.max(by: { $0.area < $1.area }), part.area > 1 else { return ring }
+        var out = ccw(Array(part.exterior.dropLast()))
+        var again = true
+        while again, out.count > 3 {
+            again = false
+            for i in out.indices {
+                let p = out[(i + out.count - 1) % out.count], q = out[i], r = out[(i + 1) % out.count]
+                let d = r - p, len = simd_length(d)
+                guard len > 1e-6 else { continue }
+                // On the line through its neighbours, between them (a point
+                // along a straight wall) or beyond one of them (a spike).
+                let off = abs((q - p).x * d.y - (q - p).y * d.x) / len
+                if off < 0.08 {
+                    out.remove(at: i)
+                    again = true
+                    break
+                }
+            }
+        }
+        return out
+    }
+
+    /// Two masses running along one wall: a stretch of 3 m or more where
+    /// their walls are parallel (within 10°), look the same way and lie
+    /// within 2.5 m of each other, their heights overlapping by more than
+    /// a metre. The
+    /// first such pair, as a line for the recipe's check; nil when none.
+    static func sharedWall(_ rings: [[P2]?], _ masses: [LandmarkRecipe.Mass]) -> String? {
+        for i in rings.indices {
+            guard let ring = rings[i] else { continue }
+            for j in rings.indices where j > i {
+                // Heights overlapping by more than the half metre that joins
+                // a part to the one it stands on (a set-back storey on a roof
+                // stands 2 m in from the walls below, and is no second wall).
+                guard let other = rings[j], min(masses[i].top, masses[j].top) - max(masses[i].base, masses[j].base) > 1 else { continue }
+                for k in ring.indices {
+                    let a = ring[k], b = ring[(k + 1) % ring.count], d = b - a, len = simd_length(d)
+                    guard len > 3 else { continue }
+                    let dir = d / len, n = P2(dir.y, -dir.x)
+                    for m in other.indices {
+                        let c = other[m], e = other[(m + 1) % other.count], f = e - c, flen = simd_length(f)
+                        guard flen > 3, simd_dot(f / flen, dir) > cos(10 * Double.pi / 180) else { continue }   // the same way
+                        let tc = simd_dot(c - a, dir), te = simd_dot(e - a, dir)
+                        let t0 = max(0, min(tc, te)), t1 = min(len, max(tc, te))
+                        guard t1 - t0 > 3 else { continue }
+                        let off = (abs(simd_dot(c - a, n)) + abs(simd_dot(e - a, n))) / 2
+                        guard off < 2.5 else { continue }
+                        func name(_ x: Int) -> String { "masses[\(x)]" + (masses[x].id.map { " (\($0))" } ?? "") }
+                        if ProcessInfo.processInfo.environment["LANDMARK_RINGS_DEBUG"] != nil {
+                            for (x, r) in rings.enumerated() { FileHandle.standardError.write(Data("ring \(x): \(r?.map { String(format: "(%.1f, %.1f)", $0.x, $0.y) }.joined(separator: " ") ?? "none")\n".utf8)) }
+                            FileHandle.standardError.write(Data(String(format: "shared: edge %d of %d (%.1f, %.1f)-(%.1f, %.1f) and edge %d of %d (%.1f, %.1f)-(%.1f, %.1f), t %.1f..%.1f\n", k, i, a.x, a.y, b.x, b.y, m, j, c.x, c.y, e.x, e.y, t0, t1).utf8))
+                        }
+                        return "\(name(i)) and \(name(j)) run along one wall for \(Int(t1 - t0)) m, \(String(format: "%.1f", off)) m apart: a wall is one wall. Cut the outline into its parts (cuts, and the rest minus them) instead of a polygon beside it."
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     /// A wall running along a neighbour's wall within `near` of it (a
-    /// slot between two masses, or two walls flush, or a taller part drawn
-    /// a metre or so proud of the outline: TsUM's historic block stood 0.7
-    /// m outside it and both walls showed their windows, the user,
-    /// 2026-10-28) pushed `into` metres
+    /// slot between two masses, or two walls flush) pushed `into` metres
     /// into the neighbour along the stretch they share: the wall is split
     /// where the stretch begins and ends, and that piece moves. Deeper
     /// than a window's recess, so the windows of both walls end up inside
@@ -1432,7 +1488,7 @@ public enum LandmarkGenerator {
     /// pockets in the wall. Corners far
     /// from the neighbour (a wider block beside a narrower one) leave `sink`
     /// nothing to do; this closes the slot itself.
-    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 2.5, into: Double = 0.3) {
+    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.3) {
         let original = rings
         for i in rings.indices {
             guard let ring = original[i] else { continue }

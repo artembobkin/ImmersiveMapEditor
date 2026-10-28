@@ -14,6 +14,7 @@ import Geometry
 ///
 ///   {"version": 1,
 ///    "masses": [{"id": "body", "outline": "way/123" | "polygon": [[x, y], ...],
+///                "cuts": [{"from": [x, y], "to": [x, y], "keep": [x, y]}], "minus": ["tower"],
 ///                "base": 0, "top": 23, "colour": "lm_cream",
 ///                "plinth": {"height": 1.5, "colour": "lm_stone"},
 ///                "cornice": {"height": 0.8, "depth": 0.5, "colour": "lm_white"},
@@ -93,6 +94,13 @@ public struct LandmarkRecipe: Codable {
         public var id: String?
         public var outline: String?
         public var polygon: [[Double]]?
+        /// The outline cut by lines: the mass is the part on the `keep` side
+        /// of every cut, so two parts of one building share its walls and
+        /// meet on the cut (the user, 2026-10-28: a wall is one wall).
+        public var cuts: [Cut]?
+        /// The ids of masses taken out of this one's footprint: the rest of
+        /// an outline beside its cut parts.
+        public var minus: [String]?
         public var base: Double = 0
         public var top: Double
         public var colour: String = "lm_cream"
@@ -106,6 +114,13 @@ public struct LandmarkRecipe: Codable {
         public var pilasters: Pilasters?
         /// String courses: a band standing proud at every storey line.
         public var bands: Band?
+    }
+
+    /// A straight cut through an outline, and which side to keep.
+    public struct Cut: Codable {
+        public var from: [Double]
+        public var to: [Double]
+        public var keep: [Double]
     }
 
     public struct Door: Codable {
@@ -212,10 +227,16 @@ public struct LandmarkRecipe: Codable {
                   {"kind": "box", "polygon": [[x, y], ...], "base": 0, "top": 2, "colour": "lm_stone"},
                   {"kind": "steps", "from": [x, y], "to": [x, y], "depth": 4, "height": 1.5, "count": 5, "colour": "lm_stone"}]}
 
-    - The model is one shell: every mass and shape is a closed solid, and all of them are united. Masses that touch \
-    must overlap: a wing sinks half a metre into the hall, a tower into its base, never edge to edge and never with a \
-    slot between them (the generator sinks a corner that stands on or near a neighbour's wall into it, but do not count \
-    on it). A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
+    - A wall is one wall. A building's walls are its OSM outline, and every stretch of them belongs to one mass: no two \
+    masses may run along the same wall (a part drawn as its own polygon beside the outline's mass would put two grids \
+    of windows on one wall; the build refuses it). A building of parts with different heights, windows or roofs is one \
+    outline cut into them: a part is the outline with `cuts` (a straight line through it, from and to, and a point on \
+    the side to `keep`; several cuts for a corner part), and the rest of the outline is the outline `minus` those parts' \
+    ids. The parts meet on the cut and the generator joins them. A `polygon` of its own is only for what OSM has no \
+    outline of (a tower on the roof, a dome's drum, a porch), and it must stand clear of the outline's walls or on its \
+    own. The model is one shell: every mass and shape is a closed solid, and all of them are united. Masses that touch \
+    must overlap: a tower sinks half a metre into its base, never with a slot between them (the generator sinks a \
+    corner that stands on or near a neighbour's wall into it, but do not count on it). A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
     standing proud, windows storey by storey on every wall long enough, and a roof on its top. A window is a recess cut \
     into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
     reads as storeys of windows, with the storeys and spacing the photos show. A window that the rows cannot place (one \
