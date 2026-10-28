@@ -1036,25 +1036,36 @@ public enum LandmarkGenerator {
             func world(_ q: P2) -> P2 { c + u * q.x * big + v * q.y * big }
             func local(_ p: P2) -> P2 { P2(simd_dot(p - c, u), simd_dot(p - c, v)) }
             let edge = outline.boundary
+            // Every clipped slope a closed solid of its own: its slope on
+            // top, the flat underside, and a wall on each of its edges from
+            // the underside up to the slope (a fascia under the eaves, a
+            // gable where the roof rises over the outline's edge, and on an
+            // edge shared with the next slope a face the union removes, as
+            // the two slopes' faces coincide there). One solid for the whole
+            // roof was not closed where the clipped slopes' edges met.
             for region in regions {
                 let poly = region.poly.map(world)
                 guard abs(signedArea(poly)) > 1e-6 else { continue }
                 let clipped = outline.intersection(Geometry.polygon(poly + [poly[0]]))
                 func z(_ p: P2) -> Double { top + h * max(0, min(1, region.rise(local(p)))) }
                 for part in clipped.polygons {
-                    for t in part.constrainedDelaunay() where t.count == 3 {
+                    let r = ccw(Array(part.exterior.dropLast()))
+                    guard r.count >= 3, abs(signedArea(r)) > 0.01 else { continue }
+                    begin()
+                    let shape = Geometry.polygon(r + [r[0]])
+                    for t in shape.constrainedDelaunay() where t.count == 3 {
                         tri(V3(t[0].x, t[0].y, z(t[0])), V3(t[1].x, t[1].y, z(t[1])), V3(t[2].x, t[2].y, z(t[2])), V3(0, 0, 1), colour)
                         tri(V3(t[0].x, t[0].y, bottom), V3(t[1].x, t[1].y, bottom), V3(t[2].x, t[2].y, bottom), V3(0, 0, -1), colour)
                     }
-                    // The walls on the outline's own edges: the fascia under
-                    // the eaves, the gables where the roof rises over the edge.
-                    let r = Array(part.exterior.dropLast())
                     for i in r.indices {
                         let a = r[i], b = r[(i + 1) % r.count]
-                        guard edge.distance(.point((a + b) / 2)) < 1e-4, z(a) > bottom + 1e-6 || z(b) > bottom + 1e-6 else { continue }
-                        let o = outwardOf(outline, a, b)
-                        let gable = z(a) > top + 1e-3 || z(b) > top + 1e-3
-                        face([V3(a.x, a.y, bottom), V3(b.x, b.y, bottom), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))], o, gable ? wall : colour)
+                        guard z(a) > bottom + 1e-6 || z(b) > bottom + 1e-6 else { continue }
+                        let o = outward(a, b)
+                        let onEdge = edge.distance(.point((a + b) / 2)) < 1e-4
+                        let gable = onEdge && (z(a) > top + 1e-3 || z(b) > top + 1e-3)
+                        face([V3(a.x, a.y, bottom), V3(b.x, b.y, bottom), V3(b.x, b.y, z(b)), V3(a.x, a.y, z(a))].reduce(into: [V3]()) { out, p in
+                            if out.last.map({ simd_length($0 - p) > 1e-9 }) ?? true { out.append(p) }
+                        }, o, gable ? wall : colour)
                     }
                 }
             }
