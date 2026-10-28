@@ -124,7 +124,7 @@ struct ContentView: View {
                                                description: Text("The landmark alone, lit as the engine will light it, comes in a moment."))
                     }
                 }
-                .task(id: "\(workspace.previewSubject) \(session.lightSettings.arguments) \(workspace.tilesRevision) \(session.candidates.map { $0.model?.path ?? "" })") {
+                .task(id: "\(workspace.previewSubject) \(session.lightSettings.previewKey) \(workspace.tilesRevision) \(session.candidates.map { $0.model?.path ?? "" })") {
                     // A moment after the last change, so a slider's drag bakes once.
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }

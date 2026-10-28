@@ -55,7 +55,7 @@ public enum LandmarkLight {
                     hi = V3(max(hi.x, q.x), max(hi.y, q.y), max(hi.z, q.z))
                 }
                 tris.append(p, [P2(0, 0), P2(0, 0), P2(0, 0)], .whole, (0, 0))
-                colours += colour(name, factor, normal: n.normalized)
+                colours += colour(name, factor, normal: n.normalized, sided: settings.sidedTones)
             }
         }
         guard tris.count > 0 else { throw Failure("no triangles in \(glb.lastPathComponent)") }
@@ -89,8 +89,8 @@ public enum LandmarkLight {
     /// A face's colour: its material's palette colour sided by the sun when
     /// the palette has tones of it, the material's own factor otherwise (a
     /// model not made from a recipe).
-    static func colour(_ name: String, _ factor: [Double], normal n: V3) -> [UInt8] {
-        let sided = name.isEmpty ? nil : Palette.hex("\(name).\(Palette.side(n.x, n.y))") ?? Palette.hex(name)
+    static func colour(_ name: String, _ factor: [Double], normal n: V3, sided: Bool = true) -> [UInt8] {
+        let sided = name.isEmpty ? nil : (sided ? Palette.hex("\(name).\(Palette.side(n.x, n.y))") : nil) ?? Palette.hex(name)
         if let hex = sided {
             let (r, g, b) = Palette.rgb(hex)
             return [UInt8(r), UInt8(g), UInt8(b)]

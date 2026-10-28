@@ -86,6 +86,8 @@ final class LightSettings {
     /// view in degrees, the engine's 45 by default. Narrow flattens the
     /// building like a telephoto, wide makes what is near loom.
     var lens: Double = value("lens", 45) { didSet { Self.keep("lens", lens) } }
+    /// Preview: the walls toned by their side against the palette's sun.
+    var sided: Bool = value("sided", true) { didSet { Self.keep("sided", sided) } }
 
     /// These as TileKit's settings, for a bake in the app.
     var settings: Lighting.Settings {
@@ -100,6 +102,7 @@ final class LightSettings {
         s.sunAzimuth = sunAzimuth
         s.sunElevation = sunElevation
         s.sunStrength = sunStrength
+        s.sidedTones = sided
         return s
     }
 
@@ -110,4 +113,9 @@ final class LightSettings {
         a += sun ? ["--sun", "\(sunAzimuth)", "\(sunElevation)", "\(sunStrength)"] : ["--no-sun"]
         return a
     }
+
+    /// Everything the landmark preview's bake depends on: the arguments,
+    /// and the engine's sun direction and the side tones, which the bake
+    /// of a tile does not take.
+    var previewKey: String { arguments.joined(separator: " ") + " \(sunAzimuth) \(sunElevation) \(sided)" }
 }

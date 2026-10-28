@@ -42,6 +42,11 @@ public enum Lighting {
         public var sunElevation = 45.0
         public var sunStrength = 1.0
         public var skyStrength = 1.0
+        /// A landmark alone (Preview): its walls in the palette's tones by
+        /// their side against `Palette.sunFrom`, as the tile paints them,
+        /// or every face in its plain colour (the user, 2026-10-28: a way
+        /// to turn the directed light off). Not stored with a tile.
+        public var sidedTones = true
 
         public init() {}
 

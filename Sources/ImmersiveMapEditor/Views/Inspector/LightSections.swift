@@ -1,4 +1,5 @@
 import SwiftUI
+import TileKit
 
 /// The Preview's sections: what is shown lit (the tile, or one of its
 /// landmarks alone), how, what light is baked (the sky with its bounces or
@@ -50,17 +51,26 @@ struct LightSections: View {
         }
         Section("Sun") {
             Toggle("Bake a sun", isOn: $light.sun)
-            if light.sun {
+            let landmark = workspace.previewSubject != "tile"
+            if light.sun || landmark {
                 slider("From", $light.sunAzimuth, 0...359, "%.0f°")
                 slider("Height", $light.sunElevation, 5...90, "%.0f°")
+            }
+            if light.sun {
                 slider("Strength", $light.sunStrength, 0...3, "%.2f")
             }
             Text(light.sun ? "Its shadows are baked: they stay put whatever the engine's sun does."
+                           : landmark ? "No sun baked: the engine casts the sun's shadows itself. Here its sun comes from the bearing and height above (the engine's own is from \(Int(Palette.sunFrom))°)."
                            : "No sun baked: the engine casts the sun's shadows itself, from where its sun is.")
                 .font(.callout).foregroundStyle(.secondary)
-            if !light.sun, workspace.previewSubject != "tile" {
+            if !light.sun, landmark {
                 slider("Shadow", $light.shadow, 0...1, "%.2f")
-                Text("The engine's shadow on the landmark, from the sun above: how dark where a surface is fully in it, with the engine's cool tint.")
+                Text("The engine's shadow on the landmark: how dark where a surface is fully in it, with the engine's cool tint. 0 for none.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            if landmark {
+                Toggle("Walls toned by the sun", isOn: $light.sided)
+                Text("The palette's lit, side and shade tones on the walls by which way they face against the sun from \(Int(Palette.sunFrom))°, as the tile paints them. Off: every face in its plain colour, no directed light but the shadow above.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
