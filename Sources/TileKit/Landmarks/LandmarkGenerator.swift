@@ -530,7 +530,9 @@ public enum LandmarkGenerator {
                     }
                 }
                 FileHandle.standardError.write(Data("union: \(meshes.count) solids, statuses \(counts.sorted { $0.key < $1.key }), result \(result == nil ? "none" : "\(result!.faceIDs.count) triangles in \(shells) shells")\n".utf8))
-                for (k, s) in statuses.enumerated() where s != 0 && k < 40 {
+                var reported = 0
+                for (k, s) in statuses.enumerated() where s != 0 && reported < 12 {
+                    reported += 1
                     let m = meshes[k]
                     // The halfedges: a closed, consistently wound mesh has every
                     // directed edge once and its opposite once.
