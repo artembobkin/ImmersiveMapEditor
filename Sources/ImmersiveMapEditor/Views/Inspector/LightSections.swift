@@ -50,27 +50,29 @@ struct LightSections: View {
             }
         }
         Section("Sun") {
-            Toggle("Bake a sun", isOn: $light.sun)
             let landmark = workspace.previewSubject != "tile"
-            if light.sun || landmark {
+            Toggle("Bake a sun", isOn: $light.sun)
+            if light.sun {
                 slider("From", $light.sunAzimuth, 0...359, "%.0f°")
                 slider("Height", $light.sunElevation, 5...90, "%.0f°")
-            }
-            if light.sun {
                 slider("Strength", $light.sunStrength, 0...3, "%.2f")
-            }
-            Text(light.sun ? "Its shadows are baked: they stay put whatever the engine's sun does."
-                           : landmark ? "No sun baked: the engine casts the sun's shadows itself. Here its sun comes from the bearing and height above (the engine's own is from \(Int(Palette.sunFrom))°)."
-                           : "No sun baked: the engine casts the sun's shadows itself, from where its sun is.")
-                .font(.callout).foregroundStyle(.secondary)
-            if !light.sun, landmark {
-                slider("Shadow", $light.shadow, 0...1, "%.2f")
-                Text("The engine's shadow on the landmark: how dark where a surface is fully in it, with the engine's cool tint. 0 for none.")
+                Text("Its shadows are baked: they stay put whatever the engine's sun does.")
                     .font(.callout).foregroundStyle(.secondary)
-            }
-            if landmark {
-                Toggle("Walls toned by the sun", isOn: $light.sided)
-                Text("The palette's lit, side and shade tones on the walls by which way they face against the sun from \(Int(Palette.sunFrom))°, as the tile paints them. Off: every face in its plain colour, no directed light but the shadow above.")
+            } else if landmark {
+                Toggle("Engine's sun", isOn: $light.engineSun)
+                Text(light.engineSun ? "The engine's directed light shown here: its shadow from the bearing and height below (the engine's own sun is from \(Int(Palette.sunFrom))°), and the walls toned by their side against it."
+                                     : "Only the light baked: no shadow, every face in its plain colour. The engine adds its own sun.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if light.engineSun {
+                    slider("From", $light.sunAzimuth, 0...359, "%.0f°")
+                    slider("Height", $light.sunElevation, 5...90, "%.0f°")
+                    slider("Shadow", $light.shadow, 0...1, "%.2f")
+                    Toggle("Walls toned by the sun", isOn: $light.sided)
+                    Text("Shadow: how dark where a surface is fully in it, with the engine's cool tint. The tones: the palette's lit, side and shade on the walls by which way they face against the sun from \(Int(Palette.sunFrom))°, as the tile paints them.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("No sun baked: the engine casts the sun's shadows itself, from where its sun is.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }

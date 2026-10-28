@@ -88,6 +88,13 @@ final class LightSettings {
     var lens: Double = value("lens", 45) { didSet { Self.keep("lens", lens) } }
     /// Preview: the walls toned by their side against the palette's sun.
     var sided: Bool = value("sided", true) { didSet { Self.keep("sided", sided) } }
+    /// Preview: the engine's sun shown at all (its shadow and the walls'
+    /// tones by side); off, only the light map (the user, 2026-10-28: the
+    /// engine has its own directed light, the editor is for the baked one).
+    var engineSun: Bool = value("engineSun", true) { didSet { Self.keep("engineSun", engineSun) } }
+    /// The shadow strength the preview shows: none without the engine's sun.
+    var previewShadow: Double { engineSun ? shadow : 0 }
+    var previewSided: Bool { engineSun && sided }
 
     /// These as TileKit's settings, for a bake in the app.
     var settings: Lighting.Settings {
@@ -102,7 +109,7 @@ final class LightSettings {
         s.sunAzimuth = sunAzimuth
         s.sunElevation = sunElevation
         s.sunStrength = sunStrength
-        s.sidedTones = sided
+        s.sidedTones = previewSided
         return s
     }
 
@@ -117,5 +124,5 @@ final class LightSettings {
     /// Everything the landmark preview's bake depends on: the arguments,
     /// and the engine's sun direction and the side tones, which the bake
     /// of a tile does not take.
-    var previewKey: String { arguments.joined(separator: " ") + " \(sunAzimuth) \(sunElevation) \(sided)" }
+    var previewKey: String { arguments.joined(separator: " ") + " \(sunAzimuth) \(sunElevation) \(previewSided)" }
 }

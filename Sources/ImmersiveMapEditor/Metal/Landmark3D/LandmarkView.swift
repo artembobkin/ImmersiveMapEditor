@@ -377,7 +377,11 @@ final class LandmarkRenderer {
         if (facing <= 0.02) lit = 0;
         if (st.x < 0 || st.x > 1 || st.y < 0 || st.y > 1) lit = 1;
         if (u.shadow.w > 0.5) return float4(u.colour.rgb, 1);   // the wireframe's lines
-        float3 shaded = u.shadow.x > 0 ? mix(float3(1), float3(0.88, 0.92, 1.0) * (1 - u.shadow.x), 1 - lit) : float3(1);
+        // In full shadow a surface keeps (1 - strength) of its light, tinted
+        // cool in the same measure: at 0 there is no shadow at all (the tint
+        // used to show whole at any strength).
+        float3 dark = mix(float3(1), float3(0.88, 0.92, 1.0), saturate(u.shadow.x * 2)) * (1 - u.shadow.x);
+        float3 shaded = u.shadow.x > 0 ? mix(float3(1), dark, 1 - lit) : float3(1);
         return float4(c * shaded, 1);
     }
     """

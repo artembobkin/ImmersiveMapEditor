@@ -130,7 +130,7 @@ struct ContentView: View {
                     guard !Task.isCancelled else { return }
                     session.showPreview()
                 }
-                .onChange(of: session.lightSettings.shadow, initial: true) { session.previewView?.shadowStrength = session.lightSettings.shadow }
+                .onChange(of: session.lightSettings.previewShadow, initial: true) { session.previewView?.shadowStrength = session.lightSettings.previewShadow }
                 .onChange(of: session.lightSettings.lens, initial: true) { session.previewView?.lens = session.lightSettings.lens }
             } else if workspace.shown.isEmpty {
                 ContentUnavailableView("The tile is not built", systemImage: "sun.max",
