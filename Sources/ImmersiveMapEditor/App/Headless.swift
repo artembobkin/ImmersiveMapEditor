@@ -98,7 +98,7 @@ enum Headless {
             // above, a PNG each, into a folder.
             let folder = URL(fileURLWithPath: arguments[i + 1])
             guard let view = LandmarkView.make() else { return fail("no Metal device") }
-            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [], detail: "normal")
+            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [])
             let source: LandmarkView.Source
             if arguments.contains("--boxes") {
                 source = .boxes(id: landmark.id, landmark.boxes)
@@ -120,7 +120,7 @@ enum Headless {
             let folder = URL(fileURLWithPath: arguments[i + 1])
             let n = arguments[(i + 3)...(i + 10)].compactMap(Double.init)
             guard n.count == 8, let view = LandmarkView.make() else { return fail("--landmark-look FOLDER OUT.png X Y Z HEADING PITCH HFOV W H [--boxes]") }
-            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [], detail: "normal")
+            let landmark = TileLandmark(id: folder.lastPathComponent, name: "", folder: folder, buildings: [])
             let source: LandmarkView.Source
             if arguments.contains("--boxes") || landmark.model == nil {
                 source = .boxes(id: landmark.id, landmark.boxes)

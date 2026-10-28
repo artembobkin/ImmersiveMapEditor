@@ -121,7 +121,7 @@ final class LandmarkAgent {
     }
 
     private func launch(_ claude: URL, folder: URL, name: String, request: String?, console: BuildRunner, followUps: Int) {
-        var args = ["-p", request ?? Self.firstRequest(name, detail: Self.detail(of: folder)), "--output-format", "stream-json", "--verbose",
+        var args = ["-p", request ?? Self.firstRequest(name), "--output-format", "stream-json", "--verbose",
                     "--tools", "WebSearch,WebFetch",
                     "--allowedTools", "WebSearch,WebFetch,mcp__landmark",
                     "--permission-mode", "dontAsk",
@@ -145,8 +145,7 @@ final class LandmarkAgent {
                                                    options: [.prettyPrinted, .sortedKeys])
             try? json?.write(to: folder.appendingPathComponent("agent.json"))
         }
-        let detail = Self.detail(of: folder)
-        if let request { console.append("> \(request)") } else { console.append("Detail: \(detail)") }
+        if let request { console.append("> \(request)") }
         let p = Process()
         p.executableURL = claude
         p.arguments = args
@@ -199,37 +198,17 @@ final class LandmarkAgent {
 
     func stop() { process?.terminate() }
 
-    /// How detailed the landmark's model is to be (landmark.json's detail).
-    static func detail(of folder: URL) -> String {
-        guard let data = try? Data(contentsOf: folder.appendingPathComponent("landmark.json")),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "normal" }
-        return json["detail"] as? String ?? "normal"
-    }
-
-    static func firstRequest(_ name: String, detail: String) -> String {
-        let level: String
-        switch detail {
-        case "simple":
-            level = """
-            DETAIL: simple. The masses, their roofs, the main colours and the one or two things that make it recognisable \\
-            (a portico, a dome, a tower). No windows, no small relief. Under 5 000 triangles.
-            """
-        case "detailed":
-            level = """
-            DETAIL: detailed. Everything that reads from across the street: every mass of the building with its own roof, \\
-            the windows with the real storeys and rhythm of each facade (arched where they are arched), every entrance with \\
-            its portal, the plinth, string courses, the cornice with its depth, pilasters and columns where the facade has \\
-            them, balustrades and parapets, the sculpture, chimneys and roof lanterns, the attic and its windows. Model from \\
-            shapes what the words do not cover (a balustrade of cylinders in a row, a rusticated base as thin boxes, a \\
+    /// The first request: the brief with the plan. Every landmark is
+    /// modelled in full detail (the user, 2026-10-28: no levels).
+    static func firstRequest(_ name: String) -> String {
+        let level = """
+            DETAIL: everything that reads from across the street: every mass of the building with its own roof, \
+            the windows with the real storeys and rhythm of each facade (arched where they are arched), every entrance with \
+            its portal, the plinth, string courses, the cornice with its depth, pilasters and columns where the facade has \
+            them, balustrades and parapets, the sculpture, chimneys and roof lanterns, the attic and its windows. Model from \
+            shapes what the words do not cover (a balustrade of cylinders in a row, a rusticated base as thin boxes, a \
             moulding as a loft). Up to 60 000 triangles (set_recipe tells the count).
             """
-        default:
-            level = """
-            DETAIL: normal. The masses with their roofs, the windows of every facade in their rhythm, the entrances, the \\
-            cornice, the plinth, the relief the facade has (pilasters, bands) and the sculpture that makes it recognisable. \\
-            Under 25 000 triangles (set_recipe tells the count).
-            """
-        }
         return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)

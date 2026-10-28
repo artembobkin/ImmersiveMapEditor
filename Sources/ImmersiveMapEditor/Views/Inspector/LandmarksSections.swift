@@ -58,16 +58,6 @@ struct LandmarksSections: View {
                     .help("The model's edges over its shading: one shell, since its solids are united, and nothing inside.")
             }
             Section("Model with Claude") {
-                Picker("Detail", selection: Binding(
-                    get: { landmark.detail },
-                    set: { LandmarkCandidates.setDetail(landmark.folder, $0); session.readCandidates() })) {
-                    Text("Simple").tag("simple")
-                    Text("Normal").tag("normal")
-                    Text("Detailed").tag("detailed")
-                }
-                .pickerStyle(.menu)
-                .disabled(session.agent.running)
-                .help("How far Claude goes: the masses and roofs alone, the facades with their windows, doors and relief, or every element that reads from across the street.")
                 Picker("Model", selection: $model) {
                     Text("Default").tag("")
                     Text("Fable").tag("fable")
