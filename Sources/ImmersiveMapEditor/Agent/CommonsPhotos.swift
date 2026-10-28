@@ -18,6 +18,8 @@ enum CommonsPhotos {
         let date: String
         let description: String
         let score: Double
+        /// From above (aerial, drone, the roofs), by its words.
+        var aerial = false
 
         var line: String {
             let what = description.isEmpty ? "" : ": " + String(description.prefix(110))
@@ -113,7 +115,7 @@ enum CommonsPhotos {
             let score = (aerial ? 2.0 : 1.0) * (inside ? 0.15 : 1) * (named ? 1 : 0.3) * min(1, Double(width) / 2500) * max(0.5, 1 - (2026 - year) * 0.04)
             photos.append(Photo(title: title, page: info["descriptionurl"] as? String ?? "https://commons.wikimedia.org/wiki/" + title,
                                 thumb: info["thumburl"] as? String ?? info["url"] as? String, width: width, height: height,
-                                licence: licence, author: String(m("Artist").prefix(60)), date: date, description: description, score: score))
+                                licence: licence, author: String(m("Artist").prefix(60)), date: date, description: description, score: score, aerial: aerial))
         }
         // The same author's photos of the same day are one series: the
         // second and the rest come down, so the list spans more.
@@ -123,7 +125,7 @@ enum CommonsPhotos {
             let k = seen[key, default: 0]
             seen[key] = k + 1
             return Photo(title: p.title, page: p.page, thumb: p.thumb, width: p.width, height: p.height, licence: p.licence, author: p.author,
-                         date: p.date, description: p.description, score: p.score * pow(0.5, Double(k)))
+                         date: p.date, description: p.description, score: p.score * pow(0.5, Double(k)), aerial: p.aerial)
         }
         return (category, spread.sorted { $0.score > $1.score })
     }

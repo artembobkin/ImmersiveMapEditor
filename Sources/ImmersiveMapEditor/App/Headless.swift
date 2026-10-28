@@ -10,7 +10,7 @@ import TileKit
 enum Headless {
     /// Whether the arguments ask for a run without a window.
     nonisolated static func asked(_ arguments: [String]) -> Bool {
-        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--street-photos"].contains($0) }
+        arguments.contains { ["--resave", "--snapshot", "--map-snapshot", "--landmark-snapshot", "--landmark-views", "--landmark-look", "--street-photos", "--gather-references"].contains($0) }
     }
 
     static func run(_ arguments: [String]) async -> Int32? {
@@ -41,6 +41,22 @@ enum Headless {
                 return 0
             } catch {
                 return fail(error.localizedDescription)
+            }
+        }
+        if let i = arguments.firstIndex(of: "--gather-references"), arguments.count > i + 1 {
+            // Every reference of a landmark gathered, as the editor does
+            // before its agent starts: printed.
+            let folder = URL(fileURLWithPath: arguments[i + 1]).standardizedFileURL
+            if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
+                let token = ClaudeSettings.mapillaryToken
+                if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
+            }
+            let server = LandmarkMCP.Server(folder: folder)
+            do {
+                for item in try server.gather() { if let s = item["text"] as? String { print(s) } }
+                return 0
+            } catch {
+                return fail("\(error)")
             }
         }
         if let i = arguments.firstIndex(of: "--street-photos"), arguments.count > i + 1 {

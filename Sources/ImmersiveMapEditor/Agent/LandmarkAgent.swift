@@ -71,6 +71,56 @@ final class LandmarkAgent {
             return
         }
         guard console.begin("Claude: \(name)", stage: "Claude is modelling \(name)") else { return }
+        // A new attempt: the references gathered first, with no agent (the
+        // user, 2026-10-28), the agent started when they are in.
+        if request == nil {
+            Self.startOver(folder)
+            modelChanged()
+            running = true
+            gather(folder: folder, console: console) { [weak self] in
+                guard let self else { return }
+                self.running = false
+                self.launch(claude, folder: folder, name: name, request: nil, console: console, followUps: followUps)
+            }
+            return
+        }
+        launch(claude, folder: folder, name: name, request: request, console: console, followUps: followUps)
+    }
+
+    /// The references of a landmark gathered by the editor itself (its
+    /// --gather-references, the same code the agent's tools run), its
+    /// report in the console; then `done`.
+    private func gather(folder: URL, console: BuildRunner, done: @escaping @MainActor () -> Void) {
+        console.append("Gathering the references: the street photos of every facade, the satellite view, Commons.")
+        let p = Process()
+        p.executableURL = Bundle.main.executableURL
+        p.arguments = ["--gather-references", folder.path]
+        p.environment = ClaudeSettings.environment
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = pipe
+        p.standardInput = FileHandle.nullDevice
+        do {
+            try p.run()
+        } catch {
+            console.append("Cannot gather the references: \(error.localizedDescription)")
+            done()
+            return
+        }
+        process = p
+        Task {
+            do {
+                for try await line in pipe.fileHandleForReading.bytes.lines where !line.hasPrefix("signed ") {
+                    console.append("  " + line)
+                }
+            } catch {}
+            p.waitUntilExit()
+            process = nil
+            done()
+        }
+    }
+
+    private func launch(_ claude: URL, folder: URL, name: String, request: String?, console: BuildRunner, followUps: Int) {
         var args = ["-p", request ?? Self.firstRequest(name, detail: Self.detail(of: folder)), "--output-format", "stream-json", "--verbose",
                     "--tools", "WebSearch,WebFetch",
                     "--allowedTools", "WebSearch,WebFetch,mcp__landmark",
@@ -86,8 +136,6 @@ final class LandmarkAgent {
         if request != nil, let session = Self.conversation(folder) {
             args += ["--resume", session]
         } else {
-            Self.startOver(folder)
-            modelChanged()
             let session = UUID().uuidString.lowercased()
             args += ["--session-id", session]
             let json = try? JSONSerialization.data(withJSONObject: ["session": session, "started": ISO8601DateFormatter().string(from: Date())],
@@ -191,26 +239,16 @@ final class LandmarkAgent {
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
         1. get_landmark, then render_views with boxes: true to see its OSM buildings.
-        2. list_references: photos kept from earlier work are there to use, look at them with show_reference. Then the \
-        references, in this order:
-           a. find_commons_photos (Wikimedia Commons, its category and around it): five candidates by their descriptions \
-        alone; keep one classic view of the whole with save_commons_photo (it comes back to look at; drop_reference it if \
-        it is not that, and keep another), to know the building and to judge the street photos by. Ask for their \
-        pictures (pictures: true) only when the descriptions do not tell.
-           b. find_street_photos (Mapillary, street level all around it): a walk around it, facade by facade (the sides of \
-        the outline) and station by station along each (from beyond one end, its thirds, from beyond the other end), at \
-        each the photos standing there that show the facade best, each from another track, with the landmark framed in \
-        red by the camera's pose. Every station's photos are kept for you at once, in a folder for each facade: its best \
-        one to three in best/, the very best of each shown to you as a picture, the others in other/, all by name \
-        (north-facade/best/photo-03.jpg: give that path to show_reference, compare_with_photo and drop_reference). Model each facade from its best \
-        photos, and open the others when a detail needs them. Poses are \
-        sometimes wrong: look at the kept photos (everything outside a frame is painted black), and where a frame holds \
-        another building, drop_reference it; save_street_photo keeps any other candidate you want, and every keep tells \
-        you how much of each facade the kept photos show.
-           c. satellite_view: the roofs from straight above with the OSM outlines and a grid in metres (the recipe's x \
-        and y): the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand.
-           d. find_commons_photos again only for what these do not show (the roofs at a slant: aerial, drone; a \
-        sculpture, a portal), by the descriptions; keep one or two at most. The web (WebSearch, WebFetch) only when these give nothing.
+        2. list_references: the references are gathered for you before you start, and this shows them: Mapillary's street \
+        photos of every facade, kept in a folder for each facade (its best one to three in best/, the very best of each \
+        shown as a picture, the others in other/, all by name: north-facade/best/photo-03.jpg, the path to give \
+        show_reference, compare_with_photo and drop_reference), the landmark framed in red on each by the camera's pose; \
+        the satellite view (the roofs from straight above with the OSM outlines and a grid in metres, the recipe's x and \
+        y: the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand); and from Wikimedia Commons \
+        a view of the whole and one from above when it has them. Model each facade from its best photos, and open the \
+        others when a detail needs them. A pose is sometimes wrong: where a frame holds another building, drop_reference \
+        it. If list_references shows nothing, gather_references. Nothing else to search for: the web (WebSearch, \
+        WebFetch) only when a question the photos cannot answer remains.
         3. Write its recipe with set_recipe: every build comes back with the model rendered from a best street photo of \
         each facade the recipe changed (all on the first build) from that photo's own camera beside that photo (the next \
         best each round) and the satellite view beside the model from above, so what \

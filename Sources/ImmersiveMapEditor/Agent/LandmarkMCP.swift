@@ -167,7 +167,10 @@ enum LandmarkMCP {
              "description": "A picture the user attached to a request (a screenshot of the model or of the building, to show what to change), by its file name.",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
             ["name": "list_references",
-             "description": "The reference photos kept, with their credits and what they show.",
+             "description": "The reference photos kept, with their credits and what they show, and as pictures the best street photo of each facade, the satellite view and the Commons photos. The references are gathered for you before you start (gather_references); this is where you see them.",
+             "inputSchema": ["type": "object", "properties": [:]]],
+            ["name": "gather_references",
+             "description": "Gathers every reference at once, no choice to make: Mapillary's street photos facade by facade (find_street_photos), the satellite view, and from Wikimedia Commons the best classic view of the whole and the best view from above, each checked for a building in it. The editor runs it before you start; call it only when list_references shows nothing.",
              "inputSchema": ["type": "object", "properties": [:]]],
             ["name": "show_reference",
              "description": "Returns one kept reference photo to look at again.",
@@ -232,10 +235,8 @@ enum LandmarkMCP {
             case "save_commons_photo": return try saveCommonsPhoto(args)
             case "drop_reference": return [text(try dropReference(args["file"] as? String ?? ""))]
             case "save_street_photo": return try saveStreetPhoto(args)
-            case "list_references":
-                let list = credited()
-                let json = (try? JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
-                return [text((String(data: json, encoding: .utf8) ?? "[]") + "\n" + coverage())]
+            case "list_references": return try listReferences()
+            case "gather_references": return try gather()
             case "show_user_picture":
                 let file = (args["file"] as? String ?? "") as NSString
                 let url = folder.appendingPathComponent("requests").appendingPathComponent(file.lastPathComponent)
@@ -755,6 +756,104 @@ enum LandmarkMCP {
                 if let img = image(framed) { content.append(img) }
             }
             return content
+        }
+
+        /// The references kept, as text and as the pictures the agent works
+        /// from: the best street photo of each facade, the satellite view,
+        /// the Commons photos.
+        func listReferences() throws -> [[String: Any]] {
+            let list = credited()
+            let json = (try? JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
+            var content: [[String: Any]] = [text((String(data: json, encoding: .utf8) ?? "[]") + "\n" + coverage())]
+            if let scene = try? StreetScene(folder: folder) {
+                for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
+                    guard let file = bestPhotos(Self.facadeFolder(scene.facades[f].name)).first, let found = reference(file), let img = image(found.url) else { continue }
+                    content.append(text("\(file), the best photo of \(scene.facades[f].name):"))
+                    content.append(img)
+                }
+            }
+            for e in list {
+                guard let file = e["file"] as? String, e["pose"] == nil, let found = reference(file) else { continue }
+                let small = file == "satellite.jpg" ? searchFolder.appendingPathComponent("satellite/view.jpg") : found.url
+                guard let img = image(FileManager.default.fileExists(atPath: small.path) ? small : found.url) else { continue }
+                content.append(text("\(file): \(e["shows"] as? String ?? "")"))
+                content.append(img)
+            }
+            return content
+        }
+
+        /// Every reference gathered at once, with no choice for the agent
+        /// (the user, 2026-10-28): the street photos of every facade, the
+        /// satellite view, and from Commons the best classic view of the
+        /// whole and the best view from above, each kept only when the
+        /// scene classifier sees a building in it. What was gathered, as
+        /// text; the pictures come with list_references.
+        func gather() throws -> [[String: Any]] {
+            var lines: [String] = []
+            let had = credited()
+            if had.contains(where: { $0["pose"] != nil }) {
+                lines.append("Street photos are kept already (\(had.filter { $0["pose"] != nil }.count)): not gathered again.")
+            } else {
+                do {
+                    let said = try streetPhotos([:])
+                    lines.append((said.first?["text"] as? String ?? "").components(separatedBy: "\nEvery station's photos").first ?? "")
+                } catch {
+                    lines.append("Street photos: \(error)")
+                }
+            }
+            if had.contains(where: { $0["file"] as? String == "satellite.jpg" }) {
+                lines.append("The satellite view is kept already.")
+            } else {
+                do {
+                    let said = try satellite([:])
+                    lines.append(said.first?["text"] as? String ?? "")
+                } catch {
+                    lines.append("The satellite view: \(error)")
+                }
+            }
+            if had.contains(where: { $0["pose"] == nil && $0["file"] as? String != "satellite.jpg" }) {
+                lines.append("Commons photos are kept already.")
+            } else {
+                lines += commonsAuto()
+            }
+            lines.append(coverage())
+            return [text(lines.joined(separator: "\n"))]
+        }
+
+        /// From Commons, with no one choosing: the best classic view of the
+        /// whole (not from above) and the best view from above, each the
+        /// first of its candidates in which the scene classifier sees a
+        /// building (0.4 at least); the rest dropped as they come.
+        func commonsAuto() -> [String] {
+            guard let source = try? LandmarkSource(folder.appendingPathComponent("landmark.json")),
+                  let (category, photos) = try? CommonsPhotos.find(tags: source.buildings.map(\.tags), lon: source.centre.0, lat: source.centre.1, radius: 150, run: Self.run) else {
+                return ["Commons did not answer."]
+            }
+            guard !photos.isEmpty else { return ["Commons has no freely licensed photos " + (category.map { "in \"\($0)\" or " } ?? "") + "within 150 m."] }
+            var out: [String] = []
+            for (what, candidates) in [("the whole", photos.filter { !$0.aerial }), ("from above", photos.filter(\.aerial))] {
+                var kept = false
+                for p in candidates.prefix(4) {
+                    guard let photo = try? CommonsPhotos.file(p.title, width: 1600, run: Self.run), let url = photo.thumb else { continue }
+                    let licence = photo.licence
+                    guard licence.hasPrefix("CC") && !licence.contains("NC") && !licence.contains("ND") || licence.contains("Public domain") || licence == "CC0" else { continue }
+                    guard let said = try? keep(url, page: photo.page, author: photo.author.isEmpty ? "unknown (Wikimedia Commons)" : "\(photo.author) (Wikimedia Commons)",
+                                               licence: licence, shows: "Commons, \(what == "the whole" ? "a view of the whole" : "a view from above"): \(String(p.description.prefix(120)))"),
+                          let name = (said.first?["text"] as? String)?.split(separator: " ").last.map(String.init),
+                          let found = reference(name) else { continue }
+                    // A building in it, or it goes.
+                    if let src = CGImageSourceCreateWithURL(found.url as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
+                       FrameCheck.classify(img).building < 0.4 {
+                        _ = try? dropReference(name)
+                        continue
+                    }
+                    out.append("Commons, \(what): kept \(name), \(p.line)")
+                    kept = true
+                    break
+                }
+                if !kept { out.append("Commons, \(what): nothing fit among \(min(4, candidates.count)) candidates.") }
+            }
+            return out
         }
 
         /// Without Mapillary (`LANDMARK_STREET_OFFLINE`): the coverage tiles
