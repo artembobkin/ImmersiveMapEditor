@@ -137,7 +137,123 @@ public enum LightBaker {
         }
         out[row * p.size + gid.x] = total / p.samples;
     }
+
+    // How open a point of a surface is: of cosine-weighted rays from it
+    // within `radius`, the share that meets nothing (the face shade: a
+    // window's reveal, a ceiling under a portico, the wall behind columns).
+    struct OccParams { uint count, samples, strata; float radius; };
+    kernel void occlusion(uint gid [[thread_position_in_grid]],
+                          constant OccParams& p [[buffer(0)]],
+                          primitive_acceleration_structure accel [[buffer(1)]],
+                          const device packed_float3* points [[buffer(2)]],
+                          const device packed_float3* normals [[buffer(3)]],
+                          device float* out [[buffer(4)]]) {
+        if (gid >= p.count) return;
+        intersector<triangle_data> hit;
+        hit.assume_geometry_type(geometry_type::triangle);
+        hit.force_opacity(forced_opacity::opaque);
+        hit.accept_any_intersection(true);
+        float3 n = normalize(float3(normals[gid]));
+        float3 o = float3(points[gid]) + n * 0.02;
+        uint s = hash(gid * 7919 + 13);
+        uint open = 0;
+        for (uint k = 0; k < p.samples; k++) {
+            float u1 = rnd(s), u2 = rnd(s);
+            if (p.strata > 1) { u1 = (k % p.strata + u1) / p.strata; u2 = ((k / p.strata) % p.strata + u2) / p.strata; }
+            ray r;
+            r.origin = o;
+            r.direction = cosine(n, u1, u2);
+            r.min_distance = 0.001;
+            r.max_distance = p.radius;
+            if (hit.intersect(r, accel).type == intersection_type::none) open++;
+        }
+        out[gid] = float(open) / p.samples;
+    }
     """
+
+    struct OccParams {
+        var count, samples, strata: UInt32
+        var radius: Float
+    }
+
+    /// How open each of `points` is on its surface (normal `normals`,
+    /// three floats each): the share of cosine-weighted rays within
+    /// `radius` that meet none of `triangles`. 1 open, 0 shut in.
+    public static func occlusion(triangles: [Float], points: [Float], normals: [Float], radius: Double, samples: Int = 64) throws -> [Float] {
+        func fail(_ s: String) -> Failure { Failure(description: "face shade: \(s)") }
+        let n = points.count / 3
+        guard n > 0 else { return [] }
+        let scene = try Scene(triangles)
+        let pipeline = try scene.device.makeComputePipelineState(function: scene.library.makeFunction(name: "occlusion")!)
+        let pointsBuffer = points.withUnsafeBytes { scene.device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)! }
+        let normalsBuffer = normals.withUnsafeBytes { scene.device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)! }
+        guard let out = scene.device.makeBuffer(length: n * 4, options: .storageModeShared) else { throw fail("no memory") }
+        // In batches, so no one command runs long enough for the system to stop it.
+        let batch = max(1, 4 * 1024 * 1024 / max(1, samples))
+        var at = 0
+        while at < n {
+            let count = min(batch, n - at)
+            guard let cmd = scene.queue.makeCommandBuffer(), let c = cmd.makeComputeCommandEncoder() else { throw fail("no command buffer") }
+            var p = OccParams(count: UInt32(count), samples: UInt32(samples), strata: UInt32(max(1, Int(Double(samples).squareRoot()))), radius: Float(radius))
+            c.setComputePipelineState(pipeline)
+            c.setBytes(&p, length: MemoryLayout<OccParams>.stride, index: 0)
+            c.setAccelerationStructure(scene.accel, bufferIndex: 1)
+            c.useResource(scene.accel, usage: .read)
+            c.setBuffer(pointsBuffer, offset: at * 12, index: 2)
+            c.setBuffer(normalsBuffer, offset: at * 12, index: 3)
+            c.setBuffer(out, offset: at * 4, index: 4)
+            c.dispatchThreads(MTLSize(width: count, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+            c.endEncoding()
+            cmd.commit()
+            cmd.waitUntilCompleted()
+            if let e = cmd.error { throw fail("\(e)") }
+            at += count
+        }
+        return Array(UnsafeBufferPointer(start: out.contents().bindMemory(to: Float.self, capacity: n), count: n))
+    }
+
+    /// The scene on the GPU: the device, the triangles and the acceleration
+    /// structure over them, and the compiled shader.
+    final class Scene {
+        let device: MTLDevice, queue: MTLCommandQueue, vertices: MTLBuffer, accel: MTLAccelerationStructure, library: MTLLibrary
+        let top: Float
+
+        init(_ triangles: [Float]) throws {
+            func fail(_ s: String) -> Failure { Failure(description: "light bake: \(s)") }
+            guard let device = MTLCreateSystemDefaultDevice(), device.supportsRaytracing, let queue = device.makeCommandQueue()
+            else { throw fail("no Metal device with ray tracing") }
+            let count = triangles.count / 9
+            guard count > 0 else { throw fail("no triangles") }
+            self.device = device
+            self.queue = queue
+            vertices = triangles.withUnsafeBytes {
+                device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)!
+            }
+            var top: Float = 0
+            for i in stride(from: 2, to: triangles.count, by: 3) { top = max(top, triangles[i]) }
+            self.top = top
+            let geometry = MTLAccelerationStructureTriangleGeometryDescriptor()
+            geometry.vertexBuffer = vertices
+            geometry.vertexStride = 12
+            geometry.vertexFormat = .float3
+            geometry.triangleCount = count
+            geometry.opaque = true
+            let descriptor = MTLPrimitiveAccelerationStructureDescriptor()
+            descriptor.geometryDescriptors = [geometry]
+            let sizes = device.accelerationStructureSizes(descriptor: descriptor)
+            guard let accel = device.makeAccelerationStructure(size: sizes.accelerationStructureSize),
+                  let scratch = device.makeBuffer(length: sizes.buildScratchBufferSize, options: .storageModePrivate),
+                  let build = queue.makeCommandBuffer(), let enc = build.makeAccelerationStructureCommandEncoder()
+            else { throw fail("cannot build the acceleration structure") }
+            enc.build(accelerationStructure: accel, descriptor: descriptor, scratchBuffer: scratch, scratchBufferOffset: 0)
+            enc.endEncoding()
+            build.commit()
+            build.waitUntilCompleted()
+            self.accel = accel
+            library = try device.makeLibrary(source: LightBaker.shader, options: nil)
+        }
+    }
+
 
     struct Params {
         var x0, y0, x1, y1: Float

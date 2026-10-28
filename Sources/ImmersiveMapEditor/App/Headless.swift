@@ -125,6 +125,8 @@ enum Headless {
             if let v = value("--ao-radius").flatMap(Double.init) { s.aoRadius = v }
             if let v = value("--depth").flatMap(Double.init) { s.depth = v }
             if let v = value("--gamma").flatMap(Double.init) { s.gamma = v }
+            if let v = value("--face-radius").flatMap(Double.init) { s.faceRadius = v }
+            if let v = value("--face-step").flatMap(Double.init) { s.faceStep = v }
             return s
         }
         if let i = arguments.firstIndex(of: "--landmark-look"), arguments.count > i + 10 {

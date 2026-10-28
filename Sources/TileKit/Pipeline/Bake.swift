@@ -45,7 +45,33 @@ public enum Bake {
         let m = cut(scene.mesh, scene.region)
         let uv1 = Lighting.lightUVs(m, bounds: lit, size: size)
         cutDone(m.count)
+        // The face shade: each face's step of shade, from the whole scene
+        // with the ground plane, then the palette of the names the tile
+        // uses with their steps, and TEXCOORD_0 pointed at them.
+        Progress.report("Shading the faces")
+        let faceStarted = Date()
+        let steps = bake ? try Lighting.faceShade(m, scene: (scene.mesh.pos + plane).map(Float.init), radius: settings.faceRadius) : [UInt8](repeating: 0, count: m.count)
+        let base = PaletteTexture()
+        var names: [String] = [], index: [String: Int] = [:]
+        var uv0 = [Double](repeating: 0, count: m.count * 6)
+        let shadedNames: [String] = (0..<m.count).map { t in
+            let name = base.name(at: P2(m.uv[t * 6], m.uv[t * 6 + 1])) ?? "clay"
+            return Palette.shaded(name, step: Int(steps[t]))
+        }
+        for name in shadedNames where index[name] == nil { index[name] = names.count; names.append(name) }
+        let palette = PaletteTexture(names: names, step: settings.faceStep)
+        for t in 0..<m.count {
+            let uv = palette.uv(shadedNames[t])
+            for i in 0..<3 { uv0[t * 6 + i * 2] = uv.x; uv0[t * 6 + i * 2 + 1] = uv.y }
+        }
+        var shaded = [Int](repeating: 0, count: Palette.shadeSteps + 1)
+        for s in steps { shaded[Int(s)] += 1 }
+        print(String(format: "[%@] face shade: %d faces by step %@, %d colours in a %d px palette, in %.1f s", log, m.count,
+                     shaded.map(String.init).joined(separator: " "), names.count, palette.size, Date().timeIntervalSince(faceStarted)))
+        try PNG.write(out.appendingPathComponent("palette.png"), palette.pixels, width: palette.size, height: palette.size, channels: 3)
         var stats = scene.stats
+        stats["faces_by_shade_step"] = shaded
+        stats["palette_colours"] = names.count
         stats["triangles"] = m.count
         stats["light_baked"] = bake
         stats["light_map_px"] = size
@@ -53,7 +79,7 @@ public enum Bake {
         stats["seconds"] = (Date().timeIntervalSince(started) * 10).rounded() / 10
         try Export.write(stats, out.appendingPathComponent("stats.json"))
         if export {
-            let glb = try Export.tile(m, uv1: uv1, palette: PaletteTexture(), light: light, lightSize: size, tile: tile,
+            let glb = try Export.tile(m, uv0: uv0, uv1: uv1, palette: palette, light: light, lightSize: size, tile: tile,
                                       out: out, stats: stats, models: scene.models)
             print("[\(log)] exported \(glb.path)")
             let bake = out.appendingPathComponent(folder)
@@ -100,7 +126,7 @@ public enum Bake {
                 let scene = try BakeScene(Data(contentsOf: sceneURL))
                 guard scene.tile == [z, x, y] else { throw PipelineError("\(sceneURL.path) is the scene of another tile") }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
-                print("[bake] size \(settings.size), \(settings.samples) samples, \(settings.bounces) bounces, gamma \(settings.gamma)")
+                print("[bake] size \(settings.size), \(settings.samples) samples, \(settings.bounces) bounces, gamma \(settings.gamma), face shade \(settings.faceRadius) m by \(settings.faceStep)")
                 try light(scene, settings, tile: tile, out: out, export: true, started: started, log: "bake")
                 Progress.report("Validating")
                 let result = try Validate.tile(out)

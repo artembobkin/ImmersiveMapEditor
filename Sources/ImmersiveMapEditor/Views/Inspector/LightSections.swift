@@ -33,6 +33,12 @@ struct LightSections: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
+        Section("Face shade") {
+            slider("Reach", $light.faceRadius, 0...30, "%.0f m")
+            slider("Step", $light.faceStep, 0...0.2, "%.2f")
+            Text("Depth from the building itself, flat over each face: a face shut in by what stands within the reach (a window's reveal and glass, a ceiling under a portico, the wall behind columns, the underside of a cornice) takes its colour a step or more darker, each step this much. 0 m for none.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
         Section("Light") {
             slider("Strength", $light.depth, 0...1, "%.2f")
             slider("Contrast", $light.gamma, 0.5...3, "%.2f")

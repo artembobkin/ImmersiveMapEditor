@@ -169,6 +169,21 @@ public enum Palette {
         return out
     }
 
+    /// The face shade: a colour's name with a step of shade, "name~2". A
+    /// face shut in by what is around it (a window's reveal, a ceiling
+    /// under a portico, the wall behind columns) takes its colour a step
+    /// or more darker, and a little cooler, flat over the face (the user,
+    /// 2026-10-28: depth from the building's own geometry, in the style's
+    /// flat colours). `step` is how much darker each step is.
+    public static let shadeSteps = 3
+    public static func shaded(_ name: String, step level: Int) -> String { level > 0 ? "\(name)~\(level)" : name }
+    public static func hexShaded(_ name: String, step: Double) -> String? {
+        guard let tilde = name.lastIndex(of: "~") else { return hex(name) }
+        guard let level = Int(name[name.index(after: tilde)...]), let base = hex(String(name[..<tilde])) else { return nil }
+        let k = 1 - step * Double(level)
+        return tone(base, (k * 0.98, k, k * 1.04))
+    }
+
     /// Which side of the sun a face looks to, from its normal in plan.
     public static func side(_ nx: Double, _ ny: Double) -> String {
         let l = hypot(nx, ny)
@@ -184,18 +199,33 @@ public enum Palette {
 /// distance. UVs come out with V up (row 0 at V = 1), as the build has
 /// them until the export turns them.
 public final class PaletteTexture {
-    public static let size = 256
     public static let cell = 16
+    /// 256 px, 256 cells: the base palette, every colour of `Palette.all`.
+    /// A texture of the names a tile uses with their shade steps grows to
+    /// 512 px when they are more than 256.
+    public let size: Int
     public private(set) var pixels: [UInt8]           // RGB, row 0 on top
     public private(set) var flat: [String: (Double, Double)] = [:]
+    /// The name of each cell, in order.
+    public let names: [String]
 
-    public init() {
-        let n = PaletteTexture.size, cell = PaletteTexture.cell
+    /// The base palette: every colour, in `Palette.all`'s order, so a
+    /// name's cell is the same in every build.
+    public convenience init() { self.init(names: Palette.all.map(\.0), step: 0) }
+
+    /// A palette of just these names (shaded names "name~k" among them,
+    /// each `step` darker a step), in the order given.
+    public init(names: [String], step: Double) {
+        let cell = PaletteTexture.cell
+        let n = names.count <= 256 ? 256 : 512
+        precondition(names.count <= (n / cell) * (n / cell), "too many colours for the palette: \(names.count)")
+        size = n
+        self.names = names
         pixels = [UInt8](repeating: 0, count: n * n * 3)
         let perRow = n / cell
-        for (i, (name, hex)) in Palette.all.enumerated() {
+        for (i, name) in names.enumerated() {
             let (r, c) = (i / perRow, i % perRow)
-            let (cr, cg, cb) = Palette.rgb(hex)
+            let (cr, cg, cb) = Palette.rgb(Palette.hexShaded(name, step: step) ?? "#FF00FF")
             for y in (r * cell)..<((r + 1) * cell) {
                 for x in (c * cell)..<((c + 1) * cell) {
                     let k = (y * n + x) * 3
@@ -211,6 +241,14 @@ public final class PaletteTexture {
     /// The UV of a colour's cell centre.
     public func uv(_ name: String) -> P2 {
         guard let (px, py) = flat[name] else { fatalError("no colour \(name) in the palette") }
-        return P2(px / Double(PaletteTexture.size), 1 - py / Double(PaletteTexture.size))
+        return P2(px / Double(size), 1 - py / Double(size))
+    }
+
+    /// The name of the cell a UV (V up) points into.
+    public func name(at uv: P2) -> String? {
+        let cell = PaletteTexture.cell, perRow = size / cell
+        let c = Int(uv.x * Double(size)) / cell, r = Int((1 - uv.y) * Double(size)) / cell
+        let i = r * perRow + c
+        return i >= 0 && i < names.count ? names[i] : nil
     }
 }

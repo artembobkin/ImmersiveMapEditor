@@ -59,6 +59,7 @@ public enum PipelineCommand {
                 }
                 let size = number("--size").map(Int.init), samples = number("--samples").map(Int.init)
                 let bounces = number("--bounces").map(Int.init), gamma = number("--gamma"), depth = number("--depth")
+                let faceRadius = number("--face-radius"), faceStep = number("--face-step")
                 let lit = colour("--lit"), shade = colour("--shade")
                 let mode = args.value("--mode")?[0], aoRadius = number("--ao-radius"), sky = number("--sky")
                 let noSun = args.flag("--no-sun")
@@ -71,6 +72,8 @@ public enum PipelineCommand {
                     if let v = bounces { s.bounces = v }
                     if let v = gamma { s.gamma = v }
                     if let v = depth { s.depth = v }
+                    if let v = faceRadius { s.faceRadius = v }
+                    if let v = faceStep { s.faceStep = v }
                     if let v = lit { s.lit = v }
                     if let v = shade { s.shade = v }
                     if let v = mode { s.mode = v }

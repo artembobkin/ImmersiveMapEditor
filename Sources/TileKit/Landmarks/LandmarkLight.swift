@@ -75,6 +75,21 @@ public enum LandmarkLight {
                   cx - g, cy - g, z, cx + g, cy + g, z, cx - g, cy + g, z]
         var s = settings
         s.size = size
+        // The face shade: each face's colour a step darker per step of shade.
+        if settings.faceRadius > 0 {
+            let steps = try Lighting.faceShade(tris, scene: scene.map(Float.init), radius: settings.faceRadius)
+            if ProcessInfo.processInfo.environment["LANDMARK_FACE_DEBUG"] != nil {
+                var count = [Int](repeating: 0, count: Palette.shadeSteps + 1)
+                for s in steps { count[Int(s)] += 1 }
+                print("[face shade] \(tris.count) faces by step: \(count)")
+            }
+            for t in 0..<tris.count where steps[t] > 0 {
+                let k = 1 - settings.faceStep * Double(steps[t])
+                for (c, f) in [(0, k * 0.98), (1, k), (2, k * 1.04)] {
+                    colours[t * 3 + c] = UInt8(min(255, max(0, (Double(colours[t * 3 + c]) * f).rounded())))
+                }
+            }
+        }
         let irradiance = try Lighting.bake(scene, bounds: bounds, size: size, settings: s)
         let light = Lighting.shape(irradiance, s)
         let uv1 = Lighting.lightUVs(tris, bounds: bounds, size: size)

@@ -33,6 +33,13 @@ public enum Lighting {
         /// How deep the shade goes: 1 to the shade colour, 0 no shading at
         /// all (the user, 2026-10-28: a strength for the light).
         public var depth = 1.0
+        /// The face shade (the user, 2026-10-28): each face shut in by what
+        /// stands within `faceRadius` metres of it takes its colour a step
+        /// darker per step of shade, `faceStep` darker a step, flat over the
+        /// face: a window's reveal and glass, a ceiling under a portico, the
+        /// wall behind columns, the underside of a cornice. 0 radius: none.
+        public var faceRadius = 12.0
+        public var faceStep = 0.09
         /// What light is gathered: the sky with its bounces ("sky"), or only
         /// how open each surface is within `aoRadius` metres ("ao").
         public var mode = "sky"
@@ -72,7 +79,8 @@ public enum Lighting {
         public func json(lightMapPixels: Int) -> [String: Any] {
             ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma, "depth": depth,
              "mode": mode, "ao_radius": aoRadius, "sun": sun, "sun_azimuth": sunAzimuth, "sun_elevation": sunElevation,
-             "sun_strength": sunStrength, "sky_strength": skyStrength, "light_map_px": lightMapPixels]
+             "sun_strength": sunStrength, "sky_strength": skyStrength, "face_radius": faceRadius, "face_step": faceStep,
+             "light_map_px": lightMapPixels]
         }
 
         /// Read from bake/settings.json: what it lacks keeps its default.
@@ -84,6 +92,8 @@ public enum Lighting {
             if let v = json["shade"] as? [Double], v.count == 3 { shade = v }
             if let v = json["gamma"] as? Double { gamma = v }
             if let v = json["depth"] as? Double { depth = v }
+            if let v = json["face_radius"] as? Double { faceRadius = v }
+            if let v = json["face_step"] as? Double { faceStep = v }
             if let v = json["mode"] as? String { mode = v }
             if let v = json["ao_radius"] as? Double { aoRadius = v }
             if let v = json["sun"] as? Bool { sun = v }
@@ -111,6 +121,86 @@ public enum Lighting {
         }
         print(String(format: "[bake] %d triangles, %@ in %.1f s", tris.count / 9, detail, Date().timeIntervalSince(started)))
         return ProcessInfo.processInfo.environment["LIGHT_NO_DENOISE"] == nil ? denoise(light, size: size) : light
+    }
+
+    /// The face shade: how shut in each triangle of `m` is by `scene` (the
+    /// whole scene's corners, nine floats a triangle, the ground plane in
+    /// it), as a step of shade 0 to `Palette.shadeSteps`. Four points a face
+    /// (its middle and halfway from it to each corner), `samples` rays each
+    /// within `radius`; the face's openness is their mean, and the steps
+    /// fall at 0.8, 0.6 and 0.4 of open. A face's step is flat over it, in
+    /// the style's manner: depth by steps, no gradients.
+    public static func faceShade(_ m: Triangles, scene: [Float], radius: Double, samples: Int = 64) throws -> [UInt8] {
+        guard m.count > 0, radius > 0 else { return [UInt8](repeating: 0, count: m.count) }
+        var points: [Float] = [], normals: [Float] = []
+        points.reserveCapacity(m.count * 12)
+        normals.reserveCapacity(m.count * 12)
+        for t in 0..<m.count {
+            let n = m.normal(t).normalized
+            let a = m.corner(t, 0), b = m.corner(t, 1), c = m.corner(t, 2)
+            let mid = (a + b + c) / 3
+            for p in [mid, (mid + a) / 2, (mid + b) / 2, (mid + c) / 2] {
+                points += [Float(p.x), Float(p.y), Float(p.z)]
+                normals += [Float(n.x), Float(n.y), Float(n.z)]
+            }
+        }
+        let open = try LightBaker.occlusion(triangles: scene, points: points, normals: normals, radius: radius, samples: samples)
+        // One step for a whole planar face: the triangles on one plane that
+        // share corners (a wall between its windows, a reveal, a roof slope),
+        // by their area-weighted openness. A step a triangle made a mosaic
+        // of a wall.
+        let group = planarFaces(m)
+        var sum = [Double](repeating: 0, count: m.count), area = [Double](repeating: 0, count: m.count)
+        for t in 0..<m.count {
+            let o4: Float = open[t * 4] + open[t * 4 + 1] + open[t * 4 + 2] + open[t * 4 + 3]
+            let o = Double(o4) / 4
+            let a: Double = m.normal(t).length / 2
+            sum[group[t]] += o * a
+            area[group[t]] += a
+        }
+        var steps = [UInt8](repeating: 0, count: m.count)
+        for t in 0..<m.count {
+            let g = group[t]
+            var o: Double = 1
+            if area[g] > 0 { o = sum[g] / area[g] }
+            var step: UInt8 = 0
+            if o <= 0.4 { step = 3 } else if o <= 0.6 { step = 2 } else if o <= 0.8 { step = 1 }
+            steps[t] = step
+        }
+        return steps
+    }
+
+    /// Each triangle's planar face: the triangles on one plane (normal and
+    /// offset alike) that share a corner, joined; the index of a triangle
+    /// standing for the face.
+    static func planarFaces(_ m: Triangles) -> [Int] {
+        var parent = Array(0..<m.count)
+        func find(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }
+            return i
+        }
+        func union(_ a: Int, _ b: Int) {
+            let (ra, rb) = (find(a), find(b))
+            if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
+        }
+        struct Key: Hashable { let nx, ny, nz, off, x, y, z: Int64 }
+        var first: [Key: Int] = [:]
+        first.reserveCapacity(m.count * 3)
+        for t in 0..<m.count {
+            let n = m.normal(t).normalized
+            guard n.x.isFinite else { continue }
+            let off: Double = n.dot(m.corner(t, 0))
+            func q(_ v: Double, _ scale: Double) -> Int64 { Int64((v * scale).rounded()) }
+            let nx = q(n.x, 50), ny = q(n.y, 50), nz = q(n.z, 50), o = q(off, 20)
+            for i in 0..<3 {
+                let c = m.corner(t, i)
+                let cx = q(c.x, 1000), cy = q(c.y, 1000), cz = q(c.z, 1000)
+                let key = Key(nx: nx, ny: ny, nz: nz, off: o, x: cx, y: cy, z: cz)
+                if let other = first[key] { union(other, t) } else { first[key] = t }
+            }
+        }
+        return (0..<m.count).map { find($0) }
     }
 
     /// The bake's grain smoothed. A path-traced texel keeps a few percent of
@@ -180,6 +270,12 @@ public enum Lighting {
     /// and the roof have along every wall (the corner shut in), and the
     /// seam spread down the whole wall (the user, 2026-10-28, in Preview).
     static let wallReach = 2.0
+    /// Texels a wall reaches outside its line at its top. It used to take
+    /// the roof two texels inside, and what stood on the roof (a chimney, a
+    /// parapet, a statue) ran down the whole wall as dirt (the user,
+    /// 2026-10-28). Now the wall shades from the seam at its foot to the
+    /// open ground further out, both on the ground's side.
+    static let wallReachTop = 4.0
     /// A horizontal face of a facade's relief (a band's top, a sill, a
     /// cornice) is at most this many texels across in plan.
     static let reliefWidth = 1.5
@@ -260,9 +356,12 @@ public enum Lighting {
                     y -= h.y * off
                 }
                 if wall && span > 1e-4 {
+                    // From the seam at its foot out to open ground at its top:
+                    // all on the ground's side, nothing from the roof.
                     let s = min(max((c.z - lo) / span, 0), 1)
-                    x += h.x * d * wallReach * (1 - 2 * s)
-                    y += h.y * d * wallReach * (1 - 2 * s)
+                    let reach = d * (wallReach + (wallReachTop - wallReach) * s)
+                    x += h.x * reach
+                    y += h.y * reach
                 }
                 // Clamped: a wall on the edge would reach a texel outside, and
                 // every UV stays within 0..1.

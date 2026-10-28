@@ -78,6 +78,10 @@ final class LightSettings {
     /// contrast (the gamma on the light before the shade is applied).
     var depth: Double = value("depth", 1.0) { didSet { Self.keep("depth", depth) } }
     var gamma: Double = value("gamma", 1.6) { didSet { Self.keep("gamma", gamma) } }
+    /// The face shade: how far a face looks for what shuts it in (0 none),
+    /// and how much darker each step of shade is.
+    var faceRadius: Double = value("faceRadius", 12.0) { didSet { Self.keep("faceRadius", faceRadius) } }
+    var faceStep: Double = value("faceStep", 0.09) { didSet { Self.keep("faceStep", faceStep) } }
     /// A sun baked in, off by default (the engine casts the sun's shadows).
     var sun: Bool = value("sun", false) { didSet { Self.keep("sun", sun) } }
     var sunAzimuth: Double = value("sunAzimuth", 225.0) { didSet { Self.keep("sunAzimuth", sunAzimuth) } }
@@ -111,6 +115,8 @@ final class LightSettings {
         s.skyStrength = skyStrength
         s.depth = depth
         s.gamma = gamma
+        s.faceRadius = faceRadius
+        s.faceStep = faceStep
         s.sun = sun
         s.sunAzimuth = sunAzimuth
         s.sunElevation = sunElevation
@@ -122,7 +128,8 @@ final class LightSettings {
     /// The bake command's options for these settings.
     var arguments: [String] {
         var a = ["--size", "\(size)", "--samples", "\(samples)", "--bounces", "\(bounces)",
-                 "--mode", mode, "--ao-radius", "\(aoRadius)", "--sky", "\(skyStrength)", "--depth", "\(depth)", "--gamma", "\(gamma)"]
+                 "--mode", mode, "--ao-radius", "\(aoRadius)", "--sky", "\(skyStrength)", "--depth", "\(depth)", "--gamma", "\(gamma)",
+                 "--face-radius", "\(faceRadius)", "--face-step", "\(faceStep)"]
         a += sun ? ["--sun", "\(sunAzimuth)", "\(sunElevation)", "\(sunStrength)"] : ["--no-sun"]
         return a
     }

@@ -32,9 +32,9 @@ public enum Build {
         // The landmark models first: their colours join the palette.
         // A whole tile takes the landmark models standing in it alone.
         let (models, replaced, covered) = Imported.load(tile, work, paths, within: whole ? region : nil)
+        // The base palette: every colour's cell. The tile's own palette, of
+        // the names it uses with their face shade, is written by Bake.
         let palette = PaletteTexture()
-        try PNG.write(out.appendingPathComponent("palette.png"), palette.pixels, width: PaletteTexture.size,
-                      height: PaletteTexture.size, channels: 3)
 
         let b = Builder(palette: palette)
         let landmarks = Imported.build(b, models, work, region: region)
