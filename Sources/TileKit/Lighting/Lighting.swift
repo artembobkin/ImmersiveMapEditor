@@ -170,31 +170,81 @@ public enum Lighting {
         return out
     }
 
+    /// Texels a wall reaches past its line for its light: outside at its
+    /// foot, inside at its top. One texel sat in the dark seam the ground
+    /// and the roof have along every wall (the corner shut in), and the
+    /// seam spread down the whole wall (the user, 2026-10-28, in Preview).
+    static let wallReach = 2.0
+    /// A horizontal face of a facade's relief (a band's top, a sill, a
+    /// cornice) is at most this many texels across in plan.
+    static let reliefWidth = 1.5
+    /// A wall a relief face can sit on is at least this tall.
+    static let reliefWallSpan = 3.0
+
     /// TEXCOORD_1 of every corner (6 a triangle, V up). A face takes its own
-    /// place in plan, a roof slope too. A wall takes the ground a texel
-    /// outside it at its foot and the surface a texel inside it at its top, so
-    /// it shades from its foot up: over the whole wall it is part of (its
-    /// span), else over its own height.
+    /// place in plan, a roof slope too. A wall takes the ground `wallReach`
+    /// texels outside it at its foot and the surface as far inside it at
+    /// its top, so it shades from its foot up: over the whole wall it is
+    /// part of (its span), else over its own height. A small horizontal
+    /// face sitting on a wall (its relief: a band's top, a sill, a cornice)
+    /// takes the wall's light at its height instead of its own place in
+    /// plan, which lies on the wall's line where the map steps from the
+    /// ground to the roof and striped every storey (the user, 2026-10-28).
     public static func lightUVs(_ m: Triangles, bounds: (Double, Double, Double, Double), size: Int) -> [Double] {
         let (x0, y0, x1, _) = bounds
         let w = x1 - x0
         let d = w / Double(size)
         var out = [Double](repeating: 0, count: m.count * 6)
+        // The walls a relief face may sit on, by their corners.
+        struct Key: Hashable { let x, y, z: Int64 }
+        func key(_ p: V3) -> Key { Key(x: Int64((p.x * 1000).rounded()), y: Int64((p.y * 1000).rounded()), z: Int64((p.z * 1000).rounded())) }
+        var wallsAt: [Key: [Int]] = [:]
+        for t in 0..<m.count where abs(m.normal(t).normalized.z) < wallLimit && m.wall[t * 2 + 1] - m.wall[t * 2] >= reliefWallSpan {
+            for i in 0..<3 { wallsAt[key(m.corner(t, i)), default: []].append(t) }
+        }
         for t in 0..<m.count {
             let n = m.normal(t).normalized
-            let wall = abs(n.z) < wallLimit
-            let h = P2(n.x, n.y).length > 1e-6 ? P2(n.x, n.y).normalized : P2(n.x, n.y) / 1e-6
+            var wall = abs(n.z) < wallLimit
+            var h = P2(n.x, n.y).length > 1e-6 ? P2(n.x, n.y).normalized : P2(n.x, n.y) / 1e-6
             let zs = (0..<3).map { m.corner(t, $0).z }
-            let spanned = m.wall[t * 2 + 1] > m.wall[t * 2]
-            let lo = spanned ? m.wall[t * 2] : zs.min()!
-            let span = spanned ? m.wall[t * 2 + 1] - m.wall[t * 2] : zs.max()! - zs.min()!
+            var spanned = m.wall[t * 2 + 1] > m.wall[t * 2]
+            var lo = spanned ? m.wall[t * 2] : zs.min()!
+            var span = spanned ? m.wall[t * 2 + 1] - m.wall[t * 2] : zs.max()! - zs.min()!
+            // The wall's plane a relief face is moved onto, by its offset along h.
+            var plane: Double?
+            if !wall && !wallsAt.isEmpty {
+                let xs = (0..<3).map { m.corner(t, $0).x }, ys = (0..<3).map { m.corner(t, $0).y }
+                if max(xs.max()! - xs.min()!, ys.max()! - ys.min()!) < reliefWidth * d {
+                    var best: Int?, bestSpan = 0.0
+                    for i in 0..<3 {
+                        for c in wallsAt[key(m.corner(t, i))] ?? [] {
+                            let s = m.wall[c * 2 + 1] - m.wall[c * 2]
+                            if s > bestSpan { best = c; bestSpan = s }
+                        }
+                    }
+                    if let c = best {
+                        let wn = m.normal(c).normalized
+                        wall = true
+                        h = P2(wn.x, wn.y).normalized
+                        spanned = true
+                        lo = m.wall[c * 2]
+                        span = bestSpan
+                        plane = h.x * m.corner(c, 0).x + h.y * m.corner(c, 0).y
+                    }
+                }
+            }
             for i in 0..<3 {
                 let c = m.corner(t, i)
                 var x = c.x, y = c.y
+                if let plane {
+                    let off = h.x * x + h.y * y - plane
+                    x -= h.x * off
+                    y -= h.y * off
+                }
                 if wall && span > 1e-4 {
                     let s = min(max((c.z - lo) / span, 0), 1)
-                    x += h.x * d * (1 - 2 * s)
-                    y += h.y * d * (1 - 2 * s)
+                    x += h.x * d * wallReach * (1 - 2 * s)
+                    y += h.y * d * wallReach * (1 - 2 * s)
                 }
                 // Clamped: a wall on the edge would reach a texel outside, and
                 // every UV stays within 0..1.
