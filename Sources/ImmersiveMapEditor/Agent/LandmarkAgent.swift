@@ -185,23 +185,16 @@ final class LandmarkAgent {
             console.end(ok && p.terminationStatus == 0)
             running = false
             process = nil
-            // Every facade with best photos reviewed on the final model, or
-            // the conversation goes on, twice at most (the user, 2026-10-27:
-            // the agent must not model from its three best photos and stop).
-            let due = LandmarkMCP.Server.facadesToReview(folder)
-            if ok, p.terminationStatus == 0, followUps < 2, !due.isEmpty,
-               FileManager.default.fileExists(atPath: folder.appendingPathComponent("recipe.json").path) {
-                start(folder: folder, name: name, request: Self.reviewRequest(due), console: console, followUps: followUps + 1)
-            }
         }
     }
 
-    /// What the editor asks when the agent ends with facades not reviewed.
+    /// What the editor asks when the user wants the facades reviewed on the
+    /// final model (not asked on its own since 2026-10-28: the plan ends
+    /// with the build of the fixes).
     static func reviewRequest(_ due: [String]) -> String {
-        "Not every facade is reviewed on the final model: \(due.joined(separator: ", ")). review_facade each: the model beside "
-            + "its best photo. Count what the photo shows against the model, fix what differs in one build (a new build needs "
-            + "every facade reviewed again), then end with your summary, a line for each facade: what its photo shows and what "
-            + "the model has."
+        "Review the facades on the final model: \(due.joined(separator: ", ")). review_facade each: the model beside "
+            + "its best photo. Count what the photo shows against the model, fix what differs in one build, then end with "
+            + "your summary, a line for each facade: what its photo shows and what the model has."
     }
 
     func stop() { process?.terminate() }
@@ -240,9 +233,9 @@ final class LandmarkAgent {
         return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
-        The plan, and the budget: one build of the whole from the references, one review of each facade by its best \
-        photo, one build of all the fixes, a summary. About ten tool calls for four facades; three builds at most. Work \
-        from what each call returns; do not ask for more pictures than it gives.
+        The plan, and the budget: one build of the whole from the references, one build of the fixes its comparisons \
+        show, a summary. Four tool calls; two builds. Work from what each call returns; do not ask for more pictures \
+        than it gives.
         1. get_landmark, then list_references. The references are gathered for you before you start, and this shows \
         them: the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
         kept in a folder for each facade, its best one to three in best/, the others in other/, all by name: \
@@ -251,20 +244,16 @@ final class LandmarkAgent {
         the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand), and from Wikimedia Commons a \
         view of the whole and one from above when it has them. If it shows nothing, gather_references. Nothing else to \
         search for.
-        2. The first build: write the whole recipe with set_recipe from these pictures, every facade from its best photo: \
+        2. The build: write the whole recipe with set_recipe from these pictures, every facade from its best photo: \
         the masses and their roofs, the windows of each facade in their rhythm, the entrances with their portals, the \
         cornice, the plinth, the relief (pilasters, bands), the sculpture that makes it recognisable; the walls' colours \
         from the photos and the roofs' colours satellite_view read, in the palette's words. The build comes back with the \
         model rendered beside the best photo of every facade from that photo's own camera, and beside the satellite view \
-        from above. A pose is sometimes wrong: where a frame holds another building, drop_reference it.
-        3. The review: review_facade each facade in turn, the model beside its best photo. Count what the photo shows \
-        against the model (columns, windows, storeys, arches, entrances, the cornice, the relief, the roof, the colours) \
-        and note what differs. Do not rebuild between facades.
-        4. The fixes: one set_recipe with everything the reviews found\(ClaudeSettings.physicalChecks ? ", and set_recipe's NOT PHYSICAL lines gone" : ""). It comes back beside the best photo of \
-        every facade the recipe changed: when something still differs, one more build, the last. Every facade must be \
-        reviewed on the final model (the editor asks again for any left); after the last build, review_facade only the \
-        facades it changed.
-        5. End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
+        from above: that is your review. Count what each photo shows against the model (columns, windows, storeys, \
+        arches, entrances, the cornice, the relief, the roof, the colours).
+        3. The fixes: one set_recipe with everything that differed\(ClaudeSettings.physicalChecks ? ", and set_recipe's NOT PHYSICAL lines gone" : ""). It comes back beside the best photo of every facade \
+        it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
+        4. End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.
         """
     }

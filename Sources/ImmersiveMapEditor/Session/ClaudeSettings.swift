@@ -21,20 +21,19 @@ enum ClaudeSettings {
     /// the user found the models better without them (2026-10-26).
     static let physicalChecksKey = "landmark.physicalChecks"
     /// The agent's turns for one landmark, a safety stop (Claude Code's
-    /// --max-turns), per facade: the plan is a build, a review of each
-    /// facade by its best photo, a build of the fixes and a summary, about
-    /// ten tool calls for four facades, each call a turn or two of the
-    /// model (the user, 2026-10-28). 0 for no stop.
+    /// --max-turns), per facade: the plan is a build, a build of the fixes
+    /// its comparisons show, and a summary, four tool calls, each a turn or
+    /// two of the model (the user, 2026-10-28). 0 for no stop.
     static let turnsPerFacadeKey = "landmark.turnsPerFacade"
     static var turnsPerFacade: Int {
         let v = UserDefaults.standard.object(forKey: turnsPerFacadeKey) as? Int
-        return v ?? 5
+        return v ?? 3
     }
-    /// The turns allowed for a landmark of `facades` facades: 5 a facade
-    /// and 12 besides, so four facades get 32.
+    /// The turns allowed for a landmark of `facades` facades: 3 a facade
+    /// and 8 besides, so four facades get 20 (the plan takes four calls).
     static func maxTurns(facades: Int) -> Int {
         let per = turnsPerFacade
-        return per <= 0 ? 0 : per * max(1, facades) + 12
+        return per <= 0 ? 0 : per * max(1, facades) + 8
     }
     static var physicalChecks: Bool { UserDefaults.standard.bool(forKey: physicalChecksKey) }
 

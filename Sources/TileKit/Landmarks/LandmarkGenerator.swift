@@ -625,6 +625,9 @@ public enum LandmarkGenerator {
             let ring: [P2]
             let depth: Double
             let back: String
+            /// What stands around it along the wall (a door's portal), kept
+            /// clear of pilasters and bands too.
+            var margin = 0.0
         }
 
         /// A door's place on a ring: the edge nearest it and where along.
@@ -695,7 +698,8 @@ public enum LandmarkGenerator {
                     let glazed = w * h >= LandmarkGenerator.glazedArea
                     openings.append(Opening(ring: opening(t, z0 + sill, w, h, arched: at.door.arched == true),
                                             depth: window ? LandmarkGenerator.windowDepth : max(at.door.depth ?? 0.6, Caricature.doorDepth),
-                                            back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : "lm_dark")))
+                                            back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : "lm_dark"),
+                                            margin: window ? 0 : max(at.door.portal ?? 0.35, Caricature.portalWidth)))
                     spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
                 if let w = windows {
@@ -707,8 +711,9 @@ public enum LandmarkGenerator {
                     }
                 }
                 for op in openings {
-                    cuts.append(Cut(edge: i, t0: op.ring.map(\.x).min()!, t1: op.ring.map(\.x).max()!,
-                                    z0: op.ring.map(\.y).min()!, z1: op.ring.map(\.y).max()!))
+                    // A door's cut takes in its portal, and the portal's top.
+                    cuts.append(Cut(edge: i, t0: op.ring.map(\.x).min()! - op.margin, t1: op.ring.map(\.x).max()! + op.margin,
+                                    z0: op.ring.map(\.y).min()!, z1: op.ring.map(\.y).max()! + op.margin))
                 }
                 guard !openings.isEmpty else {
                     face([p(0, z0), p(len, z0), p(len, z1), p(0, z1)], o, colour)
@@ -815,7 +820,7 @@ public enum LandmarkGenerator {
                 let n = Int((len - 1) / p.spacing)
                 // The openings of this wall, and the gaps between them a
                 // pilaster fits in (0.2 m clear of each).
-                let openings = cuts.filter { $0.edge == i }.map { ($0.t0 - 0.2, $0.t1 + 0.2) }.sorted { $0.0 < $1.0 }
+                let openings = cuts.filter { $0.edge == i }.map { ($0.t0 - 0.3, $0.t1 + 0.3) }.sorted { $0.0 < $1.0 }
                 var gaps: [(Double, Double)] = []
                 var from = 0.2
                 for op in openings {

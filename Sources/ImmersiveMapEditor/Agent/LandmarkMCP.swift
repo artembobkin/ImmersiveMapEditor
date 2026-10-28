@@ -125,7 +125,7 @@ enum LandmarkMCP {
              "description": "A kept street photo beside the model rendered from the very place and with the very lens the photo was taken (its camera's pose): the photo left, the model right, one picture. The way to see what differs, facade by facade. Street photos only (Commons photos have no pose).",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string", "description": "The kept photo, photo-NN.jpg"]], "required": ["file"]]],
             ["name": "review_facade",
-             "description": "One facade checked against its reference: the model beside the facade's best photo (references/<facade>/best/, the first), from the photo's own camera; its other best photos by name, show_reference for one when a detail needs it. Count what the photo shows (arches, windows, storeys, entrances, the cornice, the relief, the colours) against the model, and fix what differs. Every facade with best photos must be reviewed on the final model before you finish; the editor asks again for any left.",
+             "description": "One facade checked against its reference: the model beside the facade's best photo (references/<facade>/best/, the first), from the photo's own camera; its other best photos by name, show_reference for one when a detail needs it. Count what the photo shows (arches, windows, storeys, entrances, the cornice, the relief, the colours) against the model, and fix what differs. Not part of the plan (a build's own comparisons are the review): for the user's request, or a facade a build did not compare.",
              "inputSchema": ["type": "object", "properties": ["facade": ["type": "string", "description": "Its folder: north-facade, south-east-facade, ..."]], "required": ["facade"]]],
             ["name": "compare_with_satellite",
              "description": "The satellite view beside the model rendered from straight above, north up, over the same ground: the masses, roofs and courtyards against the imagery. Needs satellite_view first.",
@@ -218,10 +218,6 @@ enum LandmarkMCP {
                 }
                 if picked.isEmpty && compared.isEmpty && lastTouched == nil { content.append(text("No street photo with a camera pose is kept yet: find_street_photos keeps them, and every build will come back beside them.")) }
                 if let above = try? compareSatellite() { content += above }
-                let due = facadesToReview()
-                if !due.isEmpty {
-                    content.append(text("Facades to review on this model before you finish, each with review_facade (the model beside every one of its best photos): \(due.joined(separator: ", ")). A new build needs them reviewed again."))
-                }
                 return content
             case "review_facade": return try reviewFacade(args["facade"] as? String ?? "")
             case "render_views": return try render(args)
