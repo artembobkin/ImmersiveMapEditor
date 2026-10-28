@@ -881,15 +881,19 @@ public enum LandmarkGenerator {
         /// `outer`, `z0` to `z1`: a plinth, a cornice, a string course.
         func band(_ inner: [P2], _ outer: [P2], _ z0: Double, _ z1: Double, _ colour: String, cuts: [Cut] = [], top: String? = nil) {
             // Cut around the openings it would cross: the band in pieces, one
-            // a wall between its openings (each a closed prism), the pieces at
-            // a corner meeting at the outer ring's mitre.
+            // a wall between its openings (each a closed prism), a piece at a
+            // wall's end reaching `depth` past the corner so the pieces of
+            // two walls overlap there and the union joins them (the outer
+            // ring's corners are not relied on: its buffer starts it where
+            // it likes, and a piece drawn to them was a twisted solid).
             let crossing = cuts.filter { $0.z1 > z0 && $0.z0 < z1 }
-            if !crossing.isEmpty, outer.count == inner.count {
+            if !crossing.isEmpty {
+                let depth = Geometry.polygon(outer + [outer[0]]).boundary.distance(.point(inner[0]))
+                guard depth > 0.02 else { return }
                 for i in inner.indices {
                     let a = inner[i], b = inner[(i + 1) % inner.count], len = simd_length(b - a)
                     guard len > 1e-6 else { continue }
                     let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
-                    let depth = simd_dot(outer[i] - a, o2)
                     let spans = crossing.filter { $0.edge == i }.map { (max(0, $0.t0 - 0.25), min(len, $0.t1 + 0.25)) }.sorted { $0.0 < $1.0 }
                     var from = 0.0
                     var pieces: [(Double, Double)] = []
@@ -899,9 +903,9 @@ public enum LandmarkGenerator {
                     }
                     if len - from > 0.05 { pieces.append((from, len)) }
                     for (t0, t1) in pieces {
-                        let p0 = a + d * t0, p1 = a + d * t1
-                        let q0 = t0 < 1e-6 ? outer[i] : p0 + o2 * depth, q1 = t1 > len - 1e-6 ? outer[(i + 1) % outer.count] : p1 + o2 * depth
-                        prism(ccw([p0, p1, q1, q0]), z0, z1, colour)
+                        let s0 = t0 < 1e-6 ? -depth : t0, s1 = t1 > len - 1e-6 ? len + depth : t1
+                        let p0 = a + d * s0, p1 = a + d * s1
+                        prism(ccw([p0, p1, p1 + o2 * depth, p0 + o2 * depth]), z0, z1, colour)
                     }
                 }
                 return
