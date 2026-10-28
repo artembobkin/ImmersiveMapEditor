@@ -269,7 +269,8 @@ public struct LandmarkRecipe: Codable {
     as over a theatre's portico), equestrian (a rider on a horse), obelisk, cross (a church), star (a tower's). It faces \
     `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
     under it) with an optional `pedestal`, `height` tall and about `width` wide. Use it for the sculpture that makes the \
-    building recognisable, nothing else.
+    building recognisable, nothing else. Figures, horses and chariots are drawn as round solids with real silhouettes, \
+    and a statue with `"emphasis": true` is drawn twice its size.
     - Where these words do not describe the building, model it yourself from shapes, as many as it takes:
       "shapes": [
        {"kind": "box", "at": [x, y], "base": 0, "size": [along, across, up], "heading": 0, "pitch": 0, "colour": "lm_stone"},
