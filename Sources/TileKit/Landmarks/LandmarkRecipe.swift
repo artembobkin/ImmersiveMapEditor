@@ -307,7 +307,7 @@ public struct LandmarkRecipe: Codable {
     - Everything is physical, as a building is, even where no photo shows it: steps lead up to a landing (a box or a \
     mass at their top height) that reaches the wall and the doors, the floor the portico's columns stand on; a colonnade \
     stands on a stylobate (a box) and carries its beam; a statue stands on a pedestal, a pediment or a roof; a balcony has \
-    a floor; nothing floats and nothing ends in the air. set_recipe says what floats or leads nowhere: fix it before going on.
+    a floor; nothing floats and nothing ends in the air.
     - Use the OSM outlines where they are good. OSM heights can be wrong: trust the photos, and say so.
     """
 

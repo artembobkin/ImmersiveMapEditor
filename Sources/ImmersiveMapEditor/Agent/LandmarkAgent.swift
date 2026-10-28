@@ -237,15 +237,16 @@ final class LandmarkAgent {
         model rendered beside the best photo of every facade from that photo's own camera, and beside the satellite view \
         from above: that is your review. Count what each photo shows against the model (columns, windows, storeys, \
         arches, entrances, the cornice, the relief, the roof, the colours).
-        3. The fixes: one set_recipe with everything that differed\(ClaudeSettings.physicalChecks ? ", and set_recipe's NOT PHYSICAL lines gone" : ""). It comes back beside the best photo of every facade \
+        3. The fixes: one set_recipe with everything that differed. It comes back beside the best photo of every facade \
         it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
-        \(ClaudeSettings.emphasis ? """
+        \(ClaudeSettings.emphasis != "off" ? """
         4. What makes it recognisable: the one or two things a person points at from afar (a sign, a tower, a dome, a \\
         statue, a star, a portico), never more. First ask yourself: you may know this place by its name and its OSM tags \\
         (the quadriga over the Bolshoi's portico, the star in a ring on Detsky Mir's corner). If you know it, just model \\
         it from what you know, placed by the satellite view, and open a photo only if you want to, when you lack its \\
-        place or size. Only when you do not know the building, look along the roof and at the corners of the \\
-        whole-building photo for what stands there. Model each in full in the build of the fixes, a sign as a text shape \\
+        place or size. \\
+        \(ClaudeSettings.emphasis == "photos" ? "Only when you do not know the building, look along the roof and at the corners of the whole-building photo for what stands there. " : "If you do not know the building, leave this step out: no photos for it. ")\\
+        Model each in full in the build of the fixes, a sign as a text shape \\
         on its frame of boxes, a star as a statue of shape star (in a ring shape where it has one), and mark it \\
         "emphasis": true: the generator draws it larger than life, as a cartoon map does.
         5.
@@ -260,7 +261,6 @@ final class LandmarkAgent {
         var env: [String: String] = [:]
         let token = ClaudeSettings.mapillaryToken
         if !token.isEmpty { env["MAPILLARY_TOKEN"] = token }
-        if ClaudeSettings.physicalChecks { env["LANDMARK_PHYSICAL_CHECKS"] = "1" }
         if !env.isEmpty { server["env"] = env }
         let data = try! JSONSerialization.data(withJSONObject: ["mcpServers": ["landmark": server]], options: [.withoutEscapingSlashes])
         return String(data: data, encoding: .utf8)!
