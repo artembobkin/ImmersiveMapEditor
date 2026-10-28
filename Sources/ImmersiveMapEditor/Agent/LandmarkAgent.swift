@@ -241,8 +241,11 @@ final class LandmarkAgent {
         it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
         \(ClaudeSettings.emphasis ? """
         4. What makes it recognisable: the one or two things a person points at from afar (a sign, a tower, a dome, a \\
-        statue, a portico), never more. Model each in full in the build of the fixes, a sign as a text shape on its frame \\
-        of boxes, and mark it "emphasis": true: the generator draws it half as large again, as a cartoon map does.
+        statue, a portico), never more. Look along the roof and at every corner in the photo of the whole building: a \\
+        star, a globe, a sculpture, a clock or a spire standing on the roof is such a thing, and is easy to miss as a \\
+        speck at the far end; open another photo of that corner if the one you have does not show it. Model each in full \\
+        in the build of the fixes, a sign as a text shape on its frame of boxes, a star as a statue of shape star, and \\
+        mark it "emphasis": true: the generator draws it larger than life, as a cartoon map does.
         5.
         """ : "4.") End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.
