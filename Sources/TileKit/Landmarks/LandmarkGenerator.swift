@@ -37,7 +37,7 @@ public enum LandmarkGenerator {
     }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
     public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
-    public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft", "text"]
+    public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft", "text", "ring"]
     /// How deep a window is cut into its wall.
     /// The caricature. The map is seen from afar, and a detail under a metre
     /// is lost or turns to noise there, where a cartoon map (Zenly, Fenn)
@@ -151,6 +151,8 @@ public enum LandmarkGenerator {
             case "prism":
                 if !ring { out.append("\(at): needs a polygon of 3 points at least, or an outline") }
                 if (s.top ?? 0) <= (s.base ?? 0) { out.append("\(at): top must be above base") }
+            case "ring":
+                if (s.radius ?? 0) <= 0 { out.append("\(at): needs a radius") }
             case "text":
                 if (s.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { out.append("\(at): needs text") }
                 if s.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
@@ -266,6 +268,14 @@ public enum LandmarkGenerator {
             for f in r.features where f.kind == "box" {
                 let ring = (f.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
                 if let g = poly(ring), let top = f.top { items.append((g, f.base ?? 0, top)) }
+            }
+            // A statue's pedestal, and the statue itself, carry what stands
+            // on them (a ring about a star).
+            for f in r.features where f.kind == "statue" {
+                guard let at = f.at, at.count == 2 else { continue }
+                let k = f.emphasis == true ? Caricature.emphasisStatue : 1
+                let h = (f.height ?? 4) * k, w = (f.width ?? h * 0.6 / k) * k, base = f.base ?? 0
+                items.append((Geometry.point(P2(at[0], at[1])).buffer(max(w, 1) / 2, quadSegs: 2), base, base + (f.pedestal ?? 0) + h))
             }
             for f in r.features where f.kind == "colonnade" || f.kind == "steps" {
                 // A colonnade's beam, and steps as a wedge: their footprint, from the ground to the top.
@@ -1250,6 +1260,12 @@ public enum LandmarkGenerator {
             case "text":
                 guard let text = s.text, let height = s.height, height > 0 else { return }
                 letters(text, height: height, depth: max(0.1, s.depth ?? 0.4), f, colour)
+            case "ring":
+                // Upright, its face toward the heading, its lowest point on the
+                // base; a pitch of 90 lays it flat.
+                guard let radius = s.radius, radius > 0 else { return }
+                let thick = max(0.1, s.depth ?? radius * 0.1)
+                torus(f.p(0, 0, radius + thick), f.V, f.W, radius, thick, segments: n, section: max(4, min(12, n / 2)), colour)
             case "box":
                 guard let size = s.size, size.count == 3 else { return }
                 let (a, b, c) = (size[0] / 2, size[1] / 2, size[2])

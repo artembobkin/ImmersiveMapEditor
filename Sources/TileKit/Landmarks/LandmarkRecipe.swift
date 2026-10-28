@@ -280,9 +280,12 @@ public struct LandmarkRecipe: Codable {
        {"kind": "dome", "at": [x, y], "base": 30, "radius": 6, "segments": 16, "colour": "lm_green"},
        {"kind": "prism", "polygon": [[x, y], ...] or "outline": "way/123", "holes": [[[x, y], ...]], "base": 0, "top": 5, "colour": "lm_cream"},
        {"kind": "loft", "radius": 4, "segments": 16, or "polygon"/"outline", "base": 30, "profile": [[1, 0], [1.2, 0.5], [0.8, 3], [0, 5]], "colour": "lm_green"},
-       {"kind": "text", "text": "ЦУМ", "at": [x, y], "base": 30, "height": 3, "depth": 0.4, "heading": 180, "colour": "lm_red"}]
+       {"kind": "text", "text": "ЦУМ", "at": [x, y], "base": 30, "height": 3, "depth": 0.4, "heading": 180, "colour": "lm_red"},
+       {"kind": "ring", "at": [x, y], "base": 30, "radius": 2.5, "depth": 0.3, "heading": 180, "segments": 24, "colour": "lm_dark"}]
       A text is its letters in a bold sans face, any script, upright and facing `heading`, `height` tall (the capitals) \
     and `depth` thick, centred on `at`, their feet on `base`: a sign on a roof or a facade, on a frame of boxes. \
+    A ring stands upright on its base, its face toward `heading`, `radius` to the middle of its `depth`-thick \
+    band (a star in a ring: the ring and a statue of shape star at the same place, the star's height twice the radius). \
     A shape or a feature with `"emphasis": true` is drawn a size up by the generator (half as large again): for the \
     one or two things that make the building recognisable from afar, a sign, a tower, a dome, a statue; never more. \
       A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
