@@ -12,6 +12,7 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @AppStorage(ClaudeSettings.emphasisKey) private var emphasis = "photos"
+    @AppStorage(ClaudeSettings.exaggerationKey) private var exaggeration = 2.0
     @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 3
     @State private var forgetting = false
     /// The landmark about to be deleted, whole.
@@ -93,6 +94,11 @@ struct LandmarksSections: View {
                 .pickerStyle(.menu)
                 .disabled(session.agent.running)
                 .help("The one or two things a person points at from afar (a sign, a tower, a dome, a statue, a star), modelled in full and drawn larger than life, as a cartoon map does. From what Claude knows: only from its own knowledge of the place, a photo only if it wants one. Or from the photos: for a building it does not know, it looks along the roof and corners of the whole-building photo. Off for a plain building.")
+                Slider(value: $exaggeration, in: 1...4, step: 0.25) {
+                    Text(String(format: "Exaggeration ×%.2g", exaggeration))
+                }
+                .disabled(session.agent.running || emphasis == "off")
+                .help("How much larger than life a distinctive detail is drawn: 1 is its real size. It takes effect at the next build of a model, Claude's or Build from Its Recipe.")
                 if session.agent.running {
                     Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
                 } else {

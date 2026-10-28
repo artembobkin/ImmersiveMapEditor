@@ -23,6 +23,15 @@ enum ClaudeSettings {
     /// building it does not know, the roof and corners of the
     /// whole-building photo, or "off" for a plain building.
     static let emphasisKey = "landmark.emphasis"
+    /// How much larger than life a distinctive detail is drawn (1 is its
+    /// real size); the generator reads it as LANDMARK_EMPHASIS.
+    static let exaggerationKey = "landmark.exaggeration"
+    static var exaggeration: Double {
+        let v = UserDefaults.standard.object(forKey: exaggerationKey) as? Double ?? 2
+        return min(5, max(1, v))
+    }
+    /// The generator's environment for the editor's settings.
+    static var generatorEnvironment: [String: String] { ["LANDMARK_EMPHASIS": String(format: "%.2f", exaggeration)] }
     static var emphasis: String {
         let v = UserDefaults.standard.string(forKey: emphasisKey) ?? "photos"
         return ["off", "known", "photos"].contains(v) ? v : "photos"

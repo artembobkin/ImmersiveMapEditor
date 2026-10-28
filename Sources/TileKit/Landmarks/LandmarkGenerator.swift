@@ -83,10 +83,12 @@ public enum LandmarkGenerator {
         static let spireRadius = 1.0, spireTip = 0.25, spireAspect = 5.0
         /// What makes the building recognisable (`emphasis`), this much
         /// larger (the user, 2026-10-28: Zenly draws the one thing a person
-        /// points at larger than life).
-        static let emphasis = 1.5
-        /// A statue a size up twice: it is small against its building.
-        static let emphasisStatue = 2.0
+        /// points at larger than life). The editor's Exaggeration setting,
+        /// passed as LANDMARK_EMPHASIS; 2 when not set.
+        static var emphasis: Double {
+            let v = Double(ProcessInfo.processInfo.environment["LANDMARK_EMPHASIS"] ?? "") ?? 2
+            return min(5, max(1, v))
+        }
     }
     static let windowDepth = 0.45
     /// From this area a glazed opening is a shop front or a glazed arch,
@@ -1005,7 +1007,7 @@ public enum LandmarkGenerator {
                 face([v(a, base), v(b, base), v(b + n, base), v(a + n, base)], -up, colour)
             case "statue":
                 guard let at = p2(f.at) else { return }
-                let k = f.emphasis == true ? Caricature.emphasisStatue : 1
+                let k = f.emphasis == true ? Caricature.emphasis : 1
                 let h = (f.height ?? 4) * k, w = (f.width ?? h * 0.6 / k) * k
                 let heading = (f.heading ?? 180) * .pi / 180
                 // Facing, and its left.

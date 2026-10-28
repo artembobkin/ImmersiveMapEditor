@@ -79,6 +79,7 @@ final class BuildRunner {
         let process = Process()
         process.executableURL = tool
         process.arguments = ["pipeline", "--root", root.path] + arguments
+        process.environment = ProcessInfo.processInfo.environment.merging(ClaudeSettings.generatorEnvironment) { _, new in new }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe

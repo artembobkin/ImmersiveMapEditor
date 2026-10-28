@@ -248,7 +248,8 @@ final class LandmarkAgent {
         \(ClaudeSettings.emphasis == "photos" ? "Only when you do not know the building, look along the roof and at the corners of the whole-building photo for what stands there. " : "If you do not know the building, leave this step out: no photos for it. ")\\
         Model each in full in the build of the fixes, a sign as a text shape \\
         on its frame of boxes, a star as a statue of shape star (in a ring shape where it has one), and mark it \\
-        "emphasis": true: the generator draws it larger than life, as a cartoon map does.
+        "emphasis": true: the generator draws it \\(String(format: "%.2g", ClaudeSettings.exaggeration)) times its size, larger than life, \\
+        as a cartoon map does.
         5.
         """ : "4.") End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.
@@ -261,6 +262,7 @@ final class LandmarkAgent {
         var env: [String: String] = [:]
         let token = ClaudeSettings.mapillaryToken
         if !token.isEmpty { env["MAPILLARY_TOKEN"] = token }
+        env.merge(ClaudeSettings.generatorEnvironment) { _, new in new }
         if !env.isEmpty { server["env"] = env }
         let data = try! JSONSerialization.data(withJSONObject: ["mcpServers": ["landmark": server]], options: [.withoutEscapingSlashes])
         return String(data: data, encoding: .utf8)!
