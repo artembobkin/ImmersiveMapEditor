@@ -296,10 +296,12 @@ public enum LandmarkGenerator {
         let m = Model()
         var rings: [[P2]?] = r.masses.map { mass in
             let ring = mass.outline.flatMap { source.ring($0) } ?? (mass.polygon ?? []).filter { $0.count == 2 }.map { P2($0[0], $0[1]) }
-            return ring.count >= 3 && mass.top > mass.base ? chamfered(ccw(ring), Caricature.chamfer) : nil
+            return ring.count >= 3 && mass.top > mass.base ? ccw(ring) : nil
         }
+        snapOut(&rings, r.masses)
         sink(&rings, r.masses)
         sinkEdges(&rings, r.masses)
+        rings = rings.map { $0.map { chamfered($0, Caricature.chamfer) } }
         for (k, mass) in r.masses.enumerated() {
             guard let ring = rings[k] else { continue }
             m.mass(ring, mass)
@@ -1348,6 +1350,60 @@ public enum LandmarkGenerator {
                 }
             }
             rings[i] = ring
+        }
+    }
+
+    /// A taller mass's wall running inside a lower neighbour's wall, within
+    /// `snap` of it and along it (a part read off the satellite view and
+    /// placed a metre or two in from the outline, the user, 2026-10-28:
+    /// two walls with two grids of windows, one seen through the other),
+    /// pulled out onto the neighbour's wall along the stretch they share,
+    /// so the facade is one wall from the ground to the taller top; then
+    /// `sinkEdges` sinks the lower wall into it.
+    static func snapOut(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], snap: Double = 2.5) {
+        let original = rings
+        for i in rings.indices {
+            guard let ring = original[i] else { continue }
+            var out: [P2] = []
+            for k in ring.indices {
+                let a = ring[k], b = ring[(k + 1) % ring.count]
+                let d = b - a, len = simd_length(d)
+                guard len > 1e-6 else { out.append(a); continue }
+                let dir = d / len, n = P2(dir.y, -dir.x)
+                var stretches: [(Double, Double, Double)] = []
+                for j in original.indices where j != i {
+                    // Only the taller wall moves, and only out to a neighbour
+                    // that stands outside it.
+                    guard let other = original[j], masses[i].top > masses[j].top + 0.05,
+                          masses[i].base < masses[j].top - 0.05, masses[j].base < masses[i].top - 0.05 else { continue }
+                    for m in other.indices {
+                        let c = other[m], e = other[(m + 1) % other.count]
+                        let f = e - c, flen = simd_length(f)
+                        guard flen > 1e-6, abs(simd_dot(f / flen, dir)) > cos(10 * Double.pi / 180) else { continue }
+                        let dc = simd_dot(c - a, n), de = simd_dot(e - a, n)
+                        guard min(dc, de) > 0.05, max(dc, de) < snap, abs(dc - de) < 0.3 else { continue }
+                        let t0 = max(0, min(simd_dot(c - a, dir), simd_dot(e - a, dir))), t1 = min(len, max(simd_dot(c - a, dir), simd_dot(e - a, dir)))
+                        guard t1 - t0 > 3 else { continue }
+                        stretches.append((t0, t1, (dc + de) / 2))
+                    }
+                }
+                out.append(a)
+                guard !stretches.isEmpty else { continue }
+                stretches.sort { $0.0 < $1.0 }
+                var cursor = 0.0
+                for (t0, t1, far) in stretches where t0 >= cursor - 1e-6 {
+                    let push = n * far
+                    if t0 > cursor + 0.05 { out.append(a + dir * t0) }
+                    out.append(a + dir * max(t0, cursor) + push)
+                    out.append(a + dir * t1 + push)
+                    if t1 < len - 0.05 { out.append(a + dir * t1) }
+                    cursor = t1
+                }
+            }
+            var cleaned: [P2] = []
+            for p in out where cleaned.last.map({ simd_length($0 - p) > 1e-6 }) ?? true { cleaned.append(p) }
+            if cleaned.count > 1, simd_length(cleaned[0] - cleaned[cleaned.count - 1]) < 1e-6 { cleaned.removeLast() }
+            if cleaned.count >= 3 { rings[i] = cleaned }
         }
     }
 
