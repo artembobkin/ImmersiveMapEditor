@@ -244,6 +244,10 @@ final class LandmarkAgent {
         the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand), and from Wikimedia Commons a \
         view of the whole and one from above when it has them. If it shows nothing, gather_references. Nothing else to \
         search for.
+        Tidiness before likeness (the user, 2026-10-28): a toy is symmetrical. One rhythm of windows a wall, in one grid \
+        with its pilasters and bands, the same storey heights on every mass that shares a wall; a part that stands on the \
+        outline is the outline's own mass (raise its top, give it the roof), never a second mass drawn along the same \
+        wall to carry another grid of windows. Where the photos show irregularity, draw the regular version of it.
         2. The build: write the whole recipe with set_recipe from these pictures, every facade from its best photo: \
         the masses and their roofs, the windows of each facade in their rhythm, the entrances with their portals, the \
         cornice, the plinth, the relief (pilasters, bands), the sculpture that makes it recognisable; the walls' colours \

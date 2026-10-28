@@ -1421,7 +1421,10 @@ public enum LandmarkGenerator {
     }
 
     /// A wall running along a neighbour's wall within `near` of it (a
-    /// slot between two masses, or two walls flush) pushed `into` metres
+    /// slot between two masses, or two walls flush, or a taller part drawn
+    /// a metre or so proud of the outline: TsUM's historic block stood 0.7
+    /// m outside it and both walls showed their windows, the user,
+    /// 2026-10-28) pushed `into` metres
     /// into the neighbour along the stretch they share: the wall is split
     /// where the stretch begins and ends, and that piece moves. Deeper
     /// than a window's recess, so the windows of both walls end up inside
@@ -1429,7 +1432,7 @@ public enum LandmarkGenerator {
     /// pockets in the wall. Corners far
     /// from the neighbour (a wider block beside a narrower one) leave `sink`
     /// nothing to do; this closes the slot itself.
-    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 0.6, into: Double = 0.3) {
+    static func sinkEdges(_ rings: inout [[P2]?], _ masses: [LandmarkRecipe.Mass], near: Double = 2.5, into: Double = 0.3) {
         let original = rings
         for i in rings.indices {
             guard let ring = original[i] else { continue }
