@@ -101,7 +101,48 @@ public enum Lighting {
             Progress.report("Baking the light", fraction: $0, detail: detail)
         }
         print(String(format: "[bake] %d triangles, %@ in %.1f s", tris.count / 9, detail, Date().timeIntervalSince(started)))
-        return light
+        return ProcessInfo.processInfo.environment["LIGHT_NO_DENOISE"] == nil ? denoise(light, size: size) : light
+    }
+
+    /// The bake's grain smoothed. A path-traced texel keeps a few percent of
+    /// chance, and the preview showed it (the user, 2026-10-28): a wall
+    /// takes one column of texels along its length, so the grain ran down
+    /// it in stripes, and a roof seen at a slant smeared it into streaks.
+    /// A bilateral filter over 5 × 5 texels: a neighbour counts by its
+    /// distance and by how close its value is, within `range` of the open
+    /// ground's light, so the grain averages out while the shade beside a
+    /// wall (a step of far more) stays where it is.
+    public static func denoise(_ irradiance: [Float], size: Int, range: Float = 0.06) -> [Float] {
+        guard size >= 5, irradiance.count == size * size else { return irradiance }
+        let sorted = irradiance.sorted()
+        let reference = sorted[Int(0.75 * Double(sorted.count - 1))]
+        let sigma = max(range * reference, 1e-6)
+        let spatial: [Float] = (-2...2).flatMap { dy in (-2...2).map { dx in expf(-Float(dx * dx + dy * dy) / (2 * 1.2 * 1.2)) } }
+        var out = irradiance
+        irradiance.withUnsafeBufferPointer { src in
+            out.withUnsafeMutableBufferPointer { dst in
+                DispatchQueue.concurrentPerform(iterations: size) { y in
+                    for x in 0..<size {
+                        let v = src[y * size + x]
+                        var sum: Float = 0, weight: Float = 0, k = 0
+                        for dy in -2...2 {
+                            let yy = y + dy
+                            for dx in -2...2 {
+                                defer { k += 1 }
+                                let xx = x + dx
+                                guard xx >= 0, xx < size, yy >= 0, yy < size else { continue }
+                                let u = src[yy * size + xx], d = (u - v) / sigma
+                                let w = spatial[k] * expf(-0.5 * d * d)
+                                sum += u * w
+                                weight += w
+                            }
+                        }
+                        dst[y * size + x] = weight > 0 ? sum / weight : v
+                    }
+                }
+            }
+        }
+        return out
     }
 
     /// Irradiance to the light map's multiplier, RGB bytes: open ground lit,

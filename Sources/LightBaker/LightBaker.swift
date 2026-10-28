@@ -33,6 +33,7 @@ public enum LightBaker {
         float radius;           // ambient occlusion: how far a surface looks
         float sunX, sunY, sunZ; // toward the sun, unit; zero for none
         float sunStrength, skyStrength;
+        uint strata;            // the first bounce's directions spread evenly: strata × strata
     };
 
     // The sky: brightness by the height of the direction, as the bake's world
@@ -51,8 +52,8 @@ public enum LightBaker {
         return float(s) / 4294967296.0;
     }
 
-    static float3 cosine(float3 n, thread uint& s) {
-        float a = 2 * M_PI_F * rnd(s), r = sqrt(rnd(s));
+    static float3 cosine(float3 n, float u1, float u2) {
+        float a = 2 * M_PI_F * u1, r = sqrt(u2);
         float3 t = abs(n.z) < 0.9 ? normalize(cross(n, float3(0, 0, 1))) : normalize(cross(n, float3(1, 0, 0)));
         float3 b = cross(n, t);
         return normalize(t * (r * cos(a)) + b * (r * sin(a)) + n * sqrt(max(0.0, 1 - r * r)));
@@ -81,7 +82,10 @@ public enum LightBaker {
         for (uint k = 0; k < p.samples; k++) {
             // A camera ray straight down, through a random point of the texel.
             ray r;
-            r.origin = float3(p.x0 + (gid.x + rnd(s)) * w, p.y1 - (row + rnd(s)) * h, p.top);
+            // The texel's points spread evenly too.
+            float jx = rnd(s), jy = rnd(s);
+            if (p.strata > 1) { jx = (k % p.strata + jx) / p.strata; jy = ((k / p.strata) % p.strata + jy) / p.strata; }
+            r.origin = float3(p.x0 + (gid.x + jx) * w, p.y1 - (row + jy) * h, p.top);
             r.direction = float3(0, 0, -1);
             r.min_distance = 0;
             r.max_distance = 1e7;
@@ -113,7 +117,13 @@ public enum LightBaker {
                     }
                 }
                 r.origin = at + n * 0.01;
-                r.direction = cosine(n, s);
+                // The first bounce's direction from an even spread over the
+                // hemisphere (one of strata × strata cells, jittered), so a
+                // texel's samples do not clump: the grain of chance alone
+                // showed as stripes down a wall and streaks on a roof.
+                float u1 = rnd(s), u2 = rnd(s);
+                if (b == 0 && p.strata > 1) { u1 = (k % p.strata + u1) / p.strata; u2 = ((k / p.strata) % p.strata + u2) / p.strata; }
+                r.direction = cosine(n, u1, u2);
                 r.min_distance = 0.001;
                 if (p.mode == 1) {
                     // Ambient occlusion: one look out from the surface, open
@@ -137,6 +147,7 @@ public enum LightBaker {
         var radius: Float
         var sunX, sunY, sunZ: Float
         var sunStrength, skyStrength: Float
+        var strata: UInt32
     }
 
     /// What light a bake gathers.
@@ -201,7 +212,8 @@ public enum LightBaker {
             var p = Params(x0: Float(x0), y0: Float(y0), x1: Float(x1), y1: Float(y1), size: UInt32(size),
                            samples: UInt32(samples), bounces: UInt32(bounces), row0: UInt32(row), seed: 7, top: top + 10,
                            mode: options.mode.rawValue, radius: options.radius, sunX: sun.x, sunY: sun.y, sunZ: sun.z,
-                           sunStrength: options.sun == nil ? 0 : options.sunStrength, skyStrength: options.skyStrength)
+                           sunStrength: options.sun == nil ? 0 : options.sunStrength, skyStrength: options.skyStrength,
+                           strata: UInt32(max(1, Int(Double(samples).squareRoot()))))
             c.setComputePipelineState(pipeline)
             c.setBytes(&p, length: MemoryLayout<Params>.stride, index: 0)
             c.setAccelerationStructure(accel, bufferIndex: 1)
