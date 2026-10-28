@@ -239,7 +239,12 @@ final class LandmarkAgent {
         arches, entrances, the cornice, the relief, the roof, the colours).
         3. The fixes: one set_recipe with everything that differed\(ClaudeSettings.physicalChecks ? ", and set_recipe's NOT PHYSICAL lines gone" : ""). It comes back beside the best photo of every facade \
         it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
-        4. End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
+        \(ClaudeSettings.emphasis ? """
+        4. What makes it recognisable: the one or two things a person points at from afar (a sign, a tower, a dome, a \\
+        statue, a portico), never more. Model each in full in the build of the fixes, a sign as a text shape on its frame \\
+        of boxes, and mark it "emphasis": true: the generator draws it half as large again, as a cartoon map does.
+        5.
+        """ : "4.") End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.
         """
     }

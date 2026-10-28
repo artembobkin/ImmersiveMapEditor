@@ -1,3 +1,5 @@
+import CoreGraphics
+import CoreText
 import Foundation
 import Geometry
 import GLTF
@@ -35,7 +37,7 @@ public enum LandmarkGenerator {
     }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
     public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
-    public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft"]
+    public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft", "text"]
     /// How deep a window is cut into its wall.
     /// The caricature. The map is seen from afar, and a detail under a metre
     /// is lost or turns to noise there, where a cartoon map (Zenly, Fenn)
@@ -79,6 +81,10 @@ public enum LandmarkGenerator {
         static let chamfer = 0.5
         static let windowStep = 4.5, windowsAlong = 14.0
         static let spireRadius = 1.0, spireTip = 0.25, spireAspect = 5.0
+        /// What makes the building recognisable (`emphasis`), this much
+        /// larger (the user, 2026-10-28: Zenly draws the one thing a person
+        /// points at larger than life).
+        static let emphasis = 1.5
     }
     static let windowDepth = 0.45
     /// From this area a glazed opening is a shop front or a glazed arch,
@@ -143,6 +149,10 @@ public enum LandmarkGenerator {
             case "prism":
                 if !ring { out.append("\(at): needs a polygon of 3 points at least, or an outline") }
                 if (s.top ?? 0) <= (s.base ?? 0) { out.append("\(at): top must be above base") }
+            case "text":
+                if (s.text ?? "").trimmingCharacters(in: .whitespaces).isEmpty { out.append("\(at): needs text") }
+                if s.at?.count != 2 { out.append("\(at): needs at, [x, y]") }
+                if (s.height ?? 0) <= 0 { out.append("\(at): needs a height, the capitals' in metres") }
             case "loft":
                 if !ring && (s.radius ?? 0) <= 0 { out.append("\(at): needs a polygon, an outline or a radius") }
                 if (s.radius ?? 0) > 0 && s.at?.count != 2 && !ring { out.append("\(at): a round loft needs at, [x, y]") }
@@ -1098,7 +1108,8 @@ public enum LandmarkGenerator {
                 let side = P2(-d.y, d.x) * (r + 0.3), along = d * (r + 0.3)
                 prism(ccw([a - along - side, b + along - side, b + along + side, a - along + side]), base + height - beam, base + height, colour)
             case "pediment":
-                guard let a = p2(f.from), let b = p2(f.to), let height = f.height, height > 0 else { return }
+                guard let a = p2(f.from), let b = p2(f.to), var height = f.height, height > 0 else { return }
+                if f.emphasis == true { height *= Caricature.emphasis }
                 begin()
                 let len = simd_length(b - a), d = (b - a) / max(len, 1e-9), n = P2(d.y, -d.x) * (f.depth ?? 1.5)
                 let m = (a + b) / 2
@@ -1111,7 +1122,8 @@ public enum LandmarkGenerator {
                 face([v(a, base), v(b, base), v(b + n, base), v(a + n, base)], -up, colour)
             case "statue":
                 guard let at = p2(f.at) else { return }
-                let h = f.height ?? 4, w = f.width ?? h * 0.6
+                let k = f.emphasis == true ? Caricature.emphasis : 1
+                let h = (f.height ?? 4) * k, w = (f.width ?? h * 0.6 / k) * k
                 let heading = (f.heading ?? 180) * .pi / 180
                 // Facing, and its left.
                 let u = P2(sin(heading), cos(heading)), v = P2(-u.y, u.x)
@@ -1150,6 +1162,42 @@ public enum LandmarkGenerator {
             func dir(_ a: Double, _ b: Double, _ c: Double) -> V3 { U * a + V * b + W * c }
         }
 
+        /// A text's letters as solids: each letter's outlines from the Mac's
+        /// bold sans face (any script), flattened and simplified to a low-poly
+        /// ring, extruded `depth` thick, standing upright on the frame's base
+        /// and facing its heading, the whole centred on its origin.
+        func letters(_ text: String, height: Double, depth: Double, _ f: Frame, _ colour: String) {
+            let glyphs = LandmarkGenerator.glyphs(text, height: height)
+            let width = glyphs.reduce(0) { $0 + $1.advance }
+            var pen = -width / 2
+            // Along the text is the frame's left (a reader before the sign has
+            // it on the right), up its up, the front toward its heading.
+            func p(_ u: Double, _ v: Double, _ w: Double) -> V3 { f.o + f.V * u + f.W * v + f.U * w }
+            for g in glyphs {
+                defer { pen += g.advance }
+                for (outer, holes) in g.letters {
+                    begin()
+                    let shift = P2(pen, 0)
+                    let ring = outer.map { $0 + shift }, hs = holes.map { $0.map { $0 + shift } }
+                    let shape = Geometry.polygon(ring + [ring[0]], holes: hs.map { $0 + [$0[0]] })
+                    for t in shape.constrainedDelaunay() where t.count == 3 {
+                        tri(p(t[0].x, t[0].y, depth), p(t[1].x, t[1].y, depth), p(t[2].x, t[2].y, depth), f.U, colour)
+                        tri(p(t[0].x, t[0].y, 0), p(t[1].x, t[1].y, 0), p(t[2].x, t[2].y, 0), -f.U, colour)
+                    }
+                    for r in [ring] + hs {
+                        for i in r.indices {
+                            let a = r[i], b = r[(i + 1) % r.count], d = b - a
+                            guard simd_length(d) > 1e-9 else { continue }
+                            // Outward of a counter-clockwise outer ring is its right; the
+                            // holes run clockwise, so their right is outward too.
+                            let hint = f.V * d.y - f.W * d.x
+                            face([p(a.x, a.y, 0), p(b.x, b.y, 0), p(b.x, b.y, depth), p(a.x, a.y, depth)], hint, colour)
+                        }
+                    }
+                }
+            }
+        }
+
         func frame(_ at: P2, _ base: Double, _ heading: Double, _ pitch: Double) -> Frame {
             let h = heading * .pi / 180, p = pitch * .pi / 180
             let u = V3(sin(h), cos(h), 0), v = V3(-cos(h), sin(h), 0), w = V3(0, 0, 1)
@@ -1175,8 +1223,18 @@ public enum LandmarkGenerator {
             for (p, heading, rise) in places { one(s, source, at: p, heading: heading, base: (s.base ?? 0) + rise) }
         }
 
-        func one(_ s: LandmarkRecipe.Shape, _ source: LandmarkSource, at: P2, heading: Double, base: Double) {
+        func one(_ given: LandmarkRecipe.Shape, _ source: LandmarkSource, at: P2, heading: Double, base: Double) {
             begin()
+            // What makes the building recognisable, a size up.
+            var s = given
+            if s.emphasis == true {
+                let k = Caricature.emphasis
+                s.size = s.size.map { $0.map { $0 * k } }
+                s.radius = s.radius.map { $0 * k }
+                s.radius_top = s.radius_top.map { $0 * k }
+                s.height = s.height.map { $0 * k }
+                s.profile = s.profile.map { $0.map { $0.count == 2 ? [$0[0], $0[1] * k] : $0 } }
+            }
             let colour = s.colour ?? "lm_stone", n = max(3, min(64, s.segments ?? 16))
             let f = frame(at, base, heading, s.pitch ?? 0)
             func circle(_ r: Double) -> [P2] { (0..<n).map { k in let t = 2 * .pi * Double(k) / Double(n); return P2(r * cos(t), r * sin(t)) } }
@@ -1187,6 +1245,9 @@ public enum LandmarkGenerator {
                 return nil
             }
             switch s.kind {
+            case "text":
+                guard let text = s.text, let height = s.height, height > 0 else { return }
+                letters(text, height: height, depth: max(0.1, s.depth ?? 0.4), f, colour)
             case "box":
                 guard let size = s.size, size.count == 3 else { return }
                 let (a, b, c) = (size[0] / 2, size[1] / 2, size[2])
@@ -1539,6 +1600,97 @@ public enum LandmarkGenerator {
             if cleaned.count > 1, simd_length(cleaned[0] - cleaned[cleaned.count - 1]) < 1e-6 { cleaned.removeLast() }
             if cleaned.count >= 3 { rings[i] = cleaned }
         }
+    }
+
+    // MARK: Letters
+
+    /// The letters of a text in the Mac's bold sans face: for each, its
+    /// outer rings counter-clockwise with their holes clockwise, in metres
+    /// with the capitals `height` tall, the letter's foot on y 0 and its
+    /// left at x 0, and its advance to the next; a space is an advance
+    /// alone. Curves are flattened to a few segments and the rings
+    /// simplified, so a letter is a few dozen corners.
+    static func glyphs(_ text: String, height: Double) -> [(letters: [(outer: [P2], holes: [[P2]])], advance: Double)] {
+        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 1, nil)
+        let scale = height / Double(CTFontGetCapHeight(font))
+        let chars = Array(text.utf16)
+        var ids = [CGGlyph](repeating: 0, count: chars.count)
+        CTFontGetGlyphsForCharacters(font, chars, &ids, chars.count)
+        var advances = [CGSize](repeating: .zero, count: chars.count)
+        CTFontGetAdvancesForGlyphs(font, .horizontal, ids, &advances, chars.count)
+        var out: [(letters: [(outer: [P2], holes: [[P2]])], advance: Double)] = []
+        for (k, id) in ids.enumerated() {
+            let advance = Double(advances[k].width) * scale
+            guard id != 0, let path = CTFontCreatePathForGlyph(font, id, nil) else { out.append(([], advance)); continue }
+            var rings: [[P2]] = []
+            var ring: [P2] = []
+            var last = P2.zero
+            func add(_ q: CGPoint) { let p = P2(Double(q.x) * scale, Double(q.y) * scale); ring.append(p); last = p }
+            path.applyWithBlock { element in
+                let e = element.pointee
+                switch e.type {
+                case .moveToPoint:
+                    if ring.count >= 3 { rings.append(ring) }
+                    ring = []
+                    add(e.points[0])
+                case .addLineToPoint:
+                    add(e.points[0])
+                case .addQuadCurveToPoint:
+                    let c = P2(Double(e.points[0].x) * scale, Double(e.points[0].y) * scale), q = P2(Double(e.points[1].x) * scale, Double(e.points[1].y) * scale)
+                    let a = last
+                    for i in 1...3 {
+                        let t = Double(i) / 3, u = 1 - t
+                        var p = a * (u * u)
+                        p += c * (2 * u * t)
+                        p += q * (t * t)
+                        ring.append(p)
+                    }
+                    last = q
+                case .addCurveToPoint:
+                    let c1 = P2(Double(e.points[0].x) * scale, Double(e.points[0].y) * scale), c2 = P2(Double(e.points[1].x) * scale, Double(e.points[1].y) * scale)
+                    let q = P2(Double(e.points[2].x) * scale, Double(e.points[2].y) * scale)
+                    let a = last
+                    for i in 1...4 {
+                        let t = Double(i) / 4, u = 1 - t
+                        let w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t
+                        var p = a * w0
+                        p += c1 * w1
+                        p += c2 * w2
+                        p += q * w3
+                        ring.append(p)
+                    }
+                    last = q
+                case .closeSubpath:
+                    if ring.count >= 3 { rings.append(ring) }
+                    ring = []
+                @unknown default:
+                    break
+                }
+            }
+            if ring.count >= 3 { rings.append(ring) }
+            // Simplified, and told apart: a ring inside an odd number of
+            // others is a hole of the smallest ring around it.
+            let simple: [[P2]] = rings.compactMap { r in
+                let g = Geometry.polygon(r + [r[0]]).simplify(height * 0.035)
+                guard let poly = g.polygons.max(by: { $0.area < $1.area }), poly.area > height * height * 0.002 else { return nil }
+                return Array(poly.exterior.dropLast())
+            }
+            let polys = simple.map { Geometry.polygon($0 + [$0[0]]) }
+            var holeOf = [Int?](repeating: nil, count: simple.count)
+            for i in simple.indices {
+                let inside = simple.indices.filter { $0 != i && polys[$0].contains(.point(simple[i][0])) }
+                guard inside.count % 2 == 1, let parent = inside.min(by: { polys[$0].area < polys[$1].area }) else { continue }
+                holeOf[i] = parent
+            }
+            var letters: [(outer: [P2], holes: [[P2]])] = []
+            for i in simple.indices where holeOf[i] == nil {
+                let outer = ccw(simple[i])
+                let holes = simple.indices.filter { holeOf[$0] == i }.map { Array(ccw(simple[$0]).reversed()) }
+                letters.append((outer, holes))
+            }
+            out.append((letters, advance))
+        }
+        return out
     }
 
     // MARK: Plan helpers

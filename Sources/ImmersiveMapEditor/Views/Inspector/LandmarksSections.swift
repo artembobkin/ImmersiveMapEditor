@@ -12,6 +12,7 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @AppStorage(ClaudeSettings.physicalChecksKey) private var physicalChecks = false
+    @AppStorage(ClaudeSettings.emphasisKey) private var emphasis = true
     @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 3
     @State private var forgetting = false
     /// The landmark about to be deleted, whole.
@@ -85,6 +86,9 @@ struct LandmarksSections: View {
                     .help("The most replies Claude may make for one landmark, a safety stop so a run never runs away: this many a facade and 8 besides. The plan takes four tool calls, about ten replies. 0 for no limit.")
                 Text(turnsPerFacade > 0 ? "\(ClaudeSettings.maxTurns(facades: facades)) replies at most for this landmark, with its \(facades) facades." : "No limit on Claude's replies.")
                     .font(.callout).foregroundStyle(.secondary)
+                Toggle("Emphasise what makes it recognisable", isOn: $emphasis)
+                    .disabled(session.agent.running)
+                    .help("Claude ends by naming the one or two things a person points at from afar (a sign, a tower, a dome, a statue), models each in full and marks it, and the generator draws it half as large again, as a cartoon map does. Off for a plain building.")
                 Toggle("Physical checks", isOn: $physicalChecks)
                     .disabled(session.agent.running)
                     .help("After each build, tell Claude what floats and what leads nowhere (a colonnade with nothing under it, steps with no landing), to fix before going on. Off: Claude judges by the photos alone.")

@@ -65,6 +65,8 @@ public struct LandmarkRecipe: Codable {
         public var radius: Double?
         public var radius_top: Double?
         public var height: Double?
+        /// A text's thickness.
+        public var depth: Double?
         public var segments: Int?
         public var polygon: [[Double]]?
         public var outline: String?
@@ -77,6 +79,11 @@ public struct LandmarkRecipe: Codable {
         public var colour: String?
         public var `repeat`: Repeat?
         public var around: Around?
+        /// A text shape's letters.
+        public var text: String?
+        /// What makes the building recognisable from afar: drawn a size up
+        /// by the generator (the user, 2026-10-28, after Zenly).
+        public var emphasis: Bool?
     }
 
     public struct Repeat: Codable {
@@ -191,6 +198,8 @@ public struct LandmarkRecipe: Codable {
         public var shape: String?
         public var heading: Double?
         public var pedestal: Double?
+        /// What makes the building recognisable from afar: drawn a size up.
+        public var emphasis: Bool?
     }
 
     public init() {}
@@ -269,7 +278,12 @@ public struct LandmarkRecipe: Codable {
        {"kind": "sphere", "at": [x, y], "base": 30, "radius": 2, "segments": 12, "colour": "lm_gold"},
        {"kind": "dome", "at": [x, y], "base": 30, "radius": 6, "segments": 16, "colour": "lm_green"},
        {"kind": "prism", "polygon": [[x, y], ...] or "outline": "way/123", "holes": [[[x, y], ...]], "base": 0, "top": 5, "colour": "lm_cream"},
-       {"kind": "loft", "radius": 4, "segments": 16, or "polygon"/"outline", "base": 30, "profile": [[1, 0], [1.2, 0.5], [0.8, 3], [0, 5]], "colour": "lm_green"}]
+       {"kind": "loft", "radius": 4, "segments": 16, or "polygon"/"outline", "base": 30, "profile": [[1, 0], [1.2, 0.5], [0.8, 3], [0, 5]], "colour": "lm_green"},
+       {"kind": "text", "text": "ЦУМ", "at": [x, y], "base": 30, "height": 3, "depth": 0.4, "heading": 180, "colour": "lm_red"}]
+      A text is its letters in a bold sans face, any script, upright and facing `heading`, `height` tall (the capitals) \
+    and `depth` thick, centred on `at`, their feet on `base`: a sign on a roof or a facade, on a frame of boxes. \
+    A shape or a feature with `"emphasis": true` is drawn a size up by the generator (half as large again): for the \
+    one or two things that make the building recognisable from afar, a sign, a tower, a dome, a statue; never more. \
       A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
     forward (a cylinder with pitch 90 lies along its heading: a beam). A sphere stands on its base; a dome is a half \
     sphere, flat side down. A loft draws its ring toward its centre ring by ring, [scale, rise] from the base up: a drum \

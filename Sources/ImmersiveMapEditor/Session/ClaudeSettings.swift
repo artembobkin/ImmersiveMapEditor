@@ -20,6 +20,11 @@ enum ClaudeSettings {
     /// nowhere) are given to the agent after each build. Off by default:
     /// the user found the models better without them (2026-10-26).
     static let physicalChecksKey = "landmark.physicalChecks"
+    /// Whether the agent ends by marking the one or two things that make
+    /// the building recognisable for the generator to draw a size up (on
+    /// by default; off for a plain building, the user, 2026-10-28).
+    static let emphasisKey = "landmark.emphasis"
+    static var emphasis: Bool { UserDefaults.standard.object(forKey: emphasisKey) as? Bool ?? true }
     /// The agent's turns for one landmark, a safety stop (Claude Code's
     /// --max-turns), per facade: the plan is a build, a build of the fixes
     /// its comparisons show, and a summary, four tool calls, each a turn or
