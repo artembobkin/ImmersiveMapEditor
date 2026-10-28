@@ -53,8 +53,18 @@ public enum LandmarkGenerator {
     ///   across (a toy's rounded edge, the user, 2026-10-27: a sharp corner
     ///   melts two flat faces into one from afar, the chamfer catches the
     ///   light between them), within a third of its edges;
-    /// - windows come every `windowStep` metres at least (the bays merged
-    ///   to that), so they read as windows and not as a texture.
+    /// - windows come every `windowStep` metres at least, and no more than
+    ///   `windowsAlong` on one wall (the bays merged to that), so they read
+    ///   as windows and not as a texture;
+    /// - a pilaster never stands on a window or a door (it moves to the gap
+    ///   beside), a band is cut around every opening it would cross, so no
+    ///   doorway is barred and no window crossed (the user, 2026-10-28);
+    /// - a cone is at least `spireRadius` across at its foot and blunted
+    ///   (`spireTip` of its radius at its tip), no taller than `spireAspect`
+    ///   times its radius: a pinnacle, not a spike;
+    /// - a flat roof always has a parapet (`parapet`), its cap the roofs'
+    ///   own colour (`lm_roof`) unless the recipe says, and the parapet's
+    ///   top a light rim that outlines the building from above.
     enum Caricature {
         static let proud = 0.45
         static let corniceDepth = 0.8, corniceHeight = 0.9
@@ -67,7 +77,8 @@ public enum LandmarkGenerator {
         static let eaves = 0.9, fascia = 0.6
         static let doorDepth = 0.8
         static let chamfer = 0.5
-        static let windowStep = 4.5
+        static let windowStep = 4.5, windowsAlong = 14.0
+        static let spireRadius = 1.0, spireTip = 0.25, spireAspect = 5.0
     }
     static let windowDepth = 0.45
     /// From this area a glazed opening is a shop front or a glazed arch,
@@ -646,9 +657,18 @@ public enum LandmarkGenerator {
         /// glass darker still, the sill light, as an ordinary building's; a
         /// door a deeper recess with its leaf at the back and a portal
         /// standing proud around it.
+        /// An opening's place on a wall: its edge, its span along it and up.
+        struct Cut {
+            let edge: Int
+            let t0: Double, t1: Double
+            let z0: Double, z1: Double
+        }
+
+        @discardableResult
         func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String, windows: LandmarkRecipe.Windows? = nil,
-                   doors: [DoorAt] = []) {
-            guard z1 > z0 else { return }
+                   doors: [DoorAt] = []) -> [Cut] {
+            guard z1 > z0 else { return [] }
+            var cuts: [Cut] = []
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
                 guard len > 1e-6 else { continue }
@@ -686,6 +706,10 @@ public enum LandmarkGenerator {
                         openings.append(Opening(ring: ring, depth: LandmarkGenerator.windowDepth, back: "\(colour).glass"))
                     }
                 }
+                for op in openings {
+                    cuts.append(Cut(edge: i, t0: op.ring.map(\.x).min()!, t1: op.ring.map(\.x).max()!,
+                                    z0: op.ring.map(\.y).min()!, z1: op.ring.map(\.y).max()!))
+                }
                 guard !openings.isEmpty else {
                     face([p(0, z0), p(len, z0), p(len, z1), p(0, z1)], o, colour)
                     continue
@@ -721,6 +745,7 @@ public enum LandmarkGenerator {
                     proud(a, d, o2, t - w / 2, t + w / 2, z0 + h, top, Caricature.proud, portal)
                 }
             }
+            return cuts
         }
 
         /// A closed prism: its own solid.
@@ -763,7 +788,7 @@ public enum LandmarkGenerator {
             let storey = (hi - lo) / Double(w.storeys)
             // The bays merged until the windows stand `windowStep` apart at
             // least, each window drawn wider in its wider bay.
-            let step = w.spacing * max(1, (Caricature.windowStep / w.spacing).rounded(.up))
+            let step = w.spacing * max(1, (max(Caricature.windowStep, len / Caricature.windowsAlong) / w.spacing).rounded(.up))
             let height = min(w.height * Caricature.windowRise, storey * 0.7), width = min(w.width * Caricature.windowScale * (step / w.spacing).squareRoot(), step * 0.72)
             let n = Int((len - 1) / step)
             guard n >= 1, height > 0.3 else { return [] }
@@ -780,7 +805,7 @@ public enum LandmarkGenerator {
 
         /// Pilasters along every wall long enough: between the windows when
         /// they share the spacing, else spaced from the middle.
-        func pilasters(_ ring: [P2], _ lo: Double, _ hi: Double, _ p: LandmarkRecipe.Pilasters, windows: LandmarkRecipe.Windows?, wall: String) {
+        func pilasters(_ ring: [P2], _ lo: Double, _ hi: Double, _ p: LandmarkRecipe.Pilasters, cuts: [Cut], wall: String) {
             guard p.spacing > 0.5 else { return }
             let width = max(p.width ?? 1.0, Caricature.pilasterWidth), depth = max(p.depth ?? 0.3, Caricature.proud), colour = p.colour ?? wall
             for i in ring.indices {
@@ -788,17 +813,28 @@ public enum LandmarkGenerator {
                 guard len > p.spacing + width else { continue }
                 let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
                 let n = Int((len - 1) / p.spacing)
-                // Between the windows when they share the spacing and the
-                // windows were not merged to a wider step.
-                let between = windows.map { abs($0.spacing - p.spacing) < 1e-6 && n >= 1 && $0.spacing >= Caricature.windowStep } ?? false
-                var positions: [Double] = []
-                if between {
-                    for k in 0...n { positions.append(len / 2 + (Double(k) - Double(n) / 2) * p.spacing) }
-                } else {
-                    let m = max(n, 1)
-                    for k in 0..<m { positions.append(len / 2 + (Double(k) - Double(m - 1) / 2) * p.spacing) }
+                // The openings of this wall, and the gaps between them a
+                // pilaster fits in (0.2 m clear of each).
+                let openings = cuts.filter { $0.edge == i }.map { ($0.t0 - 0.2, $0.t1 + 0.2) }.sorted { $0.0 < $1.0 }
+                var gaps: [(Double, Double)] = []
+                var from = 0.2
+                for op in openings {
+                    if op.0 - from >= width { gaps.append((from, op.0)) }
+                    from = max(from, op.1)
                 }
-                for t in positions where t - width / 2 > 0.2 && t + width / 2 < len - 0.2 {
+                if len - 0.2 - from >= width { gaps.append((from, len - 0.2)) }
+                // The ideal places, spaced from the middle; each moved into
+                // the nearest gap it fits, never onto an opening.
+                let m = max(n, 1)
+                var placed: [Double] = []
+                for k in 0..<m {
+                    let ideal = len / 2 + (Double(k) - Double(m - 1) / 2) * p.spacing
+                    guard let gap = gaps.min(by: { abs(max($0.0 + width / 2, min($0.1 - width / 2, ideal)) - ideal) < abs(max($1.0 + width / 2, min($1.1 - width / 2, ideal)) - ideal) }) else { continue }
+                    let t = max(gap.0 + width / 2, min(gap.1 - width / 2, ideal))
+                    guard abs(t - ideal) <= p.spacing * 0.5, !placed.contains(where: { abs($0 - t) < width + 0.3 }) else { continue }
+                    placed.append(t)
+                }
+                for t in placed {
                     proud(a, d, o2, t - width / 2, t + width / 2, lo, hi, depth, colour)
                 }
             }
@@ -816,20 +852,21 @@ public enum LandmarkGenerator {
             let lo = m.base + plinth, hi = m.top - cornice
             let doors = place(m.doors ?? [], on: ring)
             begin()
-            walls(ring, lo, hi, m.colour, windows: m.windows, doors: doors)
+            let cuts = walls(ring, lo, hi, m.colour, windows: m.windows, doors: doors)
             if plinth > 0 { walls(ring, m.base, lo, m.colour) }
             if cornice > 0 { walls(ring, hi, m.top, m.colour) }
             cap(ring, m.base, up: false, m.colour)
-            cap(ring, m.top, up: true, m.roof == nil || m.roof?.shape == "flat" ? "lm_stone" : m.colour)
+            let flat = m.roof == nil || m.roof?.shape == "flat"
+            cap(ring, m.top, up: true, flat ? (m.roof?.colour ?? "lm_roof") : m.colour)
             if let p = m.plinth, plinth > 0 { band(ring, grown(ring, max(p.depth ?? 0.15, Caricature.proud)), m.base, lo, p.colour ?? "lm_stone") }
             if let c = m.cornice, cornice > 0 { band(ring, grown(ring, max(c.depth ?? 0.4, Caricature.corniceDepth)), hi, m.top, c.colour ?? "lm_white") }
-            if let p = m.pilasters { pilasters(ring, lo, hi, p, windows: m.windows, wall: m.colour) }
+            if let p = m.pilasters { pilasters(ring, lo, hi, p, cuts: cuts, wall: m.colour) }
             if let b = m.bands, let w = m.windows, w.storeys >= 2 {
                 let storey = (hi - lo) / Double(w.storeys), out = grown(ring, max(b.depth ?? 0.15, Caricature.proud))
                 let height = max(b.height, Caricature.bandHeight)
                 for k in 1..<w.storeys {
                     let z = lo + storey * Double(k) - height / 2
-                    band(ring, out, z, z + height, b.colour ?? "lm_white")
+                    band(ring, out, z, z + height, b.colour ?? "lm_white", cuts: cuts)
                 }
             }
             roof(ring, m.top, m.roof, wall: m.colour)
@@ -837,11 +874,37 @@ public enum LandmarkGenerator {
 
         /// A closed ring of material around a body, from `inner` out to
         /// `outer`, `z0` to `z1`: a plinth, a cornice, a string course.
-        func band(_ inner: [P2], _ outer: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
+        func band(_ inner: [P2], _ outer: [P2], _ z0: Double, _ z1: Double, _ colour: String, cuts: [Cut] = [], top: String? = nil) {
+            // Cut around the openings it would cross: the band in pieces, one
+            // a wall between its openings (each a closed prism), the pieces at
+            // a corner meeting at the outer ring's mitre.
+            let crossing = cuts.filter { $0.z1 > z0 && $0.z0 < z1 }
+            if !crossing.isEmpty, outer.count == inner.count {
+                for i in inner.indices {
+                    let a = inner[i], b = inner[(i + 1) % inner.count], len = simd_length(b - a)
+                    guard len > 1e-6 else { continue }
+                    let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
+                    let depth = simd_dot(outer[i] - a, o2)
+                    let spans = crossing.filter { $0.edge == i }.map { (max(0, $0.t0 - 0.25), min(len, $0.t1 + 0.25)) }.sorted { $0.0 < $1.0 }
+                    var from = 0.0
+                    var pieces: [(Double, Double)] = []
+                    for sp in spans {
+                        if sp.0 - from > 0.05 { pieces.append((from, sp.0)) }
+                        from = max(from, sp.1)
+                    }
+                    if len - from > 0.05 { pieces.append((from, len)) }
+                    for (t0, t1) in pieces {
+                        let p0 = a + d * t0, p1 = a + d * t1
+                        let q0 = t0 < 1e-6 ? outer[i] : p0 + o2 * depth, q1 = t1 > len - 1e-6 ? outer[(i + 1) % outer.count] : p1 + o2 * depth
+                        prism(ccw([p0, p1, q1, q0]), z0, z1, colour)
+                    }
+                }
+                return
+            }
             begin()
             walls(outer, z0, z1, colour)
             walls(inner.reversed(), z0, z1, colour)
-            cap(outer, holes: [inner], z1, up: true, colour)
+            cap(outer, holes: [inner], z1, up: true, top ?? colour)
             cap(outer, holes: [inner], z0, up: false, colour)
         }
 
@@ -853,16 +916,16 @@ public enum LandmarkGenerator {
         /// to `under` (the cornice's outer ring, or the wall).
         func roof(_ ring: [P2], _ top: Double, _ roof: LandmarkRecipe.Roof?, wall: String) {
             guard let roof, roof.shape != "flat" else {
-                // The body's own ceiling is the flat roof; a parapet is a band on it.
-                if let given = roof?.parapet, given > 0.05 {
-                    let p = max(given, Caricature.parapet)
-                    let colour = roof?.colour ?? wall
-                    let inner = grown(ring, -0.45)
-                    if inner.count >= 3, inner != ring {
-                        band(inner, ring, top, top + p, colour)
-                    } else {
-                        prism(ring, top, top + p, colour)
-                    }
+                // The body's own ceiling is the flat roof; a parapet is a band
+                // on it, always (the toy's edge), its top a light rim that
+                // outlines the building from above.
+                let p = max(roof?.parapet ?? 0, Caricature.parapet)
+                let colour = wall
+                let inner = grown(ring, -0.45)
+                if inner.count >= 3, inner != ring {
+                    band(inner, ring, top, top + p, colour, top: "rim")
+                } else {
+                    prism(ring, top, top + p, colour)
                 }
                 return
             }
@@ -1105,8 +1168,15 @@ public enum LandmarkGenerator {
                     face([f.p(p0.0, p0.1, 0), f.p(p1.0, p1.1, 0), f.p(p1.0, p1.1, c), f.p(p0.0, p0.1, c)], f.dir(mid.0, mid.1, 0), colour)
                 }
             case "cylinder", "cone":
-                guard let r = s.radius, let h = s.height else { return }
-                let rt = s.kind == "cone" ? (s.radius_top ?? 0) : (s.radius_top ?? r)
+                guard var r = s.radius, var h = s.height else { return }
+                var rt = s.kind == "cone" ? (s.radius_top ?? 0) : (s.radius_top ?? r)
+                if s.kind == "cone" {
+                    // A pinnacle, not a spike: wide enough at the foot, blunt
+                    // at the tip, not too tall for its width.
+                    r = max(r, Caricature.spireRadius)
+                    rt = max(rt, r * Caricature.spireTip)
+                    h = min(h, r * Caricature.spireAspect)
+                }
                 let lo = circle(r), hi = circle(rt)
                 for k in 0..<n {
                     let (p0, p1) = (lo[k], lo[(k + 1) % n]), (q0, q1) = (hi[k], hi[(k + 1) % n])

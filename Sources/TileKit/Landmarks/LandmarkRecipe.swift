@@ -10,7 +10,7 @@ import Geometry
 /// centre (landmark.json's `centre`), heights metres above the ground,
 /// colours the palette's landmark colours by name (lm_white, lm_cream,
 /// lm_ochre, lm_red, lm_rose, lm_green, lm_dark_green, lm_gold, lm_stone,
-/// lm_dark).
+/// lm_dark, lm_roof).
 ///
 ///   {"version": 1,
 ///    "masses": [{"id": "body", "outline": "way/123" | "polygon": [[x, y], ...],
@@ -227,9 +227,11 @@ public struct LandmarkRecipe: Codable {
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
     Give every size as the building has it: the generator draws the map's caricature itself, every cornice, band, pilaster, \
     portal, parapet and recess at least about half a metre to a metre, and windows a little larger, so a detail reads from afar. \
-    A pitched roof has eaves 0.6 m beyond the walls with a fascia (`overhang` to change), a flat roof a `parapet` when \
-    the photos show one. The roof's colour is what satellite_view reads off the imagery for that part (lm_stone grey \
-    metal, lm_green or lm_dark_green green, lm_red red, lm_dark black), given for every mass: never a guess. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \
+    A pitched roof has eaves 0.6 m beyond the walls with a fascia (`overhang` to change); a flat roof always gets a \
+    parapet with a light rim (give `parapet` its height when the photos show a taller one). A flat roof's colour is the \
+    map's own roof grey, lm_roof: leave it out unless satellite_view reads a colour of its own off the imagery (lm_green \
+    or lm_dark_green green, lm_red red, lm_dark black); a pitched roof's colour is what the imagery reads (lm_stone grey \
+    metal too), given for every mass: never a guess. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \
     pitched roof with its eaves, so the roof reads as a volume of its own. Gabled, skillion (one slope, \
     rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
     outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.

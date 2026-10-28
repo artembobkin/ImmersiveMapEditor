@@ -70,7 +70,7 @@ public enum Palette {
     public private(set) static var landmark: [(String, String)] = [
         ("lm_white", "#EEE8DC"), ("lm_cream", "#E8D6B2"), ("lm_ochre", "#E3BE7E"), ("lm_red", "#B54A3C"),
         ("lm_rose", "#D39A8A"), ("lm_green", "#5E8C74"), ("lm_dark_green", "#3E5E52"), ("lm_gold", "#D8A93F"),
-        ("lm_stone", "#ABA7A3"), ("lm_dark", "#4B4752"),
+        ("lm_stone", "#ABA7A3"), ("lm_dark", "#4B4752"), ("lm_roof", "#CBC5BC"),
     ]
 
     /// The groups of the colours that can be set: their names and defaults.
