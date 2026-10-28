@@ -600,7 +600,7 @@ final class LandmarkRenderer {
         let s = MTLSamplerDescriptor()
         s.minFilter = .linear
         s.magFilter = .linear
-        s.mipFilter = .linear
+        s.mipFilter = ProcessInfo.processInfo.environment["LANDMARK_NO_MIPS"] == nil ? .linear : .notMipmapped
         s.sAddressMode = .repeat
         s.tAddressMode = .repeat
         sampler = device.makeSamplerState(descriptor: s)!

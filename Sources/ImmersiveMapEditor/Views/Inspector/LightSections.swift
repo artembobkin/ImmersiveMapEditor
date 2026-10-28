@@ -34,6 +34,10 @@ struct LightSections: View {
             }
         }
         Section("Light") {
+            slider("Strength", $light.depth, 0...1, "%.2f")
+            slider("Contrast", $light.gamma, 0.5...3, "%.2f")
+            Text("Strength: how dark the shade goes, 0 for no shading. Contrast: above 1 deepens the shade near walls and in corners and leaves the open ground alone.")
+                .font(.callout).foregroundStyle(.secondary)
             Picker("Gathered", selection: $light.mode) {
                 Text("Sky light").tag("sky")
                 Text("Ambient occlusion").tag("ao")

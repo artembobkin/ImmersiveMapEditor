@@ -114,6 +114,19 @@ enum Headless {
                 return fail(error.localizedDescription)
             }
         }
+        /// The light settings for --lit from the options --light-mode sky|ao, --light-size N (texels a tile),
+        /// --light-samples N, --ao-radius M, --depth D, --gamma G.
+        func litSettings() -> Lighting.Settings {
+            var s = Lighting.Settings()
+            func value(_ name: String) -> String? { arguments.firstIndex(of: name).flatMap { arguments.count > $0 + 1 ? arguments[$0 + 1] : nil } }
+            if let v = value("--light-mode") { s.mode = v }
+            if let v = value("--light-size").flatMap(Int.init) { s.size = v }
+            if let v = value("--light-samples").flatMap(Int.init) { s.samples = v }
+            if let v = value("--ao-radius").flatMap(Double.init) { s.aoRadius = v }
+            if let v = value("--depth").flatMap(Double.init) { s.depth = v }
+            if let v = value("--gamma").flatMap(Double.init) { s.gamma = v }
+            return s
+        }
         if let i = arguments.firstIndex(of: "--landmark-look"), arguments.count > i + 10 {
             // A landmark's model (its OSM boxes with --boxes) as a photo's
             // camera saw it: FOLDER OUT.png X Y Z HEADING PITCH HFOV W H.
@@ -125,7 +138,7 @@ enum Headless {
             if arguments.contains("--boxes") || landmark.model == nil {
                 source = .boxes(id: landmark.id, landmark.boxes)
             } else {
-                source = arguments.contains("--lit") ? .lit(landmark.model!, Lighting.Settings()) : .model(landmark.model!)
+                source = arguments.contains("--lit") ? .lit(landmark.model!, litSettings()) : .model(landmark.model!)
             }
             do {
                 try view.look(source, to: URL(fileURLWithPath: arguments[i + 2]), eye: SIMD3(n[0], n[1], n[2]), heading: n[3], pitch: n[4],

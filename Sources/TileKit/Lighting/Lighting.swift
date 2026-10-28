@@ -30,6 +30,9 @@ public enum Lighting {
         public var lit = [Lighting.lit.0, Lighting.lit.1, Lighting.lit.2]
         public var shade = [Lighting.shade.0, Lighting.shade.1, Lighting.shade.2]
         public var gamma = Lighting.gamma
+        /// How deep the shade goes: 1 to the shade colour, 0 no shading at
+        /// all (the user, 2026-10-28: a strength for the light).
+        public var depth = 1.0
         /// What light is gathered: the sky with its bounces ("sky"), or only
         /// how open each surface is within `aoRadius` metres ("ao").
         public var mode = "sky"
@@ -67,7 +70,7 @@ public enum Lighting {
         /// The settings as bake/settings.json has them, with the light map's
         /// size in pixels it gave (`light_map_px`, for the reader only).
         public func json(lightMapPixels: Int) -> [String: Any] {
-            ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma,
+            ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma, "depth": depth,
              "mode": mode, "ao_radius": aoRadius, "sun": sun, "sun_azimuth": sunAzimuth, "sun_elevation": sunElevation,
              "sun_strength": sunStrength, "sky_strength": skyStrength, "light_map_px": lightMapPixels]
         }
@@ -80,6 +83,7 @@ public enum Lighting {
             if let v = json["lit"] as? [Double], v.count == 3 { lit = v }
             if let v = json["shade"] as? [Double], v.count == 3 { shade = v }
             if let v = json["gamma"] as? Double { gamma = v }
+            if let v = json["depth"] as? Double { depth = v }
             if let v = json["mode"] as? String { mode = v }
             if let v = json["ao_radius"] as? Double { aoRadius = v }
             if let v = json["sun"] as? Bool { sun = v }
@@ -160,7 +164,8 @@ public enum Lighting {
         let lo = Int(rank.rounded(.down)), hi = min(sorted.count - 1, lo + 1)
         let reference = Double(sorted[lo]) + (Double(sorted[hi]) - Double(sorted[lo])) * (rank - Double(lo))
         var out = [UInt8](repeating: 0, count: irradiance.count * 3)
-        let s = settings.shade, l = settings.lit
+        let l = settings.lit, depth = min(max(settings.depth, 0), 1)
+        let s = (0..<3).map { l[$0] + (settings.shade[$0] - l[$0]) * depth }
         for (i, v) in irradiance.enumerated() {
             let t = pow(min(max(Double(v) / max(reference, 1e-6), 0), 1), gamma)
             for k in 0..<3 {
@@ -233,9 +238,22 @@ public enum Lighting {
                     }
                 }
             }
+            // A flat face's corners pulled half a texel toward its middle, so
+            // its edge samples its own texel and not the one outside it (on a
+            // roof's rim that is the dark seam at the wall's foot, blended in
+            // by the filter as a dark band along the rim: the user, 2026-10-28).
+            let mid = (0..<3).reduce(P2.zero) { $0 + P2(m.corner(t, $1).x, m.corner(t, $1).y) } / 3
             for i in 0..<3 {
                 let c = m.corner(t, i)
                 var x = c.x, y = c.y
+                if !wall {
+                    let v = mid - P2(x, y), len = v.length
+                    if len > 1e-9 {
+                        let pull = min(len, d * 0.5)
+                        x += v.x / len * pull
+                        y += v.y / len * pull
+                    }
+                }
                 if let plane {
                     let off = h.x * x + h.y * y - plane
                     x -= h.x * off

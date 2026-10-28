@@ -58,7 +58,7 @@ public enum PipelineCommand {
                     args.value(name, count: 3).map { $0.compactMap(Double.init) }.flatMap { $0.count == 3 ? $0 : nil }
                 }
                 let size = number("--size").map(Int.init), samples = number("--samples").map(Int.init)
-                let bounces = number("--bounces").map(Int.init), gamma = number("--gamma")
+                let bounces = number("--bounces").map(Int.init), gamma = number("--gamma"), depth = number("--depth")
                 let lit = colour("--lit"), shade = colour("--shade")
                 let mode = args.value("--mode")?[0], aoRadius = number("--ao-radius"), sky = number("--sky")
                 let noSun = args.flag("--no-sun")
@@ -70,6 +70,7 @@ public enum PipelineCommand {
                     if let v = samples { s.samples = v }
                     if let v = bounces { s.bounces = v }
                     if let v = gamma { s.gamma = v }
+                    if let v = depth { s.depth = v }
                     if let v = lit { s.lit = v }
                     if let v = shade { s.shade = v }
                     if let v = mode { s.mode = v }
