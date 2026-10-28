@@ -12,10 +12,11 @@ public enum LandmarkLight {
     /// Ground around the model in the bake, so its walls get their bounce
     /// and the light at its foot is the open ground's.
     public static let margin = 30.0
-    /// Metres a texel: the tile's own (1024 texels over a z15 tile in
-    /// Moscow), so the preview shows the light as the engine will have it.
-    /// Finer would look better and lie: the bake's noise, spread over 0.67
-    /// m on the tile, shows as streaks down a wall at 0.1 m.
+    /// Metres a texel at 1024 texels over a z15 tile in Moscow: the
+    /// preview's texel is this scaled by the light map size asked (512,
+    /// 1024, 2048 a tile), so it shows the light as the engine will have
+    /// it at that setting (the user, 2026-10-28: the size did nothing in
+    /// Preview). Finer than the tile's would look better and lie.
     public static let texel = 0.674
     public static let maxSize = 2048
 
@@ -63,7 +64,8 @@ public enum LandmarkLight {
         // texel asked, capped.
         let cx = (lo.x + hi.x) / 2, cy = (lo.y + hi.y) / 2
         let half = max(hi.x - lo.x, hi.y - lo.y) / 2 + margin
-        let size = min(maxSize, max(256, Int((2 * half / texel).rounded(.up))))
+        let metresATexel = texel * 1024 / Double(max(256, settings.size))
+        let size = min(maxSize, max(256, Int((2 * half / metresATexel).rounded(.up))))
         let bounds = (cx - half, cy - half, cx + half, cy + half)
         // The scene: the model and the white ground under it, a little
         // beyond the map so nothing at its edge looks out into the void.

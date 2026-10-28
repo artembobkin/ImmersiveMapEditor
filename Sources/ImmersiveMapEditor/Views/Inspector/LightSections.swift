@@ -25,6 +25,8 @@ struct LightSections: View {
             } else {
                 Text("The landmark alone as the engine will show it: its palette tones times its light, baked here with the settings below over a white ground, and the engine's sun casting its shadows.")
                     .font(.callout).foregroundStyle(.secondary)
+                Button("Bake Again", systemImage: "arrow.clockwise") { session.showPreview() }
+                    .help("Bakes the landmark's light again with the settings below. Every change below bakes again by itself, a moment after the change; this is for after a model is rebuilt.")
                 slider("Lens", $light.lens, 20...90, "%.0f°")
                 Text("The camera's lens, its vertical field of view: the engine's is 45°. Narrow, like a telephoto, flattens the building and keeps its walls parallel; wide makes what is near loom and the far shrink. The model keeps its size in the frame.")
                     .font(.callout).foregroundStyle(.secondary)
