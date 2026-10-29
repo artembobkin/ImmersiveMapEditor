@@ -121,7 +121,7 @@ final class LightSettings {
         if let sided = d.object(forKey: "light.sided") as? Bool { s.sidedTones = sided }
         // The stack has every kind the panel offers, the new ones off.
         for kind in Lighting.Modifier.kinds.map(\.kind) where !s.modifiers.contains(where: { $0.kind == kind }) {
-            s.modifiers.append(.make(kind, on: kind == "lambert"))
+            s.modifiers.append(.make(kind, on: false))
         }
         return s.modifiers
     }

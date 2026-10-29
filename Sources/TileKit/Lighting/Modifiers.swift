@@ -60,13 +60,8 @@ extension Lighting {
         public static func make(_ kind: String, on: Bool = true) -> Modifier { Modifier(kind: kind, on: on, params: defaults(of: kind)) }
 
         /// The stack a fresh tile or editor starts with (the user,
-        /// 2026-10-29): the face shade, the creases, the side tones and a
-        /// Lambert light on; the sky, ambient occlusion and a sun there but
-        /// off, since the engine adds its own sun.
-        public static let standard: [Modifier] = [
-            make("faceShade"), make("creases"), make("sides"), make("lambert"),
-            make("sky", on: false), make("ao", on: false), make("sun", on: false),
-        ]
+        /// 2026-10-29): every kind there, all off, to be turned on by hand.
+        public static let standard: [Modifier] = kinds.map { make($0.kind, on: false) }
 
         public func json() -> [String: Any] { ["kind": kind, "on": on, "params": params] }
 
