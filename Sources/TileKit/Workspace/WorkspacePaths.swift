@@ -14,7 +14,7 @@ import Foundation
 ///   tiles/<z>/<x>/<y>/build/        its built model (Build, Bake)
 ///   tiles/<z>/<x>/<y>/landmarks/    its buildings marked to become landmarks, a
 ///                                   folder each (the editor's Buildings view)
-///   tiles/index.json                the last build of every tile
+///   registry.sqlite                 the last build of every tile, every landmark and its buildings (Registry)
 ///   landmarks/                      recipes, the landmark registry, downloaded models
 ///   config/                         what OSM shows but the place does not have
 public struct WorkspacePaths: Sendable {

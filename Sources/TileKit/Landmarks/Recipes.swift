@@ -53,6 +53,21 @@ extension Imported {
             found.append(Placement(id: name, glb: glb, origin: tile.metres(lat: lat, lon: lon), latitude: lat,
                                    altitude: (json["altitude_m"] as? NSNumber)?.doubleValue ?? 0, replaces: replaces))
         }
+        // The neighbours' landmarks standing within the margin, from the
+        // registry: in the scene for the light, and their buildings left
+        // out of this tile's ordinary build (the user, 2026-10-29).
+        if let registry = try? Registry(paths) {
+            let (x0, y0, x1, y1) = work.bounds
+            for l in registry.landmarks(z: tile.z) where l.hasModel && !(l.x == tile.x && l.y == tile.y) {
+                let origin = tile.metres(lat: l.latitude, lon: l.longitude)
+                guard origin.x >= x0, origin.x <= x1, origin.y >= y0, origin.y <= y1 else { continue }
+                let folder = paths.root.appendingPathComponent(l.folder)
+                guard let glb = ((try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+                        .filter({ $0.pathExtension.lowercased() == "glb" }).sorted(by: { $0.path < $1.path }).first else { continue }
+                found.append(Placement(id: "\(l.x)-\(l.y)-\(l.id)", glb: glb, origin: origin, latitude: l.latitude, altitude: 0,
+                                       replaces: Set(l.buildings)))
+            }
+        }
         return found
     }
 }

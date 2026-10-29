@@ -31,7 +31,9 @@ public enum Build {
         Progress.report("Placing the landmarks")
         // The landmark models first: their colours join the palette.
         // A whole tile takes the landmark models standing in it alone.
-        let (models, replaced, covered) = Imported.load(tile, work, paths, within: whole ? region : nil)
+        // Every landmark within the margin: a build sorts them into its own
+        // (their origin in the tile) and the neighbours' (the light alone).
+        let (models, replaced, covered) = Imported.load(tile, work, paths)
         // The base palette: every colour's cell. The tile's own palette, of
         // the names it uses with their face shade, is written by Bake.
         let palette = PaletteTexture()

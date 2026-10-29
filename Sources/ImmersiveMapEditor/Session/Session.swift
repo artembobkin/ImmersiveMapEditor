@@ -164,6 +164,7 @@ final class Session {
     func deleteLandmark(_ landmark: TileLandmark) {
         guard !agent.running else { return }
         try? FileManager.default.removeItem(at: landmark.folder)
+        if let tile = workspace.tile { try? Registry(workspace.paths).remove(landmark: landmark.id, z: tile.z, x: tile.x, y: tile.y) }
         if pickedLandmark == landmark.id { pickedLandmark = nil }
         readCandidates()
         workspace.tilesRevision += 1
@@ -273,11 +274,26 @@ final class Session {
     func readCandidates() {
         guard let tile = workspace.tile else { return }
         candidates = LandmarkCandidates.list(workspace.paths, tile: tile)
+        if let registry = try? Registry(workspace.paths) {
+            for problem in registry.sync(workspace.paths) { build.append("registry: \(problem)") }
+        }
+    }
+
+    /// The landmark an OSM building is already part of, in any tile.
+    func landmark(holding osm: String) -> Registry.LandmarkRecord? {
+        (try? Registry(workspace.paths))?.landmark(holding: osm)
     }
 
     /// The buildings picked in the Buildings view made a landmark candidate.
     func makeLandmark(named name: String) {
         guard let tile = workspace.tile, let projection = buildings.projection, !buildings.selected.isEmpty else { return }
+        // One landmark a building, in any tile (the user, 2026-10-29).
+        for b in buildings.selected {
+            if let holder = landmark(holding: b.id) {
+                problem = "\(b.id) is already part of the landmark \"\(holder.name)\" of tile \(holder.tile)."
+                return
+            }
+        }
         do {
             _ = try LandmarkCandidates.make(name: name, buildings: buildings.selected, tile: tile,
                                             projection: projection, paths: workspace.paths)

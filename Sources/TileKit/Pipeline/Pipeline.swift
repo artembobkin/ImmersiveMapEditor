@@ -14,7 +14,7 @@ import Foundation
 ///    scene of its light in bake/, so `pipeline bake` can bake it again;
 /// 4. validate: Validate, against the rules of TilePipeline's CLAUDE.md.
 ///
-/// Writes out/tiles/<z>/<x>/<y>/ per tile and out/tiles/index.json, the list
+/// Writes out/tiles/<z>/<x>/<y>/ per tile and records each in the registry, the list
 /// of tiles with their state. A tile that fails stops nothing: the others
 /// are built and the failure is recorded.
 public enum Pipeline {
@@ -71,12 +71,9 @@ public enum Pipeline {
         }
         let seeded = options.roads ? try ensureRoads(paths, z: z, tiles: tiles) : []
         if !seeded.isEmpty { print("roads seeded for " + seeded.joined(separator: ", ")) }
-        let indexURL = out.appendingPathComponent("index.json")
+        let registry = try Registry(paths)
+        registry.sync(paths)
         var index: [String: [String: Any]] = [:]
-        if let data = try? Data(contentsOf: indexURL),
-           let old = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-            for t in old["tiles"] as? [[String: Any]] ?? [] { index[t["tile"] as? String ?? ""] = t }
-        }
         for (x, y) in tiles {
             let name = "\(z)/\(x)/\(y)"
             print(name)
@@ -112,8 +109,8 @@ public enum Pipeline {
             state["seconds"] = round(Date().timeIntervalSince(started) * 10) / 10
             index[name] = state
             try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-            let list = index.values.sorted { ($0["tile"] as? String ?? "") < ($1["tile"] as? String ?? "") }
-            try JSONSerialization.data(withJSONObject: ["tiles": list], options: [.prettyPrinted, .sortedKeys]).write(to: indexURL)
+            try registry.record(tile: z, x, y, state: state["state"] as? String ?? "?", seconds: state["seconds"] as? Double ?? 0,
+                                triangles: state["triangles"] as? Int ?? 0, detail: (state["glb_mb"] as? Double).map { "\($0) MB" } ?? "")
         }
         let failed = index.values.filter { ($0["state"] as? String) != "ok" }.count
         print("\(index.count - failed) tiles ok, \(failed) failed")

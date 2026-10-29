@@ -10,13 +10,18 @@ struct BuildingsSections: View {
     var body: some View {
         let catalog = session.buildings
         let picked = catalog.selected
+        let held = picked.compactMap { b in session.landmark(holding: b.id).map { (b.id, $0) } }
         Section("Make a landmark") {
             TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
             Button("Make a Landmark of \(picked.count) Buildings", systemImage: "building.columns") {
                 session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name)
                 name = ""
             }
-            .disabled(picked.isEmpty)
+            .disabled(picked.isEmpty || !held.isEmpty)
+            ForEach(held, id: \.0) { osm, holder in
+                Text("\(osm) is already part of the landmark \"\(holder.name)\" of tile \(holder.tile): a building belongs to one landmark, in one tile.")
+                    .font(.callout).foregroundStyle(.orange)
+            }
             Text("Writes a folder in the tile's landmarks/ with the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
                 .font(.callout).foregroundStyle(.secondary)
         }
