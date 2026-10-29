@@ -49,27 +49,38 @@ public enum Bake {
         // uses with their steps, and TEXCOORD_0 pointed at them.
         Progress.report("Shading the faces")
         let faceStarted = Date()
-        let steps = bake ? try Lighting.faceShade(m, scene: (scene.mesh.pos + plane).map(Float.init), radius: settings.faceRadius) : [UInt8](repeating: 0, count: m.count)
+        let factors = bake ? try Lighting.faceFactors(m, scene: (scene.mesh.pos + plane).map(Float.init), settings: settings) : [Double](repeating: 1, count: m.count)
         let base = PaletteTexture()
+        let sides = settings.sidedTones
         var names: [String] = [], index: [String: Int] = [:]
         var uv0 = [Double](repeating: 0, count: m.count * 6)
-        let shadedNames: [String] = (0..<m.count).map { t in
-            let name = base.name(at: P2(m.uv[t * 6], m.uv[t * 6 + 1])) ?? "clay"
-            return Palette.shaded(name, step: Int(steps[t]))
+        var shadedNames: [String] = []
+        // The largest palette holds 4096 cells: past that the shade's levels
+        // are merged, two to one, then four, until it fits.
+        var coarse = 1
+        while true {
+            shadedNames = (0..<m.count).map { t in
+                var name = base.name(at: P2(m.uv[t * 6], m.uv[t * 6 + 1])) ?? "clay"
+                if !sides { name = Palette.plain(name) }
+                return Palette.shaded(name, factor: factors[t], coarse: coarse)
+            }
+            names = []
+            index = [:]
+            for name in shadedNames where index[name] == nil { index[name] = names.count; names.append(name) }
+            if names.count <= 4096 || coarse >= 32 { break }
+            coarse *= 2
         }
-        for name in shadedNames where index[name] == nil { index[name] = names.count; names.append(name) }
-        let palette = PaletteTexture(names: names, step: settings.faceStep)
+        let palette = PaletteTexture(names: names)
         for t in 0..<m.count {
             let uv = palette.uv(shadedNames[t])
             for i in 0..<3 { uv0[t * 6 + i * 2] = uv.x; uv0[t * 6 + i * 2 + 1] = uv.y }
         }
-        var shaded = [Int](repeating: 0, count: Palette.shadeSteps + 1)
-        for s in steps { shaded[Int(s)] += 1 }
-        print(String(format: "[%@] face shade: %d faces by step %@, %d colours in a %d px palette, in %.1f s", log, m.count,
-                     shaded.map(String.init).joined(separator: " "), names.count, palette.size, Date().timeIntervalSince(faceStarted)))
+        let shaded = factors.filter { $0 < 0.999 }.count
+        print(String(format: "[%@] faces: %d of %d shaded, %d colours in a %d px palette, in %.1f s", log, shaded, m.count,
+                     names.count, palette.size, Date().timeIntervalSince(faceStarted)))
         try PNG.write(out.appendingPathComponent("palette.png"), palette.pixels, width: palette.size, height: palette.size, channels: 3)
         var stats = scene.stats
-        stats["faces_by_shade_step"] = shaded
+        stats["faces_shaded"] = shaded
         stats["palette_colours"] = names.count
         stats["triangles"] = m.count
         stats["light_baked"] = bake
@@ -125,7 +136,7 @@ public enum Bake {
                 let scene = try BakeScene(Data(contentsOf: sceneURL))
                 guard scene.tile == [z, x, y] else { throw PipelineError("\(sceneURL.path) is the scene of another tile") }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
-                print("[bake] size \(settings.size), \(settings.samples) samples, \(settings.bounces) bounces, gamma \(settings.gamma), face shade \(settings.faceRadius) m by \(settings.faceStep)")
+                print("[bake] size \(settings.size), \(settings.samples) samples, modifiers on: " + settings.modifiers.filter(\.on).map(\.kind).joined(separator: " "))
                 try light(scene, settings, tile: tile, out: out, export: true, started: started, log: "bake")
                 Progress.report("Validating")
                 let result = try Validate.tile(out)

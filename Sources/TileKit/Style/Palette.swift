@@ -176,12 +176,43 @@ public enum Palette {
     /// 2026-10-28: depth from the building's own geometry, in the style's
     /// flat colours). `step` is how much darker each step is.
     public static let shadeSteps = 3
-    public static func shaded(_ name: String, step level: Int) -> String { level > 0 ? "\(name)~\(level)" : name }
-    public static func hexShaded(_ name: String, step: Double) -> String? {
-        guard let tilde = name.lastIndex(of: "~") else { return hex(name) }
-        guard let level = Int(name[name.index(after: tilde)...]), let base = hex(String(name[..<tilde])) else { return nil }
-        let k = 1 - step * Double(level)
+    /// The quantum of a face's shade: a factor on its colour is rounded to
+    /// a multiple of this, and the cell named by the multiple, "name~7".
+    public static let shadeQuantum = 1.0 / 32
+    public static func shaded(_ name: String, factor: Double, coarse: Int = 1) -> String {
+        // `coarse` merges levels, 2 for every second one, when a tile would
+        // need more cells than the largest palette holds.
+        var level = Int(((1 - min(max(factor, 0), 1)) / shadeQuantum).rounded())
+        level = (level + coarse / 2) / max(1, coarse) * max(1, coarse)
+        return level > 0 ? "\(name)~\(level)" : name
+    }
+    public static func hexShaded(_ name: String) -> String? {
+        guard let tilde = name.lastIndex(of: "~") else { return hexAny(name) }
+        guard let level = Int(name[name.index(after: tilde)...]), let base = hexAny(String(name[..<tilde])) else { return nil }
+        let k = max(0, 1 - shadeQuantum * Double(level))
         return tone(base, (k * 0.98, k, k * 1.04))
+    }
+
+    /// A colour's hex by any name the build uses: a cell's, or a sided
+    /// name without its side ("lm_cream.reveal": the plain reveal tone), for
+    /// the faces painted flat when the side tones are off.
+    public static func hexAny(_ name: String) -> String? {
+        if let h = hexByName[name] { return h }
+        let parts = name.split(separator: ".").map(String.init)
+        guard let base = parts.first else { return nil }
+        let table = walls + props + landmark + base_
+        guard var hex = table.first(where: { $0.0 == base })?.1 else { return hex(name) }
+        let lm = landmark.contains { $0.0 == base }
+        if parts.contains("reveal") { hex = tone(hex, lm ? landmarkReveal : reveal) }
+        if parts.contains("glass") { hex = lm ? landmarkGlass : tone(hex, (glass * 0.92, glass * 0.96, glass * 1.12)) }
+        return hex
+    }
+    private static var base_: [(String, String)] { base }
+
+    /// A sided name without its side: "lm_cream.lit" is "lm_cream".
+    public static func plain(_ name: String) -> String {
+        for side in ["lit", "side", "shade"] where name.hasSuffix("." + side) { return String(name.dropLast(side.count + 1)) }
+        return name
     }
 
     /// Which side of the sun a face looks to, from its normal in plan.
@@ -211,13 +242,13 @@ public final class PaletteTexture {
 
     /// The base palette: every colour, in `Palette.all`'s order, so a
     /// name's cell is the same in every build.
-    public convenience init() { self.init(names: Palette.all.map(\.0), step: 0) }
+    public convenience init() { self.init(names: Palette.all.map(\.0)) }
 
     /// A palette of just these names (shaded names "name~k" among them,
-    /// each `step` darker a step), in the order given.
-    public init(names: [String], step: Double) {
+    /// each k quanta darker), in the order given.
+    public init(names: [String]) {
         let cell = PaletteTexture.cell
-        let n = names.count <= 256 ? 256 : 512
+        let n = names.count <= 256 ? 256 : names.count <= 1024 ? 512 : 1024
         precondition(names.count <= (n / cell) * (n / cell), "too many colours for the palette: \(names.count)")
         size = n
         self.names = names
@@ -225,7 +256,7 @@ public final class PaletteTexture {
         let perRow = n / cell
         for (i, name) in names.enumerated() {
             let (r, c) = (i / perRow, i % perRow)
-            let (cr, cg, cb) = Palette.rgb(Palette.hexShaded(name, step: step) ?? "#FF00FF")
+            let (cr, cg, cb) = Palette.rgb(Palette.hexShaded(name) ?? "#FF00FF")
             for y in (r * cell)..<((r + 1) * cell) {
                 for x in (c * cell)..<((c + 1) * cell) {
                     let k = (y * n + x) * 3

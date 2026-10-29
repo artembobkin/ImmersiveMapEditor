@@ -61,6 +61,7 @@ public enum PipelineCommand {
                 let bounces = number("--bounces").map(Int.init), gamma = number("--gamma"), depth = number("--depth")
                 let faceRadius = number("--face-radius"), faceStep = number("--face-step")
                 let creaseRadius = number("--crease-radius"), creaseDepth = number("--crease-depth")
+                let modifiers = args.value("--modifiers")?[0]
                 let lit = colour("--lit"), shade = colour("--shade")
                 let mode = args.value("--mode")?[0], aoRadius = number("--ao-radius"), sky = number("--sky")
                 let noSun = args.flag("--no-sun")
@@ -68,6 +69,10 @@ public enum PipelineCommand {
                 let tiles = args.tiles()
                 guard let z = args.list.first.flatMap({ Int($0) }), args.list.count == 1, !tiles.isEmpty else { usage() }
                 exit(Bake.run(paths, z: z, tiles: tiles) { s in
+                    if let modifiers, let data = modifiers.data(using: .utf8),
+                       let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+                        s.modifiers = list.compactMap { Lighting.Modifier(json: $0) }
+                    }
                     if let v = size { s.size = v }
                     if let v = samples { s.samples = v }
                     if let v = bounces { s.bounces = v }

@@ -26,79 +26,50 @@ public enum Lighting {
         /// as much larger as it reaches over the tile.
         public var size = 1024
         public var samples = 256
-        public var bounces = Lighting.bounces
         public var lit = [Lighting.lit.0, Lighting.lit.1, Lighting.lit.2]
         public var shade = [Lighting.shade.0, Lighting.shade.1, Lighting.shade.2]
-        public var gamma = Lighting.gamma
-        /// How deep the shade goes: 1 to the shade colour, 0 no shading at
-        /// all (the user, 2026-10-28: a strength for the light).
-        public var depth = 0.0
-        /// The face shade (the user, 2026-10-28): each face shut in by what
-        /// stands within `faceRadius` metres of it takes its colour a step
-        /// darker per step of shade, `faceStep` darker a step, flat over the
-        /// face: a window's reveal and glass, a ceiling under a portico, the
-        /// wall behind columns, the underside of a cornice. 0 radius: none.
-        public var faceRadius = 10.0
-        public var faceStep = 0.10
-        /// The creases (the user, 2026-10-29): a narrow band of shade along
-        /// every concave edge seen from above, where a roof meets a wall, a
-        /// chimney or a parapet its roof, baked into the same light map:
-        /// how shut in each texel is within `creaseRadius` metres, taking
-        /// `creaseDepth` of the light away where it is shut in whole. 0
-        /// radius: none.
-        public var creaseRadius = 1.0
-        public var creaseDepth = 0.6
-        /// What light is gathered: the sky with its bounces ("sky"), or only
-        /// how open each surface is within `aoRadius` metres ("ao").
-        public var mode = "sky"
-        public var aoRadius = 8.0
-        /// A sun baked in, from a compass bearing (`SUN_FROM` by default)
-        /// at a height in degrees: off by default, the engine casting the
-        /// sun's shadows itself.
-        public var sun = false
-        public var sunAzimuth = 225.0
-        public var sunElevation = 45.0
-        public var sunStrength = 1.0
-        public var skyStrength = 1.0
-        /// A landmark alone (Preview): its walls in the palette's tones by
-        /// their side against `Palette.sunFrom`, as the tile paints them,
-        /// or every face in its plain colour (the user, 2026-10-28: a way
-        /// to turn the directed light off). Not stored with a tile.
-        public var sidedTones = true
+        /// The light's modifiers, in the panel's order (Modifier): what acts
+        /// on the light map and what on the faces, each on or off with its
+        /// parameters. The older fields (`depth`, `gamma`, `mode`, `sun`,
+        /// `faceRadius`...) read and write this stack.
+        public var modifiers: [Modifier] = Modifier.standard
 
         public init() {}
 
-        /// The baker's options from these settings.
+        /// The baker's options for the light gathered: the sky (its strength
+        /// when the sky light is on, none otherwise) and the sun when baked.
         var options: LightBaker.Options {
             var o = LightBaker.Options()
-            o.mode = mode == "ao" ? .ambientOcclusion : .sky
-            o.radius = Float(aoRadius)
-            if sun {
-                let az = sunAzimuth * .pi / 180, el = sunElevation * .pi / 180
-                o.sun = SIMD3(Float(sin(az) * cos(el)), Float(cos(az) * cos(el)), Float(sin(el)))
+            o.mode = .sky
+            o.skyStrength = isOn("sky") ? Float(skyStrength) : 0
+            if let sun = first("sun"), sun.on {
+                let d = Modifier.direction(from: sun["from"], height: sun["height"])
+                o.sun = SIMD3(Float(d.0), Float(d.1), Float(d.2))
+                o.sunStrength = Float(sun["strength"])
             }
-            o.sunStrength = Float(sunStrength)
-            o.skyStrength = Float(skyStrength)
             return o
         }
 
         /// The settings as bake/settings.json has them, with the light map's
         /// size in pixels it gave (`light_map_px`, for the reader only).
         public func json(lightMapPixels: Int) -> [String: Any] {
-            ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma, "depth": depth,
-             "mode": mode, "ao_radius": aoRadius, "sun": sun, "sun_azimuth": sunAzimuth, "sun_elevation": sunElevation,
-             "sun_strength": sunStrength, "sky_strength": skyStrength, "face_radius": faceRadius, "face_step": faceStep,
-             "crease_radius": creaseRadius, "crease_depth": creaseDepth,
+            ["size": size, "samples": samples, "lit": lit, "shade": shade, "modifiers": modifiers.map { $0.json() },
              "light_map_px": lightMapPixels]
         }
 
-        /// Read from bake/settings.json: what it lacks keeps its default.
+        /// Read from bake/settings.json: what it lacks keeps its default. A
+        /// file from before the stack (no "modifiers") is read through the
+        /// older fields.
         public init(json: [String: Any]) {
             if let v = json["size"] as? Int { size = v }
             if let v = json["samples"] as? Int { samples = v }
-            if let v = json["bounces"] as? Int { bounces = v }
             if let v = json["lit"] as? [Double], v.count == 3 { lit = v }
             if let v = json["shade"] as? [Double], v.count == 3 { shade = v }
+            if let list = json["modifiers"] as? [[String: Any]] {
+                modifiers = list.compactMap { Modifier(json: $0) }
+                return
+            }
+            if let v = json["bounces"] as? Int { bounces = v }
             if let v = json["gamma"] as? Double { gamma = v }
             if let v = json["depth"] as? Double { depth = v }
             if let v = json["face_radius"] as? Double { faceRadius = v }
@@ -121,44 +92,81 @@ public enum Lighting {
     public static func bake(_ tris: [Double], bounds: (Double, Double, Double, Double), size: Int,
                             settings: Settings) throws -> [Float] {
         let started = Date()
-        let what = settings.mode == "ao" ? String(format: "ambient occlusion %.0f m", settings.aoRadius)
+        let what = settings.isOn("ao") && !settings.isOn("sky") ? String(format: "ambient occlusion %.0f m", settings.aoRadius)
             : "sky, \(settings.bounces) bounces"
         let sun = settings.sun ? String(format: ", sun from %.0f° at %.0f°", settings.sunAzimuth, settings.sunElevation) : ""
         let detail = "\(size) px, \(settings.samples) samples, " + what + sun
         Progress.report("Baking the light", fraction: 0, detail: detail)
+        var options = settings.options
+        if settings.isOn("ao") && !settings.isOn("sky") {
+            options.mode = .ambientOcclusion
+            options.radius = Float(settings.aoRadius)
+        }
         let light = try LightBaker.bake(triangles: tris.map(Float.init), bounds: bounds, size: size, samples: settings.samples,
-                                        bounces: settings.bounces, options: settings.options) {
+                                        bounces: settings.bounces, options: options) {
             Progress.report("Baking the light", fraction: $0, detail: detail)
         }
         print(String(format: "[bake] %d triangles, %@ in %.1f s", tris.count / 9, detail, Date().timeIntervalSince(started)))
         return ProcessInfo.processInfo.environment["LIGHT_NO_DENOISE"] == nil ? denoise(light, size: size) : light
     }
 
-    /// The light map of a scene with `settings`, shaped: the light gathered
-    /// (none when its `depth` is 0: the lit colour everywhere, no bake),
-    /// and the creases over it, one map (the user, 2026-10-29).
+    /// The light map of a scene with `settings`, one map from the stack's
+    /// modifiers of the light map: the lit colour everywhere, the sky light
+    /// (with a baked sun, if any) shaped over it when on, then ambient
+    /// occlusion and the creases multiplied in (the user, 2026-10-29).
     public static func lightMap(_ scene: [Double], bounds: (Double, Double, Double, Double), size: Int, settings: Settings) throws -> [UInt8] {
-        var light: [UInt8]
-        if settings.depth > 0 {
-            light = shape(try bake(scene, bounds: bounds, size: size, settings: settings), settings)
-        } else {
-            let lit = settings.lit.map { UInt8(min(max($0, 0), 1) * 255 + 0.5) }
-            light = [UInt8](repeating: 0, count: size * size * 3)
-            for i in 0..<(size * size) { light[i * 3] = lit[0]; light[i * 3 + 1] = lit[1]; light[i * 3 + 2] = lit[2] }
-        }
-        if settings.creaseRadius > 0 && settings.creaseDepth > 0 {
+        let lit = settings.lit.map { UInt8(min(max($0, 0), 1) * 255 + 0.5) }
+        var light = [UInt8](repeating: 0, count: size * size * 3)
+        for i in 0..<(size * size) { light[i * 3] = lit[0]; light[i * 3 + 1] = lit[1]; light[i * 3 + 2] = lit[2] }
+        let sky = settings.first("sky"), sun = settings.first("sun")
+        if (sky?.on ?? false) || (sun?.on ?? false) {
             var s = settings
-            s.mode = "ao"
-            s.aoRadius = settings.creaseRadius
-            s.sun = false
+            s.set("ao", on: false)
+            // The shade's depth: the sky's strength, or the sun's alone.
+            let depth = (sky?.on ?? false) ? sky!["strength"] : min(1, sun!["strength"])
+            var shaped = s
+            shaped.set("sky", "strength", depth, on: true)
+            light = shape(try bake(scene, bounds: bounds, size: size, settings: s), shaped)
+        }
+        func occlude(_ radius: Double, _ depth: Double) throws {
+            guard radius > 0, depth > 0 else { return }
+            var s = settings
+            s.modifiers = [.make("ao")]
+            s.set("ao", "radius", radius, on: true)
             let open = try bake(scene, bounds: bounds, size: size, settings: s)
-            let depth = min(max(settings.creaseDepth, 0), 1)
+            let d = min(max(depth, 0), 1)
             for i in 0..<(size * size) {
-                let k = 1 - depth * Double(1 - min(max(open[i], 0), 1))
+                let k = 1 - d * Double(1 - min(max(open[i], 0), 1))
                 for c in 0..<3 { light[i * 3 + c] = UInt8((Double(light[i * 3 + c]) * k).rounded()) }
             }
         }
+        if let ao = settings.first("ao"), ao.on { try occlude(ao["radius"], ao["depth"]) }
+        if let cr = settings.first("creases"), cr.on { try occlude(cr["width"], cr["depth"]) }
         return light
+    }
+
+    /// Each face's factor on its colour from the stack's modifiers of the
+    /// faces: the face shade's step and every Lambert light, multiplied,
+    /// 1 for a face left alone. `scene` is the whole scene's corners for
+    /// the face shade.
+    public static func faceFactors(_ m: Triangles, scene: [Float], settings: Settings) throws -> [Double] {
+        var f = [Double](repeating: 1, count: m.count)
+        if let fs = settings.first("faceShade"), fs.on, fs["reach"] > 0 {
+            let steps = try faceShade(m, scene: scene, radius: fs["reach"])
+            for t in 0..<m.count { f[t] *= max(0, 1 - fs["step"] * Double(steps[t])) }
+        }
+        let lamberts = settings.all("lambert")
+        if !lamberts.isEmpty {
+            for t in 0..<m.count {
+                let n = m.normal(t).normalized
+                for l in lamberts {
+                    let d = Modifier.direction(from: l["from"], height: l["height"])
+                    let cosine = max(0, n.x * d.0 + n.y * d.1 + n.z * d.2)
+                    f[t] *= 1 - min(max(l["strength"], 0), 1) * (1 - cosine)
+                }
+            }
+        }
+        return f
     }
 
     /// The face shade: how shut in each triangle of `m` is by `scene` (the

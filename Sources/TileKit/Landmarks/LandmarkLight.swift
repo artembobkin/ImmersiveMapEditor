@@ -75,20 +75,16 @@ public enum LandmarkLight {
                   cx - g, cy - g, z, cx + g, cy + g, z, cx - g, cy + g, z]
         var s = settings
         s.size = size
-        // The face shade: each face's colour a step darker per step of shade.
-        if settings.faceRadius > 0 {
-            let steps = try Lighting.faceShade(tris, scene: scene.map(Float.init), radius: settings.faceRadius)
-            if ProcessInfo.processInfo.environment["LANDMARK_FACE_DEBUG"] != nil {
-                var count = [Int](repeating: 0, count: Palette.shadeSteps + 1)
-                for s in steps { count[Int(s)] += 1 }
-                print("[face shade] \(tris.count) faces by step: \(count)")
+        // The faces' modifiers: each face's colour by its factor.
+        let factors = try Lighting.faceFactors(tris, scene: scene.map(Float.init), settings: settings)
+        for t in 0..<tris.count where factors[t] < 0.999 {
+            let k = factors[t]
+            for (c, f) in [(0, k * 0.98), (1, k), (2, k * 1.04)] {
+                colours[t * 3 + c] = UInt8(min(255, max(0, (Double(colours[t * 3 + c]) * f).rounded())))
             }
-            for t in 0..<tris.count where steps[t] > 0 {
-                let k = 1 - settings.faceStep * Double(steps[t])
-                for (c, f) in [(0, k * 0.98), (1, k), (2, k * 1.04)] {
-                    colours[t * 3 + c] = UInt8(min(255, max(0, (Double(colours[t * 3 + c]) * f).rounded())))
-                }
-            }
+        }
+        if ProcessInfo.processInfo.environment["LANDMARK_FACE_DEBUG"] != nil {
+            print("[faces] \(factors.filter { $0 < 0.999 }.count) of \(tris.count) shaded")
         }
         let light = try Lighting.lightMap(scene, bounds: bounds, size: size, settings: s)
         let uv1 = Lighting.lightUVs(tris, bounds: bounds, size: size)
@@ -104,7 +100,7 @@ public enum LandmarkLight {
     /// the palette has tones of it, the material's own factor otherwise (a
     /// model not made from a recipe).
     static func colour(_ name: String, _ factor: [Double], normal n: V3, sided: Bool = true) -> [UInt8] {
-        let sided = name.isEmpty ? nil : (sided ? Palette.hex("\(name).\(Palette.side(n.x, n.y))") : nil) ?? Palette.hex(name)
+        let sided = name.isEmpty ? nil : (sided ? Palette.hex("\(name).\(Palette.side(n.x, n.y))") : Palette.hexAny(name)) ?? Palette.hex(name)
         if let hex = sided {
             let (r, g, b) = Palette.rgb(hex)
             return [UInt8(r), UInt8(g), UInt8(b)]

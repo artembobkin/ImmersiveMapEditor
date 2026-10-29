@@ -129,6 +129,10 @@ enum Headless {
             if let v = value("--face-step").flatMap(Double.init) { s.faceStep = v }
             if let v = value("--crease-radius").flatMap(Double.init) { s.creaseRadius = v }
             if let v = value("--crease-depth").flatMap(Double.init) { s.creaseDepth = v }
+            if let v = value("--modifiers"), let data = v.data(using: .utf8),
+               let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
+                s.modifiers = list.compactMap { Lighting.Modifier(json: $0) }
+            }
             return s
         }
         if let i = arguments.firstIndex(of: "--landmark-look"), arguments.count > i + 10 {
