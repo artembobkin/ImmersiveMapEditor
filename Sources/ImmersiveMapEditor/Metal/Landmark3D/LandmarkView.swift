@@ -442,7 +442,7 @@ final class LandmarkRenderer {
         /// triangles) east, north and up from a corner outside its bounds
         /// on the ground, so they never cross it (the user, 2026-10-29),
         /// `axisCounts` vertices each; and the labels' places in the
-        /// scene, X E, Y N, Z and the compass's other points.
+        /// scene: X E, Y N and Z at the tips.
         let axes: MTLBuffer
         let axisCounts: [Int]
         let labels: [(String, SIMD3<Float>)]
@@ -505,8 +505,7 @@ final class LandmarkRenderer {
                 arrow(&a, from: o, along: d, length: len)
                 counts.append((a.count - before) / 11)
             }
-            let labels: [(String, SIMD3<Float>)] = [("X  E", o + SIMD3(len + 3, 0, 0)), ("Y  N", o + SIMD3(0, 0, -len - 3)), ("Z", o + SIMD3(0, len + 3, 0)),
-                                                    ("W", o + SIMD3(-len * 0.3, 0, 0)), ("S", o + SIMD3(0, 0, len * 0.3))]
+            let labels: [(String, SIMD3<Float>)] = [("X  E", o + SIMD3(len + 3, 0, 0)), ("Y  N", o + SIMD3(0, 0, -len - 3)), ("Z", o + SIMD3(0, len + 3, 0))]
             return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
                             axes: device.makeBuffer(bytes: a, length: a.count * 4)!, axisCounts: counts, labels: labels,
                             centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
