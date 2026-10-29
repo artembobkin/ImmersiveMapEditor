@@ -56,6 +56,14 @@ final class LandmarkView: MTKView {
     private var cull: Bool { if case .model = source { return true } else { return false } }
     /// What went wrong reading the model, or how big it is.
     var status: (String) -> Void = { _ in }
+    /// The camera as the headless render takes it, whenever it changes:
+    /// "X Y Z HEADING PITCH HFOV W H", the eye in the build's metres (X
+    /// east, Y north, Z up), the heading a compass bearing, the pitch up
+    /// positive, the lens its horizontal field of view, the drawable's
+    /// size (the user, 2026-10-29: shown in the viewport so a view can be
+    /// rendered again exactly, for a check).
+    var camera: (String) -> Void = { _ in }
+    private var lastCamera = ""
 
     /// nil without a Metal device.
     static func make() -> LandmarkView? {
@@ -291,6 +299,11 @@ extension LandmarkView: MTKViewDelegate {
               let buffer = renderer.queue.makeCommandBuffer(),
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
+        let c = controller.camera, e = c.eye
+        let hfov = 2 * atan(tan(c.fovDegrees / 2 * .pi / 180) * aspect) * 180 / .pi
+        let line = String(format: "%.1f %.1f %.1f %.0f %.0f %.0f %d %d", e.x, -e.z, e.y, (c.yaw.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360),
+                          c.pitch, hfov, Int(view.drawableSize.width), Int(view.drawableSize.height))
+        if line != lastCamera { lastCamera = line; camera(line) }
         if let lit {
             renderer.encodeLit(enc, model: lit, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe)
         } else {

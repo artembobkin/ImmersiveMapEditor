@@ -118,7 +118,7 @@ struct ContentView: View {
                 // place of the region.
                 ZStack {
                     if let view = session.previewView {
-                        MetalHost(view: view)
+                        MetalHost(view: view).overlay(alignment: .topLeading) { CameraBadge(line: session.previewCamera) }
                     } else {
                         ContentUnavailableView("Baking the light", systemImage: "sun.max",
                                                description: Text("The landmark alone, lit as the engine will light it, comes in a moment."))
@@ -143,13 +143,37 @@ struct ContentView: View {
             Group {
                 // Its model, or its OSM buildings as boxes while it has none.
                 if session.candidates.contains(where: { $0.id == session.pickedLandmark }), let view = session.landmarkView {
-                    MetalHost(view: view)
+                    MetalHost(view: view).overlay(alignment: .topLeading) { CameraBadge(line: session.landmarkCamera) }
                 } else {
                     ContentUnavailableView("No landmark picked", systemImage: "building.columns",
                                            description: Text("The tile's landmarks are made in Buildings: pick one on the right."))
                 }
             }
             .onChange(of: session.pickedLandmark, initial: true) { session.showLandmark() }
+        }
+    }
+}
+
+/// The view's camera in the top left corner, as the headless render takes
+/// it (--landmark-look FOLDER OUT.png X Y Z HEADING PITCH HFOV W H), with a
+/// button that copies it: a view seen in the editor can be rendered again
+/// exactly, for a check (the user, 2026-10-29).
+struct CameraBadge: View {
+    let line: String
+
+    var body: some View {
+        if !line.isEmpty {
+            HStack(spacing: 6) {
+                Text(line).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(line, forType: .string) } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .help("Copy the camera: the eye in metres (east, north, up), the heading, the pitch, the lens's horizontal angle and the view's size in pixels, as --landmark-look takes them.")
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .padding(8)
         }
     }
 }

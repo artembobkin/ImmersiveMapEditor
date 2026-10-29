@@ -49,6 +49,9 @@ final class Session {
     var imageryCapture: String?
     /// What the Landmarks view shows: the model's size, or what went wrong.
     var landmarkStatus = ""
+    /// The Landmarks and Preview cameras as the headless render takes them.
+    var landmarkCamera = ""
+    var previewCamera = ""
     /// The Preview's view of a landmark lit, and what it shows.
     private(set) var previewView: LandmarkView?
     var previewStatus = ""
@@ -183,6 +186,7 @@ final class Session {
         if previewView == nil {
             previewView = LandmarkView.make()
             previewView?.status = { [weak self] in self?.previewStatus = $0 }
+            previewView?.camera = { [weak self] in self?.previewCamera = $0 }
         }
         previewView?.shadowStrength = lightSettings.previewShadow
         previewView?.lens = lightSettings.lens
@@ -197,6 +201,7 @@ final class Session {
         if landmarkView == nil {
             landmarkView = LandmarkView.make()
             landmarkView?.wireframe = landmarkWireframe
+            landmarkView?.camera = { [weak self] in self?.landmarkCamera = $0 }
             landmarkView?.status = { [weak self] in
                 self?.landmarkStatus = $0
                 // While the agent works, the console says what the view shows.
