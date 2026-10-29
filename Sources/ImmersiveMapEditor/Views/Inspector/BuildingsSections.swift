@@ -1,61 +1,90 @@
 import SwiftUI
+import TileKit
 
-/// The Buildings view's sections: making the buildings picked a landmark
-/// candidate (a folder of what a detailed model can be made from), the
-/// buildings picked with all their OSM tags, and the tile's candidates.
+/// The Buildings view's sections, by what the user is doing (the user,
+/// 2026-10-29: the buttons that matter now at the top, no long scroll):
+///
+/// - Nothing picked: the tile's landmarks to open, and a hint.
+/// - Buildings picked that belong to no landmark: a name and the button
+///   that makes one of them.
+/// - Buildings picked that a landmark already holds: one line naming it,
+///   with a button that opens it (not a warning a building).
+/// - The picked buildings themselves, with their OSM tags, folded away.
 struct BuildingsSections: View {
     @Environment(Session.self) private var session
     @State private var name = ""
+    @State private var listing = false
+
+    /// The landmarks holding any of the picked buildings, each with how many.
+    private func holders(of picked: [OsmBuilding]) -> [(Registry.LandmarkRecord, Int)] {
+        var holders: [(Registry.LandmarkRecord, Int)] = []
+        for b in picked {
+            if let h = session.landmark(holding: b.id) {
+                if let i = holders.firstIndex(where: { $0.0.tile == h.tile && $0.0.id == h.id }) { holders[i].1 += 1 } else { holders.append((h, 1)) }
+            }
+        }
+        return holders
+    }
 
     var body: some View {
         let catalog = session.buildings
         let picked = catalog.selected
-        let held = picked.compactMap { b in session.landmark(holding: b.id).map { (b.id, $0) } }
-        Section("Make a landmark") {
-            TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
-            Button("Make a Landmark of \(picked.count) Buildings", systemImage: "building.columns") {
-                session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name)
-                name = ""
+        let holders = holders(of: picked)
+        let heldCount = holders.reduce(0) { $0 + $1.1 }
+        if picked.isEmpty {
+            Section("Make a landmark") {
+                Text("Click a building, shift-click for more, double-click a whole building with its parts. \(catalog.status)")
+                    .font(.callout).foregroundStyle(.secondary)
             }
-            .disabled(picked.isEmpty || !held.isEmpty)
-            ForEach(held, id: \.0) { osm, holder in
-                Text("\(osm) is already part of the landmark \"\(holder.name)\" of tile \(holder.tile): a building belongs to one landmark, in one tile.")
-                    .font(.callout).foregroundStyle(.orange)
+        } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
+            Section("Picked: \(picked.count)") {
+                Text("All of them are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "." : " of tile \(holder.tile)."))
+                    .font(.callout).foregroundStyle(.secondary)
+                if holder.tile == session.workspace.tile?.name {
+                    Button("Open \(holder.name)", systemImage: "building.columns") { session.pickedLandmark = holder.id }
+                }
             }
-            Text("Writes a folder in the tile's landmarks/ with the buildings' outlines, parts, heights and tags (landmark.json, footprint.geojson) to make a detailed model from. The tile is built as before until a model is placed.")
-                .font(.callout).foregroundStyle(.secondary)
-        }
-        Section("Picked: \(picked.count)") {
-            if picked.isEmpty {
-                Text("Click a building, shift-click for more. \(catalog.status)").foregroundStyle(.secondary)
-            }
-            ForEach(picked) { b in
-                DisclosureGroup {
-                    ForEach(b.tags.sorted { $0.key < $1.key }, id: \.key) { tag in
-                        Text(verbatim: "\(tag.key) = \(tag.value)")
-                            .font(.callout.monospaced()).textSelection(.enabled)
-                    }
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(b.name ?? b.tags["building"].map { "building = \($0)" } ?? "building part")
-                        Text(verbatim: [b.id, b.isPart ? "part" : nil,
-                                        b.height.map { String(format: "%.0f m high", $0) }].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption.monospaced()).foregroundStyle(.secondary)
+        } else {
+            Section("Make a landmark of \(picked.count - heldCount)") {
+                TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
+                Button("Make a Landmark of \(picked.count - heldCount) Buildings", systemImage: "building.columns") {
+                    session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name, leavingHeld: true)
+                    name = ""
+                }
+                .disabled(picked.count == heldCount)
+                ForEach(holders, id: \.0.folder) { holder, count in
+                    HStack {
+                        Text("\(count) of the picked are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "" : " of tile \(holder.tile)") + ": left out.")
+                            .font(.callout).foregroundStyle(.secondary)
+                        Spacer()
+                        if holder.tile == session.workspace.tile?.name {
+                            Button("Open") { session.pickedLandmark = holder.id }.controlSize(.small)
+                        }
                     }
                 }
             }
         }
-        Section("Landmark candidates") {
-            let list = session.candidates
-            if list.isEmpty { Text("None in this tile yet.").foregroundStyle(.secondary) }
-            ForEach(list, id: \.id) { c in
-                HStack {
-                    Text(c.name)
-                    Spacer()
-                    Button("Open Folder", systemImage: "folder") { Platform.open(c.folder) }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .help(c.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+        if !picked.isEmpty {
+            Section {
+                DisclosureGroup(isExpanded: $listing) {
+                    ForEach(picked.prefix(60)) { b in
+                        DisclosureGroup {
+                            ForEach(b.tags.sorted { $0.key < $1.key }, id: \.key) { tag in
+                                Text(verbatim: "\(tag.key) = \(tag.value)")
+                                    .font(.callout.monospaced()).textSelection(.enabled)
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(b.name ?? b.tags["building"].map { "building = \($0)" } ?? "building part")
+                                Text(verbatim: [b.id, b.isPart ? "part" : nil,
+                                                b.height.map { String(format: "%.0f m high", $0) }].compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption.monospaced()).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    if picked.count > 60 { Text("and \(picked.count - 60) more").font(.caption).foregroundStyle(.secondary) }
+                } label: {
+                    Text("Picked buildings: \(picked.count)" + (picked.compactMap(\.name).first.map { ", \($0)" } ?? ""))
                 }
             }
         }

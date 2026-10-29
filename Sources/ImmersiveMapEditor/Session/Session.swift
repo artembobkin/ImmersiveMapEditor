@@ -285,22 +285,28 @@ final class Session {
     }
 
     /// The buildings picked in the Buildings view made a landmark candidate.
-    func makeLandmark(named name: String) {
+    func makeLandmark(named name: String, leavingHeld: Bool = false) {
         guard let tile = workspace.tile, let projection = buildings.projection, !buildings.selected.isEmpty else { return }
-        // One landmark a building, in any tile (the user, 2026-10-29).
+        // One landmark a building, in any tile (the user, 2026-10-29): the
+        // buildings a landmark holds are left out, or refuse the whole.
+        var chosen: [OsmBuilding] = []
         for b in buildings.selected {
             if let holder = landmark(holding: b.id) {
+                if leavingHeld { continue }
                 problem = "\(b.id) is already part of the landmark \"\(holder.name)\" of tile \(holder.tile)."
                 return
             }
+            chosen.append(b)
         }
+        guard !chosen.isEmpty else { return }
         do {
-            _ = try LandmarkCandidates.make(name: name, buildings: buildings.selected, tile: tile,
-                                            projection: projection, paths: workspace.paths)
+            let folder = try LandmarkCandidates.make(name: name, buildings: chosen, tile: tile,
+                                                     projection: projection, paths: workspace.paths)
             buildings.picked = []
             readCandidates()
-            // The files panel shows it.
+            // The files panel shows it, and the new landmark opens.
             workspace.tilesRevision += 1
+            pickedLandmark = folder.lastPathComponent
         } catch {
             problem = "Cannot make the landmark \(name): \(error.localizedDescription)"
         }
