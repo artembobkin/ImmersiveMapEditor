@@ -147,14 +147,19 @@ public enum LightBaker {
                           primitive_acceleration_structure accel [[buffer(1)]],
                           const device packed_float3* points [[buffer(2)]],
                           const device packed_float3* normals [[buffer(3)]],
-                          device float* out [[buffer(4)]]) {
+                          device float* out [[buffer(4)]],
+                          const device packed_float3* v [[buffer(5)]]) {
         if (gid >= p.count) return;
         intersector<triangle_data> hit;
         hit.assume_geometry_type(geometry_type::triangle);
         hit.force_opacity(forced_opacity::opaque);
-        hit.accept_any_intersection(true);
         float3 n = normalize(float3(normals[gid]));
         float3 o = float3(points[gid]) + n * 0.02;
+        // A face looking down (a ceiling) is shut in by the floor under it;
+        // any other face is not shut in by the ground, a road or a lower
+        // roof under it: a floor below is the light map's matter, and it
+        // darkened every lower storey.
+        bool ceiling = n.z < -0.5;
         uint s = hash(gid * 7919 + 13);
         uint open = 0;
         for (uint k = 0; k < p.samples; k++) {
@@ -165,7 +170,15 @@ public enum LightBaker {
             r.direction = cosine(n, u1, u2);
             r.min_distance = 0.001;
             r.max_distance = p.radius;
-            if (hit.intersect(r, accel).type == intersection_type::none) open++;
+            auto i = hit.intersect(r, accel);
+            if (i.type == intersection_type::none) { open++; continue; }
+            if (ceiling) continue;
+            uint t = i.primitive_id * 3;
+            float3 a = float3(v[t]), e1 = float3(v[t + 1]) - a, e2 = float3(v[t + 2]) - a;
+            float3 hn = normalize(cross(e1, e2));
+            float3 at = r.origin + r.direction * i.distance;
+            // A level surface below the point: a floor. It does not count.
+            if (abs(hn.z) > 0.7 && at.z < o.z - 0.05) open++;
         }
         out[gid] = float(open) / p.samples;
     }
@@ -202,6 +215,7 @@ public enum LightBaker {
             c.setBuffer(pointsBuffer, offset: at * 12, index: 2)
             c.setBuffer(normalsBuffer, offset: at * 12, index: 3)
             c.setBuffer(out, offset: at * 4, index: 4)
+            c.setBuffer(scene.vertices, offset: 0, index: 5)
             c.dispatchThreads(MTLSize(width: count, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
             c.endEncoding()
             cmd.commit()
