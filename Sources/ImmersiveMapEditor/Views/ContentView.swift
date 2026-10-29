@@ -186,14 +186,17 @@ struct AxisLabels: View {
     let labels: [ViewLabel]
 
     var body: some View {
-        GeometryReader { _ in
-            ForEach(labels) { l in
+        // Only the labels inside the view, and nothing drawn past its edge.
+        GeometryReader { geo in
+            let inside = CGRect(origin: .zero, size: geo.size).insetBy(dx: 16, dy: 10)
+            ForEach(labels.filter { inside.contains($0.point) }) { l in
                 Text(l.text).font(.system(.callout, design: .rounded).bold()).foregroundStyle(.primary)
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 4))
                     .position(l.point)
             }
         }
+        .clipped()
         .allowsHitTesting(false)
     }
 }
