@@ -494,8 +494,10 @@ final class LandmarkRenderer {
             for (x, z) in [(-1, -1), (-1, 1), (1, 1), (-1, -1), (1, 1), (1, -1)] as [(Float, Float)] {
                 g += [gx + x * radius, gy, gz + z * radius, 0, 1, 0, 1, 1, 1, 0, 0]
             }
-            // The axes: arrows from the south-west corner, 8 m out, 20 m long.
-            let o = SIMD3<Float>(Float(lo.x) - 8, Float(lo.y), Float(hi.z) + 8), len: Float = 20
+            // The axes: arrows from the south-west corner, 10 m out, half the
+            // model's longer side long, 30 m at least.
+            let o = SIMD3<Float>(Float(lo.x) - 10, Float(lo.y), Float(hi.z) + 10)
+            let len = Float(max(30, max(hi.x - lo.x, hi.z - lo.z) / 2))
             var a: [Float] = []
             var counts: [Int] = []
             for d in [SIMD3<Float>(1, 0, 0), SIMD3<Float>(0, 0, -1), SIMD3<Float>(0, 1, 0)] {
@@ -504,7 +506,7 @@ final class LandmarkRenderer {
                 counts.append((a.count - before) / 11)
             }
             let labels: [(String, SIMD3<Float>)] = [("X  E", o + SIMD3(len + 3, 0, 0)), ("Y  N", o + SIMD3(0, 0, -len - 3)), ("Z", o + SIMD3(0, len + 3, 0)),
-                                                    ("W", o + SIMD3(-6, 0, 0)), ("S", o + SIMD3(0, 0, 6))]
+                                                    ("W", o + SIMD3(-len * 0.3, 0, 0)), ("S", o + SIMD3(0, 0, len * 0.3))]
             return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
                             axes: device.makeBuffer(bytes: a, length: a.count * 4)!, axisCounts: counts, labels: labels,
                             centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
@@ -517,7 +519,7 @@ final class LandmarkRenderer {
             let u = simd_normalize(simd_cross(d, helper)), w = simd_cross(d, u)
             func put(_ p: SIMD3<Float>) { a += [p.x, p.y, p.z, 0, 1, 0, 1, 1, 1, 0, 0] }
             func tri(_ p: SIMD3<Float>, _ q: SIMD3<Float>, _ r: SIMD3<Float>) { put(p); put(q); put(r) }
-            let n = 12, barR: Float = 0.25, coneR: Float = 0.7, coneLen: Float = 4
+            let n = 12, barR: Float = length * 0.015, coneR: Float = length * 0.04, coneLen: Float = length * 0.18
             let neck = o + d * (length - coneLen), tip = o + d * length
             func ring(_ c: SIMD3<Float>, _ r: Float, _ k: Int) -> SIMD3<Float> {
                 let t = 2 * Float.pi * Float(k) / Float(n)
