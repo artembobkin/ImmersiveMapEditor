@@ -19,7 +19,7 @@ public enum Build {
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
                            export: Bool = false, light: Lighting.Settings = Lighting.Settings(), bakeLight: Bool = true,
-                           roads: URL? = nil, includeRoads: Bool = true) throws {
+                           roads: URL? = nil, includeRoads: Bool = true, includeBuildings: Bool = true) throws {
         guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -47,7 +47,9 @@ public enum Build {
         var plainKeys = Set<String>()
         for bd in buildings where bd.landmark == nil && !typical(bd.tags) { plainKeys.insert(bd.tags["_key"] ?? bd.id) }
         for bd in buildings where plainKeys.contains(bd.tags["_key"] ?? bd.id) { bd.tags["_plain"] = "1" }
-        for (i, bd) in buildings.enumerated() {
+        // The ordinary buildings only when asked (the user, 2026-10-29: a
+        // tile without the houses the procedure makes).
+        for (i, bd) in buildings.enumerated() where includeBuildings {
             Progress.report("Building the houses", fraction: Double(i + 1) / Double(buildings.count),
                             detail: "\(i + 1) of \(buildings.count)")
             if let landmark = bd.landmark {

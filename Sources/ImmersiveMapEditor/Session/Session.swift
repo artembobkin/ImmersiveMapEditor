@@ -358,8 +358,16 @@ final class Session {
         set { UserDefaults.standard.set(newValue, forKey: Self.roadsKey) }
     }
 
+    /// Whether a build makes the ordinary buildings (the user, 2026-10-29).
+    static let buildingsKey = "build.buildings"
+    var buildBuildings: Bool {
+        get { UserDefaults.standard.object(forKey: Self.buildingsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Self.buildingsKey) }
+    }
+
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"] + (buildRoads ? [] : ["--no-roads"])
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"]
+            + (buildRoads ? [] : ["--no-roads"]) + (buildBuildings ? [] : ["--no-buildings"])
     }
 
     /// Every built tile into the engine's model archive, where the user

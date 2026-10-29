@@ -105,6 +105,8 @@ struct ActionSection: View {
                 .disabled(!session.can(action))
             Text(action.help).font(.callout).foregroundStyle(.secondary)
             if action == .tile {
+                Toggle("Buildings", isOn: Binding(get: { session.buildBuildings }, set: { session.buildBuildings = $0 }))
+                    .help("Make the ordinary buildings, the procedure's houses and boxes from OSM. Off: the tile holds its landmarks, construction sites and roads alone.")
                 Toggle("Roads", isOn: Binding(get: { session.buildRoads }, set: { session.buildRoads = $0 }))
                     .help("Lay the roads of the road document in the tile, seeding one if there is none. Off: the tile holds its buildings, landmarks and construction sites alone, the vector tile's roads under them.")
                 Button("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }

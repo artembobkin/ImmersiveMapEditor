@@ -27,6 +27,9 @@ public enum Pipeline {
         /// Whether the roads are built: without them no road document is
         /// seeded and the tile holds its buildings, landmarks and sites alone.
         public var roads = true
+        /// Whether the ordinary buildings are built: without them the tile
+        /// holds its landmarks, sites and roads alone.
+        public var buildings = true
         public init() {}
     }
 
@@ -92,7 +95,7 @@ public enum Pipeline {
                 var light = Lighting.Settings()
                 light.samples = options.samples
                 try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light, bakeLight: options.bakeLight,
-                              includeRoads: options.roads)
+                              includeRoads: options.roads, includeBuildings: options.buildings)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
                 Progress.report("Validating")
