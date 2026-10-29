@@ -76,17 +76,17 @@ struct LightSections: View {
                     .font(.callout).foregroundStyle(.secondary)
             } else if landmark {
                 Toggle("Engine's sun", isOn: $light.engineSun)
-                Text(light.engineSun ? "The engine's directed light shown here: its shadow from the bearing and height below (the engine's own sun is from \(Int(Palette.sunFrom))°), and the walls toned by their side against it."
-                                     : "Only the light baked: no shadow, every face in its plain colour. The engine adds its own sun.")
+                Text(light.engineSun ? "The engine's shadow, from the bearing and height below (the engine's own sun is from \(Int(Palette.sunFrom))°)."
+                                     : "No shadow: the engine adds its own sun.")
                     .font(.callout).foregroundStyle(.secondary)
                 if light.engineSun {
                     slider("From", $light.sunAzimuth, 0...359, "%.0f°")
                     slider("Height", $light.sunElevation, 5...90, "%.0f°")
                     slider("Shadow", $light.shadow, 0...1, "%.2f")
-                    Toggle("Walls toned by the sun", isOn: $light.sided)
-                    Text("Shadow: how dark where a surface is fully in it, with the engine's cool tint. The tones: the palette's lit, side and shade on the walls by which way they face against the sun from \(Int(Palette.sunFrom))°, as the tile paints them.")
-                        .font(.callout).foregroundStyle(.secondary)
                 }
+                Toggle("Walls toned by the sun", isOn: $light.sided)
+                Text("The palette's lit, side and shade tones on every wall and slope by which way it faces against the sun from \(Int(Palette.sunFrom))°. They are the tile's own colours, baked into it, so the engine always shows them: off only to see the colours flat.")
+                    .font(.callout).foregroundStyle(.secondary)
             } else {
                 Text("No sun baked: the engine casts the sun's shadows itself, from where its sun is.")
                     .font(.callout).foregroundStyle(.secondary)

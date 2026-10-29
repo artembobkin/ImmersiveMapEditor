@@ -106,7 +106,11 @@ final class LightSettings {
     var engineSun: Bool = value("engineSun", false) { didSet { Self.keep("engineSun", engineSun) } }
     /// The shadow strength the preview shows: none without the engine's sun.
     var previewShadow: Double { engineSun ? shadow : 0 }
-    var previewSided: Bool { engineSun && sided }
+    /// The walls' tones by side are the tile's own colours, so the preview
+    /// always shows them (the user, 2026-10-29: with them off a wedge on a
+    /// roof vanished, which the engine never shows); `sided` off is only
+    /// for a look at the colours flat.
+    var previewSided: Bool { sided }
 
     /// These as TileKit's settings, for a bake in the app.
     var settings: Lighting.Settings {
