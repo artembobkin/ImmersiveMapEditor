@@ -22,6 +22,10 @@ struct MapSections: View {
         Section("Workspace") {
             Text("\(workspace.built.count) built, \(workspace.fetched.count) fetched, \(workspace.documents.count) road documents")
                 .foregroundStyle(.secondary)
+            Button("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }
+                .disabled(workspace.built.isEmpty || workspace.building)
+            Text("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
+                .font(.callout).foregroundStyle(.secondary)
         }
     }
 }

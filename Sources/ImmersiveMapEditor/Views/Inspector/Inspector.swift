@@ -109,8 +109,6 @@ struct ActionSection: View {
                     .help("Make the ordinary buildings, the procedure's houses and boxes from OSM. Off: the tile holds its landmarks, construction sites and roads alone.")
                 Toggle("Roads", isOn: Binding(get: { session.buildRoads }, set: { session.buildRoads = $0 }))
                     .help("Lay the roads of the road document in the tile, seeding one if there is none. Off: the tile holds its buildings, landmarks and construction sites alone, the vector tile's roads under them.")
-                Button("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }
-                    .help("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
             }
         }
     }
