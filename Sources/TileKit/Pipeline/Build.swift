@@ -8,7 +8,7 @@ import Geometry
 ///
 /// The region is in local metres around the tile's centre. The light map's
 /// size follows the region's share of the tile, so its density per metre is
-/// the one a whole tile has (`light.size` over the tile, 1024).
+/// the one a whole tile has (`light.size` for the whole tile, 1024).
 ///
 /// Writes into the output folder: palette.png, lightmap.png and stats.json,
 /// and with `export` the GLB, placement.json, metadata.json and bake/ (the

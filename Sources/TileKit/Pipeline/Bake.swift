@@ -23,7 +23,11 @@ public enum Bake {
     @discardableResult
     static func light(_ scene: BakeScene, _ settings: Lighting.Settings, tile: Tile, out: URL, export: Bool, started: Date,
                       log: String, bake: Bool = true, cutDone: (Int) -> Void = { _ in }) throws -> Int {
-        let size = bake ? max(64, Int((Double(settings.size) * (2 * scene.reach) / tile.size / 16).rounded(.toNearestOrEven)) * 16) : 64
+        // The light map is `settings.size` pixels for a whole tile, whatever
+        // its overhang (its texels a little coarser the further it reaches),
+        // and a lab square's share of that.
+        let share = (scene.region.2 - scene.region.0) / tile.size
+        let size = bake ? max(64, Int((Double(settings.size) * share / 16).rounded(.toNearestOrEven)) * 16) : 64
         // The light map sees a white ground plane under the tile that the
         // model does not have (the vector tile is its ground), so walls and
         // roads keep the light they had on it.
@@ -85,7 +89,7 @@ public enum Bake {
         stats["triangles"] = m.count
         stats["light_baked"] = bake
         stats["light_map_px"] = size
-        stats["metres_per_texel"] = tile.size / Double(settings.size)
+        stats["metres_per_texel"] = 2 * scene.reach / Double(size)
         stats["seconds"] = (Date().timeIntervalSince(started) * 10).rounded() / 10
         try Export.write(stats, out.appendingPathComponent("stats.json"))
         if export {

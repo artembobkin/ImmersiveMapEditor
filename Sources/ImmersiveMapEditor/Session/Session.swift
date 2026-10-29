@@ -52,6 +52,8 @@ final class Session {
     /// The Landmarks and Preview cameras as the headless render takes them.
     var landmarkCamera = ""
     var previewCamera = ""
+    /// The Preview's axis labels on the screen.
+    var previewLabels: [ViewLabel] = []
     /// The Preview's view of a landmark lit, and what it shows.
     private(set) var previewView: LandmarkView?
     var previewStatus = ""
@@ -187,6 +189,7 @@ final class Session {
             previewView = LandmarkView.make()
             previewView?.status = { [weak self] in self?.previewStatus = $0 }
             previewView?.camera = { [weak self] in self?.previewCamera = $0 }
+            previewView?.labels = { [weak self] in self?.previewLabels = $0 }
         }
         previewView?.shadowStrength = lightSettings.previewShadow
         previewView?.lens = lightSettings.lens

@@ -69,7 +69,7 @@ struct LightSections: View {
         }
         Section("Quality") {
             Picker("Light map", selection: $light.size) {
-                ForEach([512, 1024, 2048], id: \.self) { Text("\($0) px a tile").tag($0) }
+                ForEach([512, 1024, 2048], id: \.self) { Text("\($0) px").tag($0) }
             }
             Picker("Samples", selection: $light.samples) {
                 ForEach([64, 128, 256, 512, 1024], id: \.self) { Text("\($0)").tag($0) }

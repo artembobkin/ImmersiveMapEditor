@@ -64,6 +64,9 @@ final class LandmarkView: MTKView {
     /// rendered again exactly, for a check).
     var camera: (String) -> Void = { _ in }
     private var lastCamera = ""
+    /// The axes' labels at their places on the screen (points of the view),
+    /// whenever the camera moves; empty when a label is behind the camera.
+    var labels: ([ViewLabel]) -> Void = { _ in }
 
     /// nil without a Metal device.
     static func make() -> LandmarkView? {
@@ -303,7 +306,20 @@ extension LandmarkView: MTKViewDelegate {
         let hfov = 2 * atan(tan(c.fovDegrees / 2 * .pi / 180) * aspect) * 180 / .pi
         let line = String(format: "%.1f %.1f %.1f %.0f %.0f %.0f %d %d", e.x, -e.z, e.y, (c.yaw.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360),
                           c.pitch, hfov, Int(view.drawableSize.width), Int(view.drawableSize.height))
-        if line != lastCamera { lastCamera = line; camera(line) }
+        if line != lastCamera {
+            lastCamera = line
+            camera(line)
+            if let lit {
+                let vp = c.viewProjection(aspect: aspect)
+                let w = Double(bounds.width), h = Double(bounds.height)
+                labels(lit.labels.compactMap { text, p in
+                    let clip = vp * SIMD4<Float>(p.x, p.y, p.z, 1)
+                    guard clip.w > 0.1 else { return nil }
+                    let x = (Double(clip.x / clip.w) + 1) / 2 * w, y = (1 - Double(clip.y / clip.w)) / 2 * h
+                    return ViewLabel(text: text, point: CGPoint(x: x, y: y))
+                })
+            }
+        }
         if let lit {
             renderer.encodeLit(enc, model: lit, viewProjection: controller.camera.viewProjection(aspect: aspect), wireframe: wireframe)
         } else {
@@ -422,10 +438,14 @@ final class LandmarkRenderer {
         let count: Int
         let light: MTLTexture
         let ground: MTLBuffer
-        /// The axes beside the model, three lines of two vertices: east,
-        /// north, up, from a corner outside its bounds on the ground, so
-        /// they never cross it (the user, 2026-10-29).
+        /// The axes beside the model: three arrows (a bar and a cone each,
+        /// triangles) east, north and up from a corner outside its bounds
+        /// on the ground, so they never cross it (the user, 2026-10-29),
+        /// `axisCounts` vertices each; and the labels' places in the
+        /// scene, X E, Y N, Z and the compass's other points.
         let axes: MTLBuffer
+        let axisCounts: [Int]
+        let labels: [(String, SIMD3<Float>)]
         let centre: SIMD3<Double>
         let size: SIMD3<Double>
         let triangles: Int
@@ -474,14 +494,43 @@ final class LandmarkRenderer {
             for (x, z) in [(-1, -1), (-1, 1), (1, 1), (-1, -1), (1, 1), (1, -1)] as [(Float, Float)] {
                 g += [gx + x * radius, gy, gz + z * radius, 0, 1, 0, 1, 1, 1, 0, 0]
             }
-            // The axes: from the south-west corner, 5 m out, 10 m long.
-            let ax = Float(lo.x) - 5, ay = Float(lo.y), az = Float(hi.z) + 5, len: Float = 10
+            // The axes: arrows from the south-west corner, 8 m out, 20 m long.
+            let o = SIMD3<Float>(Float(lo.x) - 8, Float(lo.y), Float(hi.z) + 8), len: Float = 20
             var a: [Float] = []
-            let ends: [(Float, Float, Float)] = [(ax, ay, az), (ax + len, ay, az), (ax, ay, az), (ax, ay, az - len), (ax, ay, az), (ax, ay + len, az)]
-            for (x, y, z) in ends { a += [x, y, z, 0, 1, 0, 1, 1, 1, 0, 0] }
+            var counts: [Int] = []
+            for d in [SIMD3<Float>(1, 0, 0), SIMD3<Float>(0, 0, -1), SIMD3<Float>(0, 1, 0)] {
+                let before = a.count
+                arrow(&a, from: o, along: d, length: len)
+                counts.append((a.count - before) / 11)
+            }
+            let labels: [(String, SIMD3<Float>)] = [("X  E", o + SIMD3(len + 3, 0, 0)), ("Y  N", o + SIMD3(0, 0, -len - 3)), ("Z", o + SIMD3(0, len + 3, 0)),
+                                                    ("W", o + SIMD3(-6, 0, 0)), ("S", o + SIMD3(0, 0, 6))]
             return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
-                            axes: device.makeBuffer(bytes: a, length: a.count * 4)!,
+                            axes: device.makeBuffer(bytes: a, length: a.count * 4)!, axisCounts: counts, labels: labels,
                             centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
+        }
+
+        /// An arrow: a bar 0.5 m across and a cone 4 m long, 1.4 m across,
+        /// as triangles in the lit layout (11 floats a vertex).
+        static func arrow(_ a: inout [Float], from o: SIMD3<Float>, along d: SIMD3<Float>, length: Float) {
+            let helper: SIMD3<Float> = abs(d.y) < 0.9 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0)
+            let u = simd_normalize(simd_cross(d, helper)), w = simd_cross(d, u)
+            func put(_ p: SIMD3<Float>) { a += [p.x, p.y, p.z, 0, 1, 0, 1, 1, 1, 0, 0] }
+            func tri(_ p: SIMD3<Float>, _ q: SIMD3<Float>, _ r: SIMD3<Float>) { put(p); put(q); put(r) }
+            let n = 12, barR: Float = 0.25, coneR: Float = 0.7, coneLen: Float = 4
+            let neck = o + d * (length - coneLen), tip = o + d * length
+            func ring(_ c: SIMD3<Float>, _ r: Float, _ k: Int) -> SIMD3<Float> {
+                let t = 2 * Float.pi * Float(k) / Float(n)
+                return c + u * (r * cos(t)) + w * (r * sin(t))
+            }
+            for k in 0..<n {
+                let k1 = (k + 1) % n
+                tri(ring(o, barR, k), ring(o, barR, k1), ring(neck, barR, k1))
+                tri(ring(o, barR, k), ring(neck, barR, k1), ring(neck, barR, k))
+                tri(o, ring(o, barR, k1), ring(o, barR, k))
+                tri(ring(neck, coneR, k), ring(neck, coneR, k1), tip)
+                tri(neck, ring(neck, coneR, k1), ring(neck, coneR, k))
+            }
         }
 
         /// As a plain model's record (its size, its count), for the view's
@@ -722,11 +771,13 @@ final class LandmarkRenderer {
         enc.setVertexBuffer(model.axes, offset: 0, index: 0)
         uniforms.shadow.w = 1
         let axisColours: [SIMD4<Float>] = [SIMD4(0.85, 0.2, 0.2, 0), SIMD4(0.2, 0.7, 0.25, 0), SIMD4(0.2, 0.4, 0.9, 0)]
+        var start = 0
         for (k, colour) in axisColours.enumerated() {
             uniforms.colour = colour
             enc.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
             enc.setFragmentBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
-            enc.drawPrimitives(type: .line, vertexStart: k * 2, vertexCount: 2)
+            enc.drawPrimitives(type: .triangle, vertexStart: start, vertexCount: model.axisCounts[k])
+            start += model.axisCounts[k]
         }
         enc.setCullMode(.none)
     }
@@ -765,4 +816,11 @@ final class LandmarkRenderer {
         }
         enc.setCullMode(.none)
     }
+}
+
+/// A label of the 3D view at a point of it, for an overlay.
+struct ViewLabel: Identifiable, Equatable {
+    var id: String { text }
+    let text: String
+    let point: CGPoint
 }

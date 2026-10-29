@@ -22,8 +22,8 @@ public enum Lighting {
     /// bake/settings.json beside a built tile, so its light can be baked
     /// again (Bake).
     public struct Settings: Equatable {
-        /// Light map texels over the tile's width. The light map itself is
-        /// as much larger as it reaches over the tile.
+        /// The light map's size in pixels for a whole tile: its overhang
+        /// takes texels from the tile rather than adding them.
         public var size = 1024
         public var samples = 256
         public var lit = [Lighting.lit.0, Lighting.lit.1, Lighting.lit.2]

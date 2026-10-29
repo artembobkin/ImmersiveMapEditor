@@ -114,7 +114,7 @@ enum Headless {
                 return fail(error.localizedDescription)
             }
         }
-        /// The light settings for --lit from the options --light-mode sky|ao, --light-size N (texels a tile),
+        /// The light settings for --lit from the options --light-mode sky|ao, --light-size N (the light map in pixels),
         /// --light-samples N, --ao-radius M, --depth D, --gamma G.
         func litSettings() -> Lighting.Settings {
             var s = Lighting.Settings()

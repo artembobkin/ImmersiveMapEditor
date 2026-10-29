@@ -118,7 +118,9 @@ struct ContentView: View {
                 // place of the region.
                 ZStack {
                     if let view = session.previewView {
-                        MetalHost(view: view).overlay(alignment: .topLeading) { CameraBadge(line: session.previewCamera) }
+                        MetalHost(view: view)
+                            .overlay { AxisLabels(labels: session.previewLabels) }
+                            .overlay(alignment: .topLeading) { CameraBadge(line: session.previewCamera) }
                     } else {
                         ContentUnavailableView("Baking the light", systemImage: "sun.max",
                                                description: Text("The landmark alone, lit as the engine will light it, comes in a moment."))
@@ -175,5 +177,23 @@ struct CameraBadge: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
             .padding(8)
         }
+    }
+}
+
+/// The axes' labels over the 3D view, each at its point: X E, Y N, Z at
+/// the arrows' tips, W and S the other way (the user, 2026-10-29).
+struct AxisLabels: View {
+    let labels: [ViewLabel]
+
+    var body: some View {
+        GeometryReader { _ in
+            ForEach(labels) { l in
+                Text(l.text).font(.system(.callout, design: .rounded).bold()).foregroundStyle(.primary)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 4))
+                    .position(l.point)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
