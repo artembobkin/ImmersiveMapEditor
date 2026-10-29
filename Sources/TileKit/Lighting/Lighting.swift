@@ -216,9 +216,11 @@ public enum Lighting {
         return steps
     }
 
-    /// Each triangle's planar face: the triangles on one plane (normal and
-    /// offset alike) that share a corner, joined; the index of a triangle
-    /// standing for the face.
+    /// Each triangle's planar face: the triangles that share a corner and
+    /// face the same way (normals within a quarter of a degree), joined;
+    /// the index of a triangle standing for the face. No quantised plane
+    /// key: one split a wall on a rounding boundary into two groups with
+    /// two shades (the user, 2026-10-29).
     static func planarFaces(_ m: Triangles) -> [Int] {
         var parent = Array(0..<m.count)
         func find(_ i: Int) -> Int {
@@ -230,20 +232,19 @@ public enum Lighting {
             let (ra, rb) = (find(a), find(b))
             if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
         }
-        struct Key: Hashable { let nx, ny, nz, off, x, y, z: Int64 }
-        var first: [Key: Int] = [:]
-        first.reserveCapacity(m.count * 3)
+        struct Key: Hashable { let x, y, z: Int64 }
+        func q(_ v: Double) -> Int64 { Int64((v * 1000).rounded()) }
+        let normals = (0..<m.count).map { m.normal($0).normalized }
+        var at: [Key: [Int]] = [:]
+        at.reserveCapacity(m.count * 2)
         for t in 0..<m.count {
-            let n = m.normal(t).normalized
+            let n = normals[t]
             guard n.x.isFinite else { continue }
-            let off: Double = n.dot(m.corner(t, 0))
-            func q(_ v: Double, _ scale: Double) -> Int64 { Int64((v * scale).rounded()) }
-            let nx = q(n.x, 50), ny = q(n.y, 50), nz = q(n.z, 50), o = q(off, 20)
             for i in 0..<3 {
                 let c = m.corner(t, i)
-                let cx = q(c.x, 1000), cy = q(c.y, 1000), cz = q(c.z, 1000)
-                let key = Key(nx: nx, ny: ny, nz: nz, off: o, x: cx, y: cy, z: cz)
-                if let other = first[key] { union(other, t) } else { first[key] = t }
+                let key = Key(x: q(c.x), y: q(c.y), z: q(c.z))
+                for other in at[key, default: []] where normals[other].dot(n) > 0.99999 { union(other, t) }
+                at[key, default: []].append(t)
             }
         }
         return (0..<m.count).map { find($0) }
