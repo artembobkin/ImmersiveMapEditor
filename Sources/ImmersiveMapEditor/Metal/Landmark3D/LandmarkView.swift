@@ -312,9 +312,10 @@ extension LandmarkView: MTKViewDelegate {
             if let lit {
                 let vp = c.viewProjection(aspect: aspect)
                 let w = Double(bounds.width), h = Double(bounds.height)
+                let eye = SIMD3<Float>(c.eye)
                 labels(lit.labels.compactMap { text, p in
                     let clip = vp * SIMD4<Float>(p.x, p.y, p.z, 1)
-                    guard clip.w > 0.1 else { return nil }
+                    guard clip.w > 0.1, !lit.hidden(from: eye, to: p) else { return nil }
                     let x = (Double(clip.x / clip.w) + 1) / 2 * w, y = (1 - Double(clip.y / clip.w)) / 2 * h
                     return ViewLabel(text: text, point: CGPoint(x: x, y: y))
                 })
@@ -446,6 +447,30 @@ final class LandmarkRenderer {
         let axes: MTLBuffer
         let axisCounts: [Int]
         let labels: [(String, SIMD3<Float>)]
+        /// The model's corners, three a triangle, for what hides a label.
+        let corners: [SIMD3<Float>]
+
+        /// Whether the segment from `a` to `b` meets a triangle of the model
+        /// (a label's place hidden behind it; the user, 2026-10-29).
+        func hidden(from a: SIMD3<Float>, to b: SIMD3<Float>) -> Bool {
+            let d = b - a
+            var t = 0
+            while t + 2 < corners.count {
+                let p0 = corners[t], e1 = corners[t + 1] - p0, e2 = corners[t + 2] - p0
+                t += 3
+                let h = simd_cross(d, e2), det = simd_dot(e1, h)
+                if abs(det) < 1e-7 { continue }
+                let inv = 1 / det, s = a - p0
+                let u = inv * simd_dot(s, h)
+                if u < 0 || u > 1 { continue }
+                let q = simd_cross(s, e1)
+                let v = inv * simd_dot(d, q)
+                if v < 0 || u + v > 1 { continue }
+                let k = inv * simd_dot(e2, q)
+                if k > 0.001 && k < 0.98 { return true }
+            }
+            return false
+        }
         let centre: SIMD3<Double>
         let size: SIMD3<Double>
         let triangles: Int
@@ -457,9 +482,12 @@ final class LandmarkRenderer {
             var v: [Float] = []
             v.reserveCapacity(r.triangles * 33)
             var lo = SIMD3<Double>(repeating: .infinity), hi = -lo
+            var corners: [SIMD3<Float>] = []
+            corners.reserveCapacity(r.triangles * 3)
             for t in 0..<r.triangles {
                 // The build's east, north, up to the view's east, up, south.
                 let p = (0..<3).map { SIMD3(r.positions[t * 9 + $0 * 3], r.positions[t * 9 + $0 * 3 + 2], -r.positions[t * 9 + $0 * 3 + 1]) }
+                for k in 0..<3 { corners.append(SIMD3<Float>(p[k])) }
                 let n = simd_normalize(simd_cross(p[1] - p[0], p[2] - p[0]))
                 let c = (0..<3).map { Float(r.colours[t * 3 + $0]) / 255 }
                 for k in 0..<3 {
@@ -507,7 +535,7 @@ final class LandmarkRenderer {
             }
             let labels: [(String, SIMD3<Float>)] = [("X  E", o + SIMD3(len + 3, 0, 0)), ("Y  N", o + SIMD3(0, 0, -len - 3)), ("Z", o + SIMD3(0, len + 3, 0))]
             return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
-                            axes: device.makeBuffer(bytes: a, length: a.count * 4)!, axisCounts: counts, labels: labels,
+                            axes: device.makeBuffer(bytes: a, length: a.count * 4)!, axisCounts: counts, labels: labels, corners: corners,
                             centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
         }
 
