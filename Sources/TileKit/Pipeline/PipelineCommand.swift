@@ -38,8 +38,9 @@ public enum PipelineCommand {
                 var options = Pipeline.Options()
                 options.refetch = args.flag("--refetch")
                 options.bakeLight = !args.flag("--no-light")
-                options.roads = !args.flag("--no-roads")
-                options.buildings = !args.flag("--no-buildings")
+                if let p = args.value("--parts") { options.parts = Set(p[0].split(separator: ",").map(String.init)).intersection(Build.allParts) }
+                if args.flag("--no-roads") { options.parts.remove("roads") }
+                if args.flag("--no-buildings") { options.parts.subtract(["houses", "boxes"]) }
                 if let s = args.value("--samples"), let n = Int(s[0]) { options.samples = n }
                 var tiles = args.tiles()
                 let n = args.list.compactMap { Int($0) }
@@ -164,7 +165,7 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light] [--no-roads] [--no-buildings]
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
                ImmersiveMapEditor pipeline archive OUT.pmtiles [--z 15] [--astc-block 8|4]
                ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
                ImmersiveMapEditor pipeline fetch Z X Y [--force]

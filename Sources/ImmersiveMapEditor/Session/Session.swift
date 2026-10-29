@@ -356,24 +356,21 @@ final class Session {
     /// The pipeline's command building one tile, its models all, its light
     /// not baked (the Light view bakes it): fetching what is missing,
     /// seeding its roads when no document holds it.
-    /// Whether a build lays the roads (the user, 2026-10-29: a tile of
-    /// buildings alone when wanted), kept between runs.
-    static let roadsKey = "build.roads"
-    var buildRoads: Bool {
-        get { UserDefaults.standard.object(forKey: Self.roadsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: Self.roadsKey) }
+    /// The parts a build holds (Build.allParts; the user, 2026-10-29: each
+    /// chosen apart), kept between runs.
+    static let partsKey = "build.parts"
+    var buildParts: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: Self.partsKey) ?? Array(Build.allParts)) }
+        set { UserDefaults.standard.set(Array(newValue).sorted(), forKey: Self.partsKey) }
     }
-
-    /// Whether a build makes the ordinary buildings (the user, 2026-10-29).
-    static let buildingsKey = "build.buildings"
-    var buildBuildings: Bool {
-        get { UserDefaults.standard.object(forKey: Self.buildingsKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: Self.buildingsKey) }
+    func toggle(part: String, on: Bool) {
+        var parts = buildParts
+        if on { parts.insert(part) } else { parts.remove(part) }
+        buildParts = parts
     }
 
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"]
-            + (buildRoads ? [] : ["--no-roads"]) + (buildBuildings ? [] : ["--no-buildings"])
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light", "--parts", buildParts.sorted().joined(separator: ",")]
     }
 
     /// Every built tile into the engine's model archive, where the user

@@ -16,10 +16,14 @@ import Geometry
 public enum Build {
     /// Metres built around the region for the light map.
     static let margin = 40.0
+    /// What a build can hold, each chosen apart: the landmarks' models, the
+    /// typical houses (the procedure's, with windows), the other buildings
+    /// as boxes, the construction sites, the roads with their shelters.
+    public static let allParts: Set<String> = ["landmarks", "houses", "boxes", "sites", "roads"]
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
                            export: Bool = false, light: Lighting.Settings = Lighting.Settings(), bakeLight: Bool = true,
-                           roads: URL? = nil, includeRoads: Bool = true, includeBuildings: Bool = true) throws {
+                           roads: URL? = nil, parts: Set<String> = Build.allParts) throws {
         guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -39,7 +43,10 @@ public enum Build {
         let palette = PaletteTexture()
 
         let b = Builder(palette: palette)
-        let landmarks = Imported.build(b, models, work, region: region)
+        // The parts asked for (the user, 2026-10-29): the landmarks, the
+        // typical houses, the other buildings as boxes, the sites, the roads.
+        let landmarks = parts.contains("landmarks") ? Imported.build(b, models, work, region: region)
+            : (made: 0, windows: 0, byModel: [String: [String: Int]]())
         let (buildings, footprint) = sortBuildings(osm: osm, work: work, paths: paths, replaced: replaced, covered: covered)
         var pending: [String: Int] = [:]
         // The parts of one building take one look: a typical house only if
@@ -49,7 +56,7 @@ public enum Build {
         for bd in buildings where plainKeys.contains(bd.tags["_key"] ?? bd.id) { bd.tags["_plain"] = "1" }
         // The ordinary buildings only when asked (the user, 2026-10-29: a
         // tile without the houses the procedure makes).
-        for (i, bd) in buildings.enumerated() where includeBuildings {
+        for (i, bd) in buildings.enumerated() where parts.contains("houses") || parts.contains("boxes") {
             Progress.report("Building the houses", fraction: Double(i + 1) / Double(buildings.count),
                             detail: "\(i + 1) of \(buildings.count)")
             if let landmark = bd.landmark {
@@ -57,6 +64,8 @@ public enum Build {
                 // hand, its place stays empty and is listed as pending.
                 pending[landmark, default: 0] += 1
             } else {
+                // A typical house or a box, each only when asked.
+                guard parts.contains(bd.tags["_plain"] == "1" ? "boxes" : "houses") else { continue }
                 // Whole in the tile its anchor stands in, the light map's only
                 // in a neighbour's.
                 b.whole = region.contains(bd.anchor) ? .whole : .foreign
@@ -67,16 +76,18 @@ public enum Build {
         // The roads only when asked (the user, 2026-10-29: a tile of buildings
         // alone, the vector tile's roads under it).
         let (asphalt, kerb, shelters): (Geometry, Geometry, [(P2, Double)])
-        if includeRoads {
+        if parts.contains("roads") {
             Progress.report("Laying the roads")
             (asphalt, kerb, shelters) = try Ground.build(b, osm, tile, work: work, footprint: footprint, paths: paths, roads: roads)
         } else {
             (asphalt, kerb, shelters) = (Geometry.empty, Geometry.empty, [])
         }
         Progress.report("Construction sites and bus shelters")
-        buildSites(b, osm: osm, work: work, earth: Ground.constructionEarth(osm, work: work, footprint: footprint,
-                                                                            asphalt: asphalt, kerb: kerb),
-                   footprint: footprint, asphalt: asphalt)
+        if parts.contains("sites") {
+            buildSites(b, osm: osm, work: work, earth: Ground.constructionEarth(osm, work: work, footprint: footprint,
+                                                                                asphalt: asphalt, kerb: kerb),
+                       footprint: footprint, asphalt: asphalt)
+        }
         let furniture = buildFurniture(b, shelters: shelters)
         Progress.report("Cleaning the mesh")
         let m = clean(b.tris)

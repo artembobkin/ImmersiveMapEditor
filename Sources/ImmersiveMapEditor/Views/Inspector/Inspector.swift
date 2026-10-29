@@ -108,10 +108,18 @@ struct ActionSection: View {
                 Text(action.help).font(.callout).foregroundStyle(.secondary)
             }
             if actions.contains(.tile) {
-                Toggle("Buildings", isOn: Binding(get: { session.buildBuildings }, set: { session.buildBuildings = $0 }))
-                    .help("Make the ordinary buildings, the procedure's houses and boxes from OSM. Off: the tile holds its landmarks, construction sites and roads alone.")
-                Toggle("Roads", isOn: Binding(get: { session.buildRoads }, set: { session.buildRoads = $0 }))
-                    .help("Lay the roads of the road document in the tile, seeding one if there is none. Off: the tile holds its buildings, landmarks and construction sites alone, the vector tile's roads under them.")
+                // What the build holds, each part chosen apart.
+                let parts: [(String, String, String)] = [
+                    ("landmarks", "Landmarks", "The models of the tile's landmarks."),
+                    ("houses", "Typical houses", "The procedure's houses with their windows, from OSM's typical Moscow houses."),
+                    ("boxes", "Other buildings", "Every other building as a plain box of its outline and height."),
+                    ("sites", "Construction sites", "The fences, cranes and machines of landuse=construction."),
+                    ("roads", "Roads", "The roads of the road document with their markings and bus shelters, seeding a document if there is none."),
+                ]
+                ForEach(parts, id: \.0) { key, name, help in
+                    Toggle(name, isOn: Binding(get: { session.buildParts.contains(key) }, set: { session.toggle(part: key, on: $0) }))
+                        .help(help)
+                }
             }
         }
     }
