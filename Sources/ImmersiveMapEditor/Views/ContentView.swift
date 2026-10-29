@@ -96,15 +96,17 @@ struct ContentView: View {
                 ContentUnavailableView("No road document", systemImage: "road.lanes",
                                        description: Text("No road document holds the tile: Seed the Roads makes one."))
             }
-        case .tiles:
-            if session.workspace.shown.isEmpty {
-                ContentUnavailableView("The tile is not built", systemImage: "cube",
-                                       description: Text("Build the Tile makes its model."))
-            } else if let tiles = session.tiles {
-                MetalHost(view: tiles)
-            }
         case .buildings:
-            BuildingsView()
+            // The tile's buildings from above; the landmark picked in place
+            // of them, its model (or its OSM boxes while it has none).
+            Group {
+                if session.candidates.contains(where: { $0.id == session.pickedLandmark }), let view = session.landmarkView {
+                    MetalHost(view: view).overlay(alignment: .topLeading) { CameraBadge(line: session.landmarkCamera) }
+                } else {
+                    BuildingsView()
+                }
+            }
+            .onChange(of: session.pickedLandmark, initial: true) { session.showLandmark() }
         case .style:
             StyleView()
         case .preview:
@@ -136,22 +138,10 @@ struct ContentView: View {
                 .onChange(of: session.lightSettings.lens, initial: true) { session.previewView?.lens = session.lightSettings.lens }
             } else if workspace.shown.isEmpty {
                 ContentUnavailableView("The tile is not built", systemImage: "sun.max",
-                                       description: Text("Build the tile in Tiles 3D, then bake its light here. A landmark alone needs no build: pick it on the right."))
+                                       description: Text("Build the Tile makes its model, Bake its light. A landmark alone needs no build: pick it on the right."))
             } else if let tiles = session.tiles {
                 MetalHost(view: tiles)
             }
-        case .landmarks:
-            // The tile's landmark picked: its model when one is there.
-            Group {
-                // Its model, or its OSM buildings as boxes while it has none.
-                if session.candidates.contains(where: { $0.id == session.pickedLandmark }), let view = session.landmarkView {
-                    MetalHost(view: view).overlay(alignment: .topLeading) { CameraBadge(line: session.landmarkCamera) }
-                } else {
-                    ContentUnavailableView("No landmark picked", systemImage: "building.columns",
-                                           description: Text("The tile's landmarks are made in Buildings: pick one on the right."))
-                }
-            }
-            .onChange(of: session.pickedLandmark, initial: true) { session.showLandmark() }
         }
     }
 }

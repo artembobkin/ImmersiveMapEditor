@@ -21,7 +21,7 @@ struct Inspector: View {
                 if !working {
                     MapSections()
                 } else {
-                    if let action = mode.action { ActionSection(action: action) }
+                    if !mode.actions.isEmpty { ActionSection(actions: mode.actions) }
                     modeSections(mode)
                 }
             }
@@ -37,10 +37,12 @@ struct Inspector: View {
                     } else {
                         Section { Text("No road document holds the tile.").foregroundStyle(.secondary) }
                     }
-                case .tiles: TilesSections()
-                case .preview: LightSections()
-                case .landmarks: LandmarksSections()
-                case .buildings: BuildingsSections()
+                case .preview:
+                    LightSections()
+                    if session.workspace.previewSubject == "tile" { TilesSections() }
+                case .buildings:
+                    BuildingsSections()
+                    LandmarksSections()
                 case .style: StyleSections()
                 }
     }
@@ -93,18 +95,19 @@ struct WorkingTile: View {
     }
 }
 
-/// The view's action on the working tile, at the top of its sections, as
-/// the toolbar's button does it.
+/// The view's actions on the working tile, at the top of its sections.
 struct ActionSection: View {
     @Environment(Session.self) private var session
-    let action: TileAction
+    let actions: [TileAction]
 
     var body: some View {
         Section("Build") {
-            Button(action.title, systemImage: action.systemImage) { session.perform(action) }
-                .disabled(!session.can(action))
-            Text(action.help).font(.callout).foregroundStyle(.secondary)
-            if action == .tile {
+            ForEach(actions, id: \.title) { action in
+                Button(action.title, systemImage: action.systemImage) { session.perform(action) }
+                    .disabled(!session.can(action))
+                Text(action.help).font(.callout).foregroundStyle(.secondary)
+            }
+            if actions.contains(.tile) {
                 Toggle("Buildings", isOn: Binding(get: { session.buildBuildings }, set: { session.buildBuildings = $0 }))
                     .help("Make the ordinary buildings, the procedure's houses and boxes from OSM. Off: the tile holds its landmarks, construction sites and roads alone.")
                 Toggle("Roads", isOn: Binding(get: { session.buildRoads }, set: { session.buildRoads = $0 }))
@@ -118,9 +121,7 @@ extension ViewMode {
     var systemImage: String {
         switch self {
         case .roads: "road.lanes"
-        case .tiles: "cube"
         case .preview: "sun.max"
-        case .landmarks: "building.columns"
         case .buildings: "building.2"
         case .style: "paintpalette"
         }

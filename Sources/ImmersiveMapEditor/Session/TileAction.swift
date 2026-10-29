@@ -41,13 +41,14 @@ enum TileAction {
 }
 
 extension ViewMode {
-    /// The view's action on the working tile, if it has one.
-    var action: TileAction? {
+    /// The view's actions on the working tile, if it has any: Preview
+    /// builds the tile and bakes its light (the user, 2026-10-29: one view
+    /// of the tile in 3D, Tiles 3D and Preview made one).
+    var actions: [TileAction] {
         switch self {
-        case .roads: .roads
-        case .tiles: .tile
-        case .preview: .light
-        case .landmarks, .buildings, .style: nil
+        case .roads: [.roads]
+        case .preview: [.tile, .light]
+        case .buildings, .style: []
         }
     }
 }

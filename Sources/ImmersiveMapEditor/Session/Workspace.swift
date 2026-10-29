@@ -12,11 +12,9 @@ struct TileKey: Hashable, Codable, Comparable {
 /// The views over the open tile, the tabs at the top once a tile is open.
 enum ViewMode: String, CaseIterable, Identifiable {
     case roads = "Roads"
-    case tiles = "Tiles 3D"
-    case preview = "Preview"
-    case landmarks = "Landmarks"
     case buildings = "Buildings"
     case style = "Style"
+    case preview = "Preview"
     var id: String { rawValue }
 }
 

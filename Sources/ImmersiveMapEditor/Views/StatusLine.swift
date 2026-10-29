@@ -40,30 +40,30 @@ struct StatusLine: View {
             } else {
                 Spacer()
             }
-        case .tiles:
-            Text(session.workspace.flying
-                ? "Flight: W A S D, Q down, E up, shift faster, right-drag to look, scroll for speed. Tab to orbit."
-                : "Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom to the cursor. Tab flies, F frames.")
-                .lineLimit(1)
-            Spacer()
-            Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
         case .buildings:
-            Text("The tile's OSM buildings from above. Click picks one, double-click a whole building with its parts, shift adds. Drag to move, scroll to zoom, F frames.")
-                .lineLimit(1)
-            Spacer()
-            Text(session.buildings.status).lineLimit(1).foregroundStyle(.secondary)
-        case .landmarks:
-            Text("Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames the model.")
-                .lineLimit(1)
-            Spacer()
-            Text(session.landmarkStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+            if session.pickedLandmark != nil {
+                Text("The landmark's model. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames the model.")
+                    .lineLimit(1)
+                Spacer()
+                Text(session.landmarkStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
+            } else {
+                Text("The tile's OSM buildings from above. Click picks one, double-click a whole building with its parts, shift adds. Drag to move, scroll to zoom, F frames.")
+                    .lineLimit(1)
+                Spacer()
+                Text(session.buildings.status).lineLimit(1).foregroundStyle(.secondary)
+            }
         case .preview:
-            Text(session.workspace.previewSubject == "tile"
-                 ? "The tile lit by its light map, as the engine shows it. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. F frames."
-                 : "The landmark alone, its light baked here and the engine's sun on it. Drag to move, right-drag to turn and tilt, scroll to zoom. F frames.")
-                .lineLimit(1)
-            Spacer()
-            if session.workspace.previewSubject != "tile" {
+            if session.workspace.previewSubject == "tile" {
+                Text(session.workspace.flying
+                    ? "Flight: W A S D, Q down, E up, shift faster, right-drag to look, scroll for speed. Tab to orbit."
+                    : "The tile as the engine shows it. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom to the cursor. Tab flies, F frames.")
+                    .lineLimit(1)
+                Spacer()
+                Text(session.workspace.tileStatus).lineLimit(1).foregroundStyle(.secondary)
+            } else {
+                Text("The landmark alone, its light baked here. Drag to move, right-drag to turn and tilt, scroll to zoom. F frames.")
+                    .lineLimit(1)
+                Spacer()
                 Text(session.previewStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             }
         case .style:

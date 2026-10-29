@@ -2,9 +2,11 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Landmarks view's sections: the tile's landmarks (made in the
-/// Buildings view, each a folder of the tile's landmarks/), to pick one and
-/// see its model, its buildings and its folder.
+/// The Buildings view's landmark sections: the tile's landmarks (made of
+/// its buildings, each a folder of the tile's landmarks/), to pick one and
+/// see its model in place of the buildings' map, work on it with Claude,
+/// and come back (the user, 2026-10-29: the landmarks in Buildings, where
+/// they are made).
 struct LandmarksSections: View {
     @Environment(Session.self) private var session
     @State private var request = ""
@@ -55,6 +57,8 @@ struct LandmarksSections: View {
         }
         if let landmark = session.candidates.first(where: { $0.id == session.pickedLandmark }) {
             Section("Show") {
+                Button("Back to the Buildings", systemImage: "chevron.left") { session.pickedLandmark = nil }
+                    .help("The tile's buildings from above again, to pick more or make another landmark.")
                 Toggle("Wireframe", isOn: $session.landmarkWireframe)
                     .help("The model's edges over its shading: one shell, since its solids are united, and nothing inside.")
             }

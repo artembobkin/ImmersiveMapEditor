@@ -222,7 +222,7 @@ final class Session {
     /// view opens the road document holding it and frames it, or closes the
     /// document open when none holds it.
     func follow(_ mode: ViewMode) {
-        if phase == .working, mode == .landmarks || mode == .preview { readCandidates() }
+        if phase == .working, mode == .preview { readCandidates() }
         if phase == .working, mode == .buildings {
             let tile = workspace.tile, paths = workspace.paths
             Task { @MainActor in
@@ -230,7 +230,7 @@ final class Session {
                 self.readCandidates()
             }
         }
-        if phase == .working, mode == .tiles || mode == .preview {
+        if phase == .working, mode == .preview {
             // The 3D view where the others looked, once it is laid out.
             Task { @MainActor in self.tiles?.takeSharedCamera() }
         }

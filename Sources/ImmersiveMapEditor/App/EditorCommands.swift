@@ -43,10 +43,12 @@ struct EditorCommands: Commands {
                     .disabled(session.phase != .working)
             }
             Divider()
-            if let action = session.workspace.viewMode.action, session.phase == .working {
-                Button(action.title) { session.perform(action) }
-                    .keyboardShortcut("b")
-                    .disabled(!session.can(action))
+            if session.phase == .working {
+                // The view's actions: the first on ⌘B.
+                ForEach(Array(session.workspace.viewMode.actions.enumerated()), id: \.offset) { i, action in
+                    let button = Button(action.title) { session.perform(action) }.disabled(!session.can(action))
+                    if i == 0 { button.keyboardShortcut("b") } else { button }
+                }
             }
         }
     }
