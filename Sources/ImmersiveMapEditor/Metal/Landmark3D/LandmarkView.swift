@@ -519,7 +519,9 @@ final class LandmarkRenderer {
             let u = simd_normalize(simd_cross(d, helper)), w = simd_cross(d, u)
             func put(_ p: SIMD3<Float>) { a += [p.x, p.y, p.z, 0, 1, 0, 1, 1, 1, 0, 0] }
             func tri(_ p: SIMD3<Float>, _ q: SIMD3<Float>, _ r: SIMD3<Float>) { put(p); put(q); put(r) }
-            let n = 12, barR: Float = length * 0.015, coneR: Float = length * 0.04, coneLen: Float = length * 0.18
+            // Thin for their length: a bar 0.5 m across and a cone 1.6 m
+            // across, 5 m long, whatever the length.
+            let n = 12, barR: Float = 0.25, coneR: Float = 0.8, coneLen: Float = 5
             let neck = o + d * (length - coneLen), tip = o + d * length
             func ring(_ c: SIMD3<Float>, _ r: Float, _ k: Int) -> SIMD3<Float> {
                 let t = 2 * Float.pi * Float(k) / Float(n)
