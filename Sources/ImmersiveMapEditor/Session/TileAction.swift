@@ -16,7 +16,7 @@ enum TileAction {
         switch self {
         case .roads: "Seed the Roads"
         case .tile: "Build the Tile"
-        case .light: "Bake the Light"
+        case .light: "Bake"
         }
     }
 
@@ -35,7 +35,7 @@ enum TileAction {
         case .tile:
             "Build the tile's model: its buildings and landmarks from OSM, its roads laid from the road document as it is (never seeded again: that is Roads'), and export it. The light is not baked: Light bakes it (⌘B)"
         case .light:
-            "Bake the tile's light map again with the Light view's settings, its geometry as built (⌘B)"
+            "Bake the tile's light and the faces' shade into its textures with the modifiers below, its geometry as built (⌘B)"
         }
     }
 }

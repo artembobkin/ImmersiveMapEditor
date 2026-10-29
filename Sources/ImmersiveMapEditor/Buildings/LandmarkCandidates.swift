@@ -22,6 +22,13 @@ struct TileLandmark: Identifiable {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
     }
+    /// The model's path and the moment it was written, so a view of it
+    /// bakes again by itself once it is rebuilt.
+    var modelStamp: String {
+        guard let model else { return "" }
+        let date = (try? model.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970 ?? 0
+        return "\(model.path)@\(Int(date))"
+    }
 
     /// One of its OSM buildings as a box: its outline's polygons (rings in
     /// metres around the landmark's centre, east and north), from its base

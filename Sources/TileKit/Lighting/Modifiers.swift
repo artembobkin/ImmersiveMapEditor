@@ -36,8 +36,8 @@ extension Lighting {
         /// The kinds, in the order the panel offers them: the name shown,
         /// and whether more than one may be in the stack.
         public static let kinds: [(kind: String, name: String, repeatable: Bool)] = [
-            ("faceShade", "Face shade", false), ("creases", "Creases", false), ("sides", "Side tones", false),
-            ("lambert", "Lambert light", true), ("sky", "Sky light", false), ("ao", "Ambient occlusion", false),
+            ("faceShade", "Face shade", false), ("lambert", "Lambert light", true), ("creases", "Creases", false),
+            ("sides", "Side tones", false), ("sky", "Sky light", false), ("ao", "Ambient occlusion", false),
             ("sun", "Baked sun", false),
         ]
 
@@ -46,10 +46,10 @@ extension Lighting {
         /// Each kind's parameters and their defaults.
         public static func defaults(of kind: String) -> [String: Double] {
             switch kind {
-            case "faceShade": return ["reach": 10, "step": 0.10]
+            case "faceShade": return ["reach": 10, "step": 0.13]
             case "creases": return ["width": 1.0, "depth": 0.6]
             case "sides": return [:]
-            case "lambert": return ["from": 225, "height": 45, "strength": 0.38]
+            case "lambert": return ["from": 195, "height": 45, "strength": 0.24]
             case "sky": return ["strength": 0.6, "contrast": 1.6, "sky": 1.0, "bounces": 3]
             case "ao": return ["radius": 3, "depth": 0.5]
             case "sun": return ["from": 225, "height": 45, "strength": 1.0]
@@ -60,8 +60,10 @@ extension Lighting {
         public static func make(_ kind: String, on: Bool = true) -> Modifier { Modifier(kind: kind, on: on, params: defaults(of: kind)) }
 
         /// The stack a fresh tile or editor starts with (the user,
-        /// 2026-10-29): every kind there, all off, to be turned on by hand.
-        public static let standard: [Modifier] = kinds.map { make($0.kind, on: false) }
+        /// 2026-10-29): the face shade (reach 10 m, step 0.13) and one
+        /// Lambert light (from 195° at 45°, strength 0.24), nothing else;
+        /// the rest is added by hand.
+        public static let standard: [Modifier] = [make("faceShade"), make("lambert")]
 
         public func json() -> [String: Any] { ["kind": kind, "on": on, "params": params] }
 

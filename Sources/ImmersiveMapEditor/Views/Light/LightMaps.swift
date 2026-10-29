@@ -119,11 +119,8 @@ final class LightSettings {
         guard !json.isEmpty else { return Lighting.Modifier.standard }
         var s = Lighting.Settings(json: json)
         if let sided = d.object(forKey: "light.sided") as? Bool { s.sidedTones = sided }
-        // The stack has every kind the panel offers, the new ones off.
-        for kind in Lighting.Modifier.kinds.map(\.kind) where !s.modifiers.contains(where: { $0.kind == kind }) {
-            s.modifiers.append(.make(kind, on: false))
-        }
-        return s.modifiers
+        // Only what was on stays in the stack; the rest is added by hand.
+        return s.modifiers.filter(\.on)
     }
 
     /// Adds a modifier of a kind to the stack, on.
