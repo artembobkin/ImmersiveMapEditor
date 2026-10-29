@@ -90,8 +90,7 @@ public enum LandmarkLight {
                 }
             }
         }
-        let irradiance = try Lighting.bake(scene, bounds: bounds, size: size, settings: s)
-        let light = Lighting.shape(irradiance, s)
+        let light = try Lighting.lightMap(scene, bounds: bounds, size: size, settings: s)
         let uv1 = Lighting.lightUVs(tris, bounds: bounds, size: size)
         if let dump = ProcessInfo.processInfo.environment["LANDMARK_LIGHT_DUMP"] {
             try? PNG.encode(light, width: size, height: size, channels: 3).write(to: URL(fileURLWithPath: dump))

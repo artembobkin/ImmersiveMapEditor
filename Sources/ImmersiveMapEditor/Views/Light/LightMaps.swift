@@ -76,12 +76,16 @@ final class LightSettings {
     var skyStrength: Double = value("skyStrength", 1.0) { didSet { Self.keep("skyStrength", skyStrength) } }
     /// How deep the shade goes (1 to the shade colour, 0 none) and its
     /// contrast (the gamma on the light before the shade is applied).
-    var depth: Double = value("depth", 1.0) { didSet { Self.keep("depth", depth) } }
+    var depth: Double = value("depth", 0.0) { didSet { Self.keep("depth", depth) } }
     var gamma: Double = value("gamma", 1.6) { didSet { Self.keep("gamma", gamma) } }
     /// The face shade: how far a face looks for what shuts it in (0 none),
     /// and how much darker each step of shade is.
-    var faceRadius: Double = value("faceRadius", 12.0) { didSet { Self.keep("faceRadius", faceRadius) } }
-    var faceStep: Double = value("faceStep", 0.09) { didSet { Self.keep("faceStep", faceStep) } }
+    var faceRadius: Double = value("faceRadius", 10.0) { didSet { Self.keep("faceRadius", faceRadius) } }
+    var faceStep: Double = value("faceStep", 0.10) { didSet { Self.keep("faceStep", faceStep) } }
+    /// The creases: a band of shade along every concave edge seen from
+    /// above, this wide, taking this much of the light.
+    var creaseRadius: Double = value("creaseRadius", 1.5) { didSet { Self.keep("creaseRadius", creaseRadius) } }
+    var creaseDepth: Double = value("creaseDepth", 0.35) { didSet { Self.keep("creaseDepth", creaseDepth) } }
     /// A sun baked in, off by default (the engine casts the sun's shadows).
     var sun: Bool = value("sun", false) { didSet { Self.keep("sun", sun) } }
     var sunAzimuth: Double = value("sunAzimuth", 225.0) { didSet { Self.keep("sunAzimuth", sunAzimuth) } }
@@ -99,7 +103,7 @@ final class LightSettings {
     /// Preview: the engine's sun shown at all (its shadow and the walls'
     /// tones by side); off, only the light map (the user, 2026-10-28: the
     /// engine has its own directed light, the editor is for the baked one).
-    var engineSun: Bool = value("engineSun", true) { didSet { Self.keep("engineSun", engineSun) } }
+    var engineSun: Bool = value("engineSun", false) { didSet { Self.keep("engineSun", engineSun) } }
     /// The shadow strength the preview shows: none without the engine's sun.
     var previewShadow: Double { engineSun ? shadow : 0 }
     var previewSided: Bool { engineSun && sided }
@@ -117,6 +121,8 @@ final class LightSettings {
         s.gamma = gamma
         s.faceRadius = faceRadius
         s.faceStep = faceStep
+        s.creaseRadius = creaseRadius
+        s.creaseDepth = creaseDepth
         s.sun = sun
         s.sunAzimuth = sunAzimuth
         s.sunElevation = sunElevation
@@ -129,7 +135,8 @@ final class LightSettings {
     var arguments: [String] {
         var a = ["--size", "\(size)", "--samples", "\(samples)", "--bounces", "\(bounces)",
                  "--mode", mode, "--ao-radius", "\(aoRadius)", "--sky", "\(skyStrength)", "--depth", "\(depth)", "--gamma", "\(gamma)",
-                 "--face-radius", "\(faceRadius)", "--face-step", "\(faceStep)"]
+                 "--face-radius", "\(faceRadius)", "--face-step", "\(faceStep)",
+                 "--crease-radius", "\(creaseRadius)", "--crease-depth", "\(creaseDepth)"]
         a += sun ? ["--sun", "\(sunAzimuth)", "\(sunElevation)", "\(sunStrength)"] : ["--no-sun"]
         return a
     }

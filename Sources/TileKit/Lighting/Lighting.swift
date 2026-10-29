@@ -32,14 +32,22 @@ public enum Lighting {
         public var gamma = Lighting.gamma
         /// How deep the shade goes: 1 to the shade colour, 0 no shading at
         /// all (the user, 2026-10-28: a strength for the light).
-        public var depth = 1.0
+        public var depth = 0.0
         /// The face shade (the user, 2026-10-28): each face shut in by what
         /// stands within `faceRadius` metres of it takes its colour a step
         /// darker per step of shade, `faceStep` darker a step, flat over the
         /// face: a window's reveal and glass, a ceiling under a portico, the
         /// wall behind columns, the underside of a cornice. 0 radius: none.
-        public var faceRadius = 12.0
-        public var faceStep = 0.09
+        public var faceRadius = 10.0
+        public var faceStep = 0.10
+        /// The creases (the user, 2026-10-29): a narrow band of shade along
+        /// every concave edge seen from above, where a roof meets a wall, a
+        /// chimney or a parapet its roof, baked into the same light map:
+        /// how shut in each texel is within `creaseRadius` metres, taking
+        /// `creaseDepth` of the light away where it is shut in whole. 0
+        /// radius: none.
+        public var creaseRadius = 1.5
+        public var creaseDepth = 0.35
         /// What light is gathered: the sky with its bounces ("sky"), or only
         /// how open each surface is within `aoRadius` metres ("ao").
         public var mode = "sky"
@@ -80,6 +88,7 @@ public enum Lighting {
             ["size": size, "samples": samples, "bounces": bounces, "lit": lit, "shade": shade, "gamma": gamma, "depth": depth,
              "mode": mode, "ao_radius": aoRadius, "sun": sun, "sun_azimuth": sunAzimuth, "sun_elevation": sunElevation,
              "sun_strength": sunStrength, "sky_strength": skyStrength, "face_radius": faceRadius, "face_step": faceStep,
+             "crease_radius": creaseRadius, "crease_depth": creaseDepth,
              "light_map_px": lightMapPixels]
         }
 
@@ -94,6 +103,8 @@ public enum Lighting {
             if let v = json["depth"] as? Double { depth = v }
             if let v = json["face_radius"] as? Double { faceRadius = v }
             if let v = json["face_step"] as? Double { faceStep = v }
+            if let v = json["crease_radius"] as? Double { creaseRadius = v }
+            if let v = json["crease_depth"] as? Double { creaseDepth = v }
             if let v = json["mode"] as? String { mode = v }
             if let v = json["ao_radius"] as? Double { aoRadius = v }
             if let v = json["sun"] as? Bool { sun = v }
@@ -121,6 +132,33 @@ public enum Lighting {
         }
         print(String(format: "[bake] %d triangles, %@ in %.1f s", tris.count / 9, detail, Date().timeIntervalSince(started)))
         return ProcessInfo.processInfo.environment["LIGHT_NO_DENOISE"] == nil ? denoise(light, size: size) : light
+    }
+
+    /// The light map of a scene with `settings`, shaped: the light gathered
+    /// (none when its `depth` is 0: the lit colour everywhere, no bake),
+    /// and the creases over it, one map (the user, 2026-10-29).
+    public static func lightMap(_ scene: [Double], bounds: (Double, Double, Double, Double), size: Int, settings: Settings) throws -> [UInt8] {
+        var light: [UInt8]
+        if settings.depth > 0 {
+            light = shape(try bake(scene, bounds: bounds, size: size, settings: settings), settings)
+        } else {
+            let lit = settings.lit.map { UInt8(min(max($0, 0), 1) * 255 + 0.5) }
+            light = [UInt8](repeating: 0, count: size * size * 3)
+            for i in 0..<(size * size) { light[i * 3] = lit[0]; light[i * 3 + 1] = lit[1]; light[i * 3 + 2] = lit[2] }
+        }
+        if settings.creaseRadius > 0 && settings.creaseDepth > 0 {
+            var s = settings
+            s.mode = "ao"
+            s.aoRadius = settings.creaseRadius
+            s.sun = false
+            let open = try bake(scene, bounds: bounds, size: size, settings: s)
+            let depth = min(max(settings.creaseDepth, 0), 1)
+            for i in 0..<(size * size) {
+                let k = 1 - depth * Double(1 - min(max(open[i], 0), 1))
+                for c in 0..<3 { light[i * 3 + c] = UInt8((Double(light[i * 3 + c]) * k).rounded()) }
+            }
+        }
+        return light
     }
 
     /// The face shade: how shut in each triangle of `m` is by `scene` (the

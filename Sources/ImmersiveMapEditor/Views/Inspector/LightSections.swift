@@ -39,10 +39,16 @@ struct LightSections: View {
             Text("Depth from the building itself, flat over each face: a face shut in by what stands within the reach (a window's reveal and glass, a ceiling under a portico, the wall behind columns, the underside of a cornice) takes its colour a step or more darker, each step this much. 0 m for none.")
                 .font(.callout).foregroundStyle(.secondary)
         }
+        Section("Creases") {
+            slider("Width", $light.creaseRadius, 0...4, "%.1f m")
+            slider("Depth", $light.creaseDepth, 0...1, "%.2f")
+            Text("A band of shade along every concave edge seen from above, where a roof meets a wall, a chimney or a parapet its roof: how shut in each point is within the width, taking this much of the light where it is shut in whole. Baked into the same light map. 0 m for none.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
         Section("Light") {
             slider("Strength", $light.depth, 0...1, "%.2f")
             slider("Contrast", $light.gamma, 0.5...3, "%.2f")
-            Text("Strength: how dark the shade goes, 0 for no shading. Contrast: above 1 deepens the shade near walls and in corners and leaves the open ground alone.")
+            Text("The light gathered over the whole tile, in the same map. Strength: how dark its shade goes, 0 for none (the default: the creases and the face shade alone). Contrast: above 1 deepens the shade near walls and in corners and leaves the open ground alone.")
                 .font(.callout).foregroundStyle(.secondary)
             Picker("Gathered", selection: $light.mode) {
                 Text("Sky light").tag("sky")
