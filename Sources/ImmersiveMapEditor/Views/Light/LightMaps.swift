@@ -84,8 +84,8 @@ final class LightSettings {
     var faceStep: Double = value("faceStep", 0.10) { didSet { Self.keep("faceStep", faceStep) } }
     /// The creases: a band of shade along every concave edge seen from
     /// above, this wide, taking this much of the light.
-    var creaseRadius: Double = value("creaseRadius", 1.5) { didSet { Self.keep("creaseRadius", creaseRadius) } }
-    var creaseDepth: Double = value("creaseDepth", 0.35) { didSet { Self.keep("creaseDepth", creaseDepth) } }
+    var creaseRadius: Double = value("creaseRadius", 1.0) { didSet { Self.keep("creaseRadius", creaseRadius) } }
+    var creaseDepth: Double = value("creaseDepth", 0.6) { didSet { Self.keep("creaseDepth", creaseDepth) } }
     /// A sun baked in, off by default (the engine casts the sun's shadows).
     var sun: Bool = value("sun", false) { didSet { Self.keep("sun", sun) } }
     var sunAzimuth: Double = value("sunAzimuth", 225.0) { didSet { Self.keep("sunAzimuth", sunAzimuth) } }

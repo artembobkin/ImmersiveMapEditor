@@ -46,8 +46,8 @@ public enum Lighting {
         /// how shut in each texel is within `creaseRadius` metres, taking
         /// `creaseDepth` of the light away where it is shut in whole. 0
         /// radius: none.
-        public var creaseRadius = 1.5
-        public var creaseDepth = 0.35
+        public var creaseRadius = 1.0
+        public var creaseDepth = 0.6
         /// What light is gathered: the sky with its bounces ("sky"), or only
         /// how open each surface is within `aoRadius` metres ("ao").
         public var mode = "sky"

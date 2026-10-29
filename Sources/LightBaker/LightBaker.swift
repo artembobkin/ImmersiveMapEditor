@@ -78,8 +78,16 @@ public enum LightBaker {
         float3 sun = float3(p.sunX, p.sunY, p.sunZ);
         bool sunny = p.sunStrength > 0 && length(sun) > 0.5;
         uint s = hash(gid.x * 9781 + row * 6271 + p.seed * 26699);
+        // The direction's strata are not the point's: the same cells for
+        // both tied where a sample stood in the texel to where it looked,
+        // and every chimney threw a crescent of shade to one side.
+        float turn = rnd(s);
         float total = 0;
         for (uint k = 0; k < p.samples; k++) {
+            // The point's cell is (k % strata, k / strata); the direction's
+            // cell runs through every value for each of the point's.
+            uint ki = k % p.strata, kj = k / p.strata;
+            uint ka = (ki + kj) % p.strata, kr = (kj + 3 * ki) % p.strata;
             // A camera ray straight down, through a random point of the texel.
             ray r;
             // The texel's points spread evenly too.
@@ -122,7 +130,7 @@ public enum LightBaker {
                 // texel's samples do not clump: the grain of chance alone
                 // showed as stripes down a wall and streaks on a roof.
                 float u1 = rnd(s), u2 = rnd(s);
-                if (b == 0 && p.strata > 1) { u1 = (k % p.strata + u1) / p.strata; u2 = ((k / p.strata) % p.strata + u2) / p.strata; }
+                if (b == 0 && p.strata > 1) { u1 = fract((ka + u1) / p.strata + turn); u2 = (kr + u2) / p.strata; }
                 r.direction = cosine(n, u1, u2);
                 r.min_distance = 0.001;
                 if (p.mode == 1) {
@@ -161,10 +169,11 @@ public enum LightBaker {
         // darkened every lower storey.
         bool ceiling = n.z < -0.5;
         uint s = hash(gid * 7919 + 13);
+        float turn = rnd(s);
         uint open = 0;
         for (uint k = 0; k < p.samples; k++) {
             float u1 = rnd(s), u2 = rnd(s);
-            if (p.strata > 1) { u1 = (k % p.strata + u1) / p.strata; u2 = ((k / p.strata) % p.strata + u2) / p.strata; }
+            if (p.strata > 1) { u1 = fract((k % p.strata + u1) / p.strata + turn); u2 = ((k / p.strata) % p.strata + u2) / p.strata; }
             ray r;
             r.origin = o;
             r.direction = cosine(n, u1, u2);
