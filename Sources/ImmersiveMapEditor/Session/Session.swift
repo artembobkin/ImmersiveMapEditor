@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import TileKit
 import Observation
@@ -333,8 +334,29 @@ final class Session {
     /// The pipeline's command building one tile, its models all, its light
     /// not baked (the Light view bakes it): fetching what is missing,
     /// seeding its roads when no document holds it.
+    /// Whether a build lays the roads (the user, 2026-10-29: a tile of
+    /// buildings alone when wanted), kept between runs.
+    static let roadsKey = "build.roads"
+    var buildRoads: Bool {
+        get { UserDefaults.standard.object(forKey: Self.roadsKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Self.roadsKey) }
+    }
+
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"]
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light"] + (buildRoads ? [] : ["--no-roads"])
+    }
+
+    /// Every built tile into the engine's model archive, where the user
+    /// chooses (the user, 2026-10-29).
+    func exportArchive() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "models.pmtiles"
+        panel.allowedContentTypes = [.data]
+        panel.canCreateDirectories = true
+        panel.title = "Export the Model Archive"
+        panel.message = "Every built tile, in the form the engine reads (a PMTiles archive of model tiles)."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        run([["archive", url.path]])
     }
 
     /// Runs pipeline commands on the workspace, the road document open saved

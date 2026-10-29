@@ -19,7 +19,7 @@ public enum Build {
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
                            export: Bool = false, light: Lighting.Settings = Lighting.Settings(), bakeLight: Bool = true,
-                           roads: URL? = nil) throws {
+                           roads: URL? = nil, includeRoads: Bool = true) throws {
         guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
         try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -60,8 +60,15 @@ public enum Build {
                 b.whole = .cut
             }
         }
-        Progress.report("Laying the roads")
-        let (asphalt, kerb, shelters) = try Ground.build(b, osm, tile, work: work, footprint: footprint, paths: paths, roads: roads)
+        // The roads only when asked (the user, 2026-10-29: a tile of buildings
+        // alone, the vector tile's roads under it).
+        let (asphalt, kerb, shelters): (Geometry, Geometry, [(P2, Double)])
+        if includeRoads {
+            Progress.report("Laying the roads")
+            (asphalt, kerb, shelters) = try Ground.build(b, osm, tile, work: work, footprint: footprint, paths: paths, roads: roads)
+        } else {
+            (asphalt, kerb, shelters) = (Geometry.empty, Geometry.empty, [])
+        }
         Progress.report("Construction sites and bus shelters")
         buildSites(b, osm: osm, work: work, earth: Ground.constructionEarth(osm, work: work, footprint: footprint,
                                                                             asphalt: asphalt, kerb: kerb),

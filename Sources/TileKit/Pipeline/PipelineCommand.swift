@@ -38,6 +38,7 @@ public enum PipelineCommand {
                 var options = Pipeline.Options()
                 options.refetch = args.flag("--refetch")
                 options.bakeLight = !args.flag("--no-light")
+                options.roads = !args.flag("--no-roads")
                 if let s = args.value("--samples"), let n = Int(s[0]) { options.samples = n }
                 var tiles = args.tiles()
                 let n = args.list.compactMap { Int($0) }
@@ -121,6 +122,21 @@ public enum PipelineCommand {
             case "fit":
                 guard let id = args.list.first else { usage() }
                 try Fit.run(id, paths)
+            case "archive":
+                // Every built tile of a zoom into the engine's model archive.
+                guard let first = args.list.first else { usage() }
+                let out = path(first)
+                let z = args.value("--z").flatMap { Int($0[0]) } ?? 15
+                let block = args.value("--astc-block").flatMap { Int($0[0]) } ?? 8
+                do {
+                    let summary = try ModelArchive.run(paths, z: z, out: out, blockEdge: block) { Progress.report("Archiving \($0)") }
+                    for line in summary.lines { print("[archive] \(line)") }
+                    print(String(format: "[archive] %@: %d tiles, %d models, %.2f MB", out.path, summary.tiles, summary.models, Double(summary.bytes) / 1_048_576))
+                    exit(0)
+                } catch {
+                    print("[archive] \(error)")
+                    exit(1)
+                }
             case "landmark":
                 // A landmark's model from its recipe (a starter recipe from
                 // OSM first when it has none, or when asked).
@@ -147,7 +163,8 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light]
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light] [--no-roads]
+               ImmersiveMapEditor pipeline archive OUT.pmtiles [--z 15] [--astc-block 8|4]
                ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
                ImmersiveMapEditor pipeline fetch Z X Y [--force]
                ImmersiveMapEditor pipeline seed Z X Y [--force]

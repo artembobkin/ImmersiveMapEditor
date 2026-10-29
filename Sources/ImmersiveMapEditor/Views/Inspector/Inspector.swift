@@ -104,6 +104,12 @@ struct ActionSection: View {
             Button(action.title, systemImage: action.systemImage) { session.perform(action) }
                 .disabled(!session.can(action))
             Text(action.help).font(.callout).foregroundStyle(.secondary)
+            if action == .tile {
+                Toggle("Roads", isOn: Binding(get: { session.buildRoads }, set: { session.buildRoads = $0 }))
+                    .help("Lay the roads of the road document in the tile, seeding one if there is none. Off: the tile holds its buildings, landmarks and construction sites alone, the vector tile's roads under them.")
+                Button("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }
+                    .help("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
+            }
         }
     }
 }

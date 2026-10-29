@@ -24,6 +24,9 @@ public enum Pipeline {
         /// Whether the light is baked with the build: without it the light
         /// map is white, until `pipeline bake`.
         public var bakeLight = true
+        /// Whether the roads are built: without them no road document is
+        /// seeded and the tile holds its buildings, landmarks and sites alone.
+        public var roads = true
         public init() {}
     }
 
@@ -66,7 +69,7 @@ public enum Pipeline {
                 try Fetch.tile(paths, z: z, x: x, y: y, force: options.refetch)
             }
         }
-        let seeded = try ensureRoads(paths, z: z, tiles: tiles)
+        let seeded = options.roads ? try ensureRoads(paths, z: z, tiles: tiles) : []
         if !seeded.isEmpty { print("roads seeded for " + seeded.joined(separator: ", ")) }
         let indexURL = out.appendingPathComponent("index.json")
         var index: [String: [String: Any]] = [:]
@@ -91,7 +94,8 @@ public enum Pipeline {
                 let t0 = Date()
                 var light = Lighting.Settings()
                 light.samples = options.samples
-                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light, bakeLight: options.bakeLight)
+                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light, bakeLight: options.bakeLight,
+                              includeRoads: options.roads)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
                 Progress.report("Validating")
