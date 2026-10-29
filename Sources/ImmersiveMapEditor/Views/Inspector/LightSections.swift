@@ -59,8 +59,7 @@ struct LightSections: View {
                                      : "No shadow shown: the engine adds its own sun.")
                     .font(.callout).foregroundStyle(.secondary)
                 if light.engineSun {
-                    slider("From", $light.sunAzimuth, 0...359, "%.0f°")
-                    slider("Height", $light.sunElevation, 5...90, "%.0f°")
+                    SunPad(from: $light.sunAzimuth, height: $light.sunElevation)
                     slider("Depth", $light.shadow, 0...1, "%.2f")
                 }
             } else {
@@ -110,8 +109,7 @@ struct LightSections: View {
         case "sides":
             note("The palette's lit, side and shade tones on every wall and slope by which way it faces against the sun from \(Int(Palette.sunFrom))°: the engine's sun must come from there too.")
         case "lambert":
-            slider("From", param(i, "from"), 0...359, "%.0f°")
-            slider("Height", param(i, "height"), 5...90, "%.0f°")
+            SunPad(from: param(i, "from"), height: param(i, "height"))
             slider("Strength", param(i, "strength"), 0...1, "%.2f")
             note("A lamp from a direction, baked into the colours flat over each face: a face turned from it loses this much of its light, one facing it none. The Landmarks view's lamp, in the tile.")
         case "sky":
@@ -125,8 +123,7 @@ struct LightSections: View {
             slider("Depth", param(i, "depth"), 0...1, "%.2f")
             note("How shut in each point is within the radius, in the light map: dark in corners and narrow courtyards, no direction, taking this much of the light where shut in whole.")
         case "sun":
-            slider("From", param(i, "from"), 0...359, "%.0f°")
-            slider("Height", param(i, "height"), 5...90, "%.0f°")
+            SunPad(from: param(i, "from"), height: param(i, "height"))
             slider("Strength", param(i, "strength"), 0...3, "%.2f")
             note("A sun baked into the light map with its shadows: they stay put whatever the engine's sun does. Off by default, since the engine casts the sun's shadows itself.")
         default:
@@ -141,6 +138,56 @@ struct LightSections: View {
             Text(label)
             Slider(value: value, in: range)
             Text(String(format: format, value.wrappedValue)).monospacedDigit().frame(width: 52, alignment: .trailing)
+        }
+    }
+}
+
+/// Where a light comes from, on a square: the scene from above, north up,
+/// the building at the cross in the middle. The sun is dragged about it:
+/// its bearing is the direction from the middle, its height how near the
+/// middle it stands (overhead at the cross, on the horizon at the ring).
+/// Fixed to the scene, not the camera (the user, 2026-10-29).
+struct SunPad: View {
+    @Binding var from: Double
+    @Binding var height: Double
+    private let side = 150.0
+
+    var body: some View {
+        let r = side / 2 - 10
+        let d = r * (1 - (min(max(height, 5), 90) - 5) / 85)
+        let a = from * .pi / 180
+        let sun = CGPoint(x: side / 2 + d * sin(a), y: side / 2 - d * cos(a))
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor))
+                Circle().stroke(.secondary.opacity(0.5), lineWidth: 1).frame(width: 2 * r, height: 2 * r)
+                Path { p in
+                    p.move(to: CGPoint(x: side / 2 - 8, y: side / 2)); p.addLine(to: CGPoint(x: side / 2 + 8, y: side / 2))
+                    p.move(to: CGPoint(x: side / 2, y: side / 2 - 8)); p.addLine(to: CGPoint(x: side / 2, y: side / 2 + 8))
+                }
+                .stroke(.secondary, lineWidth: 1)
+                Text("N").font(.caption2).foregroundStyle(.secondary).position(x: side / 2, y: 9)
+                Path { p in p.move(to: CGPoint(x: side / 2, y: side / 2)); p.addLine(to: sun) }
+                    .stroke(.yellow.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                Image(systemName: "sun.max.fill").foregroundStyle(.yellow).font(.system(size: 16)).position(sun)
+            }
+            .frame(width: side, height: side)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                let dx = g.location.x - side / 2, dy = g.location.y - side / 2
+                let dist = min(r, hypot(dx, dy))
+                if dist > 2 {
+                    var bearing = atan2(dx, -dy) * 180 / .pi
+                    if bearing < 0 { bearing += 360 }
+                    from = bearing.rounded()
+                }
+                height = (5 + 85 * (1 - dist / r)).rounded()
+            })
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: "From %.0f°", from)).monospacedDigit()
+                Text(String(format: "Height %.0f°", height)).monospacedDigit()
+                Text("North up, the building at the cross; drag the sun about it.").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }

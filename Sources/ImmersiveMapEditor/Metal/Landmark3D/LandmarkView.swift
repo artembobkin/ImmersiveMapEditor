@@ -422,6 +422,10 @@ final class LandmarkRenderer {
         let count: Int
         let light: MTLTexture
         let ground: MTLBuffer
+        /// The axes beside the model, three lines of two vertices: east,
+        /// north, up, from a corner outside its bounds on the ground, so
+        /// they never cross it (the user, 2026-10-29).
+        let axes: MTLBuffer
         let centre: SIMD3<Double>
         let size: SIMD3<Double>
         let triangles: Int
@@ -470,7 +474,13 @@ final class LandmarkRenderer {
             for (x, z) in [(-1, -1), (-1, 1), (1, 1), (-1, -1), (1, 1), (1, -1)] as [(Float, Float)] {
                 g += [gx + x * radius, gy, gz + z * radius, 0, 1, 0, 1, 1, 1, 0, 0]
             }
+            // The axes: from the south-west corner, 5 m out, 10 m long.
+            let ax = Float(lo.x) - 5, ay = Float(lo.y), az = Float(hi.z) + 5, len: Float = 10
+            var a: [Float] = []
+            let ends: [(Float, Float, Float)] = [(ax, ay, az), (ax + len, ay, az), (ax, ay, az), (ax, ay, az - len), (ax, ay, az), (ax, ay + len, az)]
+            for (x, y, z) in ends { a += [x, y, z, 0, 1, 0, 1, 1, 1, 0, 0] }
             return LitModel(vertices: buffer, count: v.count / 11, light: texture, ground: device.makeBuffer(bytes: g, length: g.count * 4)!,
+                            axes: device.makeBuffer(bytes: a, length: a.count * 4)!,
                             centre: centre, size: hi - lo, triangles: r.triangles, sun: r.sun)
         }
 
@@ -707,6 +717,16 @@ final class LandmarkRenderer {
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: model.count)
             enc.setTriangleFillMode(.fill)
             enc.setDepthBias(0, slopeScale: 0, clamp: 0)
+        }
+        // The axes: east red, north green, up blue.
+        enc.setVertexBuffer(model.axes, offset: 0, index: 0)
+        uniforms.shadow.w = 1
+        let axisColours: [SIMD4<Float>] = [SIMD4(0.85, 0.2, 0.2, 0), SIMD4(0.2, 0.7, 0.25, 0), SIMD4(0.2, 0.4, 0.9, 0)]
+        for (k, colour) in axisColours.enumerated() {
+            uniforms.colour = colour
+            enc.setVertexBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+            enc.setFragmentBytes(&uniforms, length: MemoryLayout<LitUniforms>.stride, index: 1)
+            enc.drawPrimitives(type: .line, vertexStart: k * 2, vertexCount: 2)
         }
         enc.setCullMode(.none)
     }
