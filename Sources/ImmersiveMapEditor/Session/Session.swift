@@ -330,7 +330,9 @@ final class Session {
         guard let tile = workspace.tile, can(action) else { return }
         switch action {
         case .tile:
-            run([buildStep(tile)])
+            // The parts are chosen first (the user, 2026-10-30: the choice
+            // belongs to the button, in a sheet).
+            buildAsked = true
         case .light:
             // A tile built before builds kept what a bake needs builds once first.
             let ready = FileManager.default.fileExists(atPath: workspace.build(tile).appendingPathComponent("bake/scene.bin").path)
@@ -367,6 +369,16 @@ final class Session {
         var parts = buildParts
         if on { parts.insert(part) } else { parts.remove(part) }
         buildParts = parts
+    }
+
+    /// Whether the build sheet is up, the parts to choose.
+    var buildAsked = false
+
+    /// Builds the working tile with the parts chosen, from the sheet.
+    func buildTileNow() {
+        guard let tile = workspace.tile else { return }
+        buildAsked = false
+        run([buildStep(tile)])
     }
 
     private func buildStep(_ tile: TileKey) -> [String] {

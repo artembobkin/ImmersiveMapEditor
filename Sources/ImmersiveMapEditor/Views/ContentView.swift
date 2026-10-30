@@ -31,6 +31,7 @@ struct ContentView: View {
         } message: {
             Text("The road document holding the tile is seeded again from osm2streets and OSM, over every hand edit in it.")
         }
+        .sheet(isPresented: Binding(get: { session.buildAsked }, set: { session.buildAsked = $0 })) { BuildSheet() }
         .alert("Immersive Map Editor", isPresented: Binding(get: { session.problem != nil }, set: { if !$0 { session.problem = nil } })) {
         } message: {
             Text(session.problem ?? "")

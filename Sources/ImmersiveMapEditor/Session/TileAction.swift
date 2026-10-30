@@ -15,7 +15,7 @@ enum TileAction {
     var title: String {
         switch self {
         case .roads: "Seed the Roads"
-        case .tile: "Build the Tile"
+        case .tile: "Build the Tile…"
         case .light: "Bake"
         }
     }
@@ -33,9 +33,9 @@ enum TileAction {
         case .roads:
             "Seed the road document holding the tile from osm2streets and OSM: a new one, or again over the hand edits once confirmed (⌘B)"
         case .tile:
-            "Build the tile's model: its buildings and landmarks from OSM, its roads laid from the road document as it is (never seeded again: that is Roads'), and export it. The light is not baked: Light bakes it (⌘B)"
+            "The tile's model from OSM and the road document, the parts you choose, exported; its light left for Bake (⌘B)"
         case .light:
-            "Bake the tile's light and the faces' shade into its textures with the modifiers below, its geometry as built (⌘B)"
+            "The light and the faces' shade into the tile's textures with the modifiers below, its geometry as built"
         }
     }
 }

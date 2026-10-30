@@ -107,23 +107,53 @@ struct ActionSection: View {
                     .disabled(!session.can(action))
                 Text(action.help).font(.callout).foregroundStyle(.secondary)
             }
-            if actions.contains(.tile) {
-                // What the build holds, each part chosen apart.
-                let parts: [(String, String, String)] = [
-                    ("landmarks", "Landmarks", "The models of the tile's landmarks."),
-                    ("houses", "Typical houses", "The procedure's houses with their windows, from OSM's typical Moscow houses."),
-                    ("boxes", "Other buildings", "Every other building as a plain box of its outline and height."),
-                    ("sites", "Construction sites", "The fences, cranes and machines of landuse=construction."),
-                    ("roads", "Roads", "The roads of the road document with their markings and bus shelters, seeding a document if there is none."),
-                ]
-                ForEach(parts, id: \.0) { key, name, help in
-                    Toggle(name, isOn: Binding(get: { session.buildParts.contains(key) }, set: { session.toggle(part: key, on: $0) }))
-                        .help(help)
-                }
-            }
         }
     }
 }
+
+/// The build's sheet: what the tile's model holds, each part chosen apart,
+/// then Build (the user, 2026-10-30: the choice belongs to the button).
+struct BuildSheet: View {
+    @Environment(Session.self) private var session
+
+    static let parts: [(key: String, name: String, help: String)] = [
+        ("landmarks", "Landmarks", "The models of the tile's landmarks."),
+        ("houses", "Typical houses", "The procedure's houses with their windows, from OSM's typical Moscow houses."),
+        ("boxes", "Other buildings", "Every other building as a plain box of its outline and height."),
+        ("sites", "Construction sites", "The fences, cranes and machines of landuse=construction."),
+        ("roads", "Roads", "The roads of the road document with their markings and bus shelters, seeding a document if there is none."),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Build \(session.workspace.tile?.name ?? "the tile")").font(.headline)
+            Text("What the tile's model holds. The light is not baked here: Bake does that after.")
+                .font(.callout).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Self.parts, id: \.key) { part in
+                    Toggle(isOn: Binding(get: { session.buildParts.contains(part.key) }, set: { session.toggle(part: part.key, on: $0) })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(part.name)
+                            Text(part.help).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                }
+            }
+            HStack {
+                Button("Cancel") { session.buildAsked = false }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Build", systemImage: "cube") { session.buildTileNow() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(session.buildParts.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+    }
+}
+
+
 
 extension ViewMode {
     var systemImage: String {
