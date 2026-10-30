@@ -25,8 +25,7 @@ struct SettingsView: View {
                 let root = session.workspace.root
                 Text(root.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.callout.monospaced()).textSelection(.enabled).lineLimit(2)
-                Text("Every tile's folder (its OSM, roads and build), the landmarks' recipes and the exclusions.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .help("Every tile's folder (its OSM, roads and build), the landmarks' recipes and the exclusions.")
                 HStack {
                     Button("Show in Finder") { Platform.open(root) }
                     Button("Choose…") { picking = true }
@@ -41,6 +40,7 @@ struct SettingsView: View {
                 SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
                     .onSubmit { ClaudeSettings.proxy = proxy }
                     .onChange(of: proxy) { ClaudeSettings.proxy = proxy }
+                    .help("The landmarks' agent runs Claude Code on your subscription, every request through this proxy. The proxy is kept in your keychain, never in the project.")
                 SecureField("No proxy (NO_PROXY)", text: $noProxy)
                     .onChange(of: noProxy) { ClaudeSettings.noProxy = noProxy }
                 SecureField("Mapillary token", text: $mapillary, prompt: Text("MLY|…  (mapillary.com/dashboard/developers)"))
@@ -59,19 +59,16 @@ struct SettingsView: View {
                     }
                     Text(proxySaid).font(.callout).foregroundStyle(.secondary)
                 }
-                Text("The landmarks' agent runs Claude Code on your subscription, every request through this proxy. The proxy is kept in your keychain, never in the project.")
-                    .font(.callout).foregroundStyle(.secondary)
             }
             Section("Camera") {
                 Toggle("Invert turning (left and right)", isOn: $invertTurning)
+                    .help("Right-drag (or option-drag) turns the 3D views: the other way round while this is on.")
                 Toggle("Invert tilting (up and down)", isOn: $invertTilting)
-                Text("Right-drag (or option-drag) turns and tilts the 3D views: each the other way round while it is on.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .help("Right-drag (or option-drag) tilts the 3D views: the other way round while this is on.")
             }
             Section("Esri World Imagery") {
                 SecureField("ArcGIS key (optional)", text: $esri)
-                Text("Works without a key. A key of ArcGIS Location Platform's free plan counts its use under Esri's terms.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .help("Works without a key. A key of ArcGIS Location Platform's free plan counts its use under Esri's terms.")
                 Link("Get a key at location.arcgis.com", destination: URL(string: "https://location.arcgis.com/")!)
                     .font(.callout)
             }

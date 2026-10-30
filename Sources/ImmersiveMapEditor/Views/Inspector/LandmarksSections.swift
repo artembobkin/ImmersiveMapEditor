@@ -141,9 +141,8 @@ struct LandmarksSections: View {
                 let facades = LandmarkMCP.Server.facadeCount(landmark.folder)
                 Stepper("Turn limit a facade: \(turnsPerFacade)", value: $turnsPerFacade, in: 0...20)
                     .disabled(session.agent.running)
-                    .help("The most replies Claude may make for one landmark, a safety stop: this many a facade and 8 besides. 0 for no limit.")
-                Text(turnsPerFacade > 0 ? "\(ClaudeSettings.maxTurns(facades: facades)) replies at most for this landmark, with its \(facades) facades." : "No limit on Claude's replies.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .help("The most replies Claude may make for one landmark, a safety stop: this many a facade and 8 besides, "
+                          + (turnsPerFacade > 0 ? "\(ClaudeSettings.maxTurns(facades: facades)) for this one with its \(facades) facades." : "none now: no limit."))
             }
             DisclosureGroup("More", isExpanded: $moreShown) {
                 Toggle("Wireframe", isOn: $session.landmarkWireframe)

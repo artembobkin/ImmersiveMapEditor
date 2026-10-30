@@ -105,7 +105,7 @@ struct ActionSection: View {
             ForEach(actions, id: \.title) { action in
                 Button(action.title, systemImage: action.systemImage) { session.perform(action) }
                     .disabled(!session.can(action))
-                Text(action.help).font(.callout).foregroundStyle(.secondary)
+                    .help(action.help)
             }
         }
     }
@@ -127,17 +127,12 @@ struct BuildSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Build \(session.workspace.tile?.name ?? "the tile")").font(.headline)
-            Text("What the tile's model holds. The light is not baked here: Bake does that after.")
-                .font(.callout).foregroundStyle(.secondary)
+                .help("What the tile's model holds. The light is not baked here: Bake does that after.")
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Self.parts, id: \.key) { part in
-                    Toggle(isOn: Binding(get: { session.buildParts.contains(part.key) }, set: { session.toggle(part: part.key, on: $0) })) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(part.name)
-                            Text(part.help).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.checkbox)
+                    Toggle(part.name, isOn: Binding(get: { session.buildParts.contains(part.key) }, set: { session.toggle(part: part.key, on: $0) }))
+                        .toggleStyle(.checkbox)
+                        .help(part.help)
                 }
             }
             HStack {

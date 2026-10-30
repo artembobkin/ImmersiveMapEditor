@@ -15,8 +15,7 @@ struct MapSections: View {
                     if let t = session.candidate { session.open(tile: t) }
                 }
                 .disabled(session.candidate == nil || session.build.running)
-                Text("Fetches its OSM and seeds its roads when they are missing, then its views are there. Double-click a tile, or ↩.")
-                    .font(.callout).foregroundStyle(.secondary)
+                .help("Fetches its OSM and seeds its roads when they are missing, then its views are there. Double-click a tile, or ↩.")
             }
         }
         Section("Workspace") {
@@ -24,8 +23,7 @@ struct MapSections: View {
                 .foregroundStyle(.secondary)
             Button("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }
                 .disabled(workspace.built.isEmpty || workspace.building)
-            Text("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
-                .font(.callout).foregroundStyle(.secondary)
+                .help("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
         }
     }
 }

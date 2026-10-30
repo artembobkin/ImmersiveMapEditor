@@ -15,16 +15,14 @@ struct StyleView: View {
             VStack(alignment: .leading, spacing: 22) {
                 ForEach(Palette.defaults, id: \.group) { group in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(group.group).font(.title3.bold())
-                        Text(Self.about[group.group] ?? "").font(.callout).foregroundStyle(.secondary)
+                        Text(group.group).font(.title3.bold()).help(Self.about[group.group] ?? "")
                         ForEach(group.colours, id: \.0) { colour in
                             ColourRow(name: colour.0, defaultHex: colour.1, group: group.group)
                         }
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Glass").font(.title3.bold())
-                    Text("The map's one glass and a tower's bright glass, flat, not sided.").font(.callout).foregroundStyle(.secondary)
+                    Text("Glass").font(.title3.bold()).help("The map's one glass and a tower's bright glass, flat, not sided.")
                     ForEach(["lm_glass", "lm_sky_glass"], id: \.self) { name in
                         HStack(spacing: 10) {
                             Swatch(hex: Palette.hex(name) ?? "#000000", size: CGSize(width: 44, height: 28))

@@ -33,8 +33,8 @@ struct BuildingsSections: View {
         let heldCount = holders.reduce(0) { $0 + $1.1 }
         if picked.isEmpty {
             Section("Make a landmark") {
-                Text("Click a building, shift-click for more, double-click a whole building with its parts. \(catalog.status)")
-                    .font(.callout).foregroundStyle(.secondary)
+                Text("None picked. \(catalog.status)").foregroundStyle(.secondary)
+                    .help("Click a building, shift-click for more, double-click a whole building with its parts.")
             }
         } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
             Section("Picked: \(picked.count)") {
