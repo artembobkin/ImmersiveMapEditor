@@ -101,7 +101,7 @@ enum LandmarkMCP {
 
         static let tools: [[String: Any]] = [
             ["name": "get_landmark",
-             "description": "The landmark: its name, centre, and every OSM building and building:part it is made of, a line each (id, part or outline, base and height, plan size and middle in metres east and north of the centre, area, the tags that shape it). Then the recipe format and the palette's colours. Read it first.",
+             "description": "The landmark: its name, centre, and every OSM building and building:part it is made of, a line each (id, part or outline, base and height, plan size and middle in metres east and north of the centre, area, the tags that shape it), then the outline rings of the largest of them in metres: the walls, where every feature on a facade takes its line and points. Then the recipe format and the palette's colours. Read it first.",
              "inputSchema": ["type": "object", "properties": [:]]],
             ["name": "get_outlines",
              "description": "The outline rings of some of the landmark's OSM buildings (up to 40 ids a call), in metres east and north of the centre, simplified to 0.3 m: to place features (colonnades, pediments) on the right lines, or to draw a polygon of your own.",
@@ -265,7 +265,7 @@ enum LandmarkMCP {
             }
             var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1)." + axis,
                          "Its OSM buildings (\(source.buildings.count)): id, part or outline, base..height m, plan size and middle (x east, y north, m), area, the tags that shape it.",
-                         "Outlines come by get_outlines (ids), simplified to 0.3 m."]
+                         "The outlines of the largest come below, the rest by get_outlines (ids)."]
             for b in source.buildings {
                 let pts = b.polygons.flatMap { $0.first ?? [] }
                 guard let first = pts.first else { continue }
@@ -276,6 +276,15 @@ enum LandmarkMCP {
                              + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
                              + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
             }
+            // The walls themselves, in metres (the user, 2026-11-01: placed by
+            // eye off the satellite view, porticos, panels and signs stood
+            // metres before the wall, in the air).
+            let largest = source.buildings.sorted { $0.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } > $1.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } }
+            let shown = Array(largest.prefix(12))
+            lines.append("")
+            lines.append("The walls: the outline rings of \(shown.count == source.buildings.count ? "its buildings" : "its \(shown.count) largest buildings") in metres (x east, y north), each ring's corners in order, simplified to 0.3 m. "
+                         + "Whatever stands on a facade, a colonnade or a portico's stylobate, a pediment, a panel, a sign, takes its line and points from these corners (a step out of a metre at most), so it stands on the wall and not in the air before it.")
+            lines.append(try outlines(shown.map(\.osm)))
             return lines.joined(separator: "\n") + "\n\n" + LandmarkRecipe.guide
         }
 
@@ -486,8 +495,7 @@ enum LandmarkMCP {
             let url = "https://tiles.mapillary.com/maps/vtp/mly1_public/2/\(CoverageTile.zoom)/\(x)/\(y)?access_token=\(try mapillaryToken)"
             var last = ""
             for _ in 0..<2 {
-                let (status, said) = Self.run(URL(fileURLWithPath: "/usr/bin/curl"),
-                                              ["-fsSL", "--http1.1", "--compressed", "--max-time", "120", "-o", file.path, url])
+                let (status, said) = CacheFile.fetch(url, to: file, curl: ["-fsSL", "--http1.1", "--compressed", "--max-time", "120"], run: Self.run)
                 last = said
                 if status == 0, let data = try? Data(contentsOf: file), !data.isEmpty { return data }
             }

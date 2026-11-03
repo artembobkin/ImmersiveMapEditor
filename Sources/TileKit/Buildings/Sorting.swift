@@ -43,18 +43,19 @@ public final class Building {
 }
 
 /// The buildings and parts to draw in `work`, each with its landmark id or
-/// nil, and the union of their footprints on the ground. The OSM elements
-/// in `replaced` stand for a model of Modeling (`Imported`) and are left
-/// out, as is a building or part standing mostly in `covered`, the models'
-/// plan.
+/// nil, the union of their footprints on the ground, and `hidden`, the
+/// buildings and parts left out for standing mostly in `covered`, the
+/// models' plan, by name. The OSM elements in `replaced` stand for a model
+/// of Modeling (`Imported`) and are left out too.
 public func sortBuildings(osm: Osm, work: Geometry, paths: WorkspacePaths, replaced: Set<String> = [],
-                          covered: Geometry? = nil) -> (buildings: [Building], footprint: Geometry) {
+                          covered: Geometry? = nil) -> (buildings: [Building], footprint: Geometry, hidden: Set<String>) {
     let exclude = (loadJSON(paths.config.appendingPathComponent("exclude.json"))["exclude"] as? [[String: Any]] ?? [])
         .compactMap { $0["element"] as? String }
     let excluded = Set(exclude).union(replaced)
     let registry = loadJSON(paths.landmarks.appendingPathComponent("landmarks.json"))["landmarks"] as? [[String: Any]] ?? []
     var shapes: [String: Geometry] = [:]
     var outlines: [(String, Tags, Geometry)] = [], parts: [(String, Tags, Geometry)] = []
+    var hidden = Set<String>()
     // Every building of the data, not only those in `work`: whether an
     // outline has parts must not depend on which tile is being built.
     for area in osm.areas() {
@@ -66,6 +67,7 @@ public func sortBuildings(osm: Osm, work: Geometry, paths: WorkspacePaths, repla
             if poly.area < 2 { continue }
             if let covered, tags["building"] != nil || tags["building:part"] != nil,
                poly.intersects(covered), poly.intersection(covered).area > 0.5 * poly.area {
+                hidden.insert(name)
                 continue
             }
             if let part = tags["building:part"], part != "no" {
@@ -140,5 +142,5 @@ public func sortBuildings(osm: Osm, work: Geometry, paths: WorkspacePaths, repla
     // parts are all raised (a gallery, a bridge) keeps its ground.
     // A landmark waiting for its model is not built, so its ground stays.
     let footprint = Geometry.unaryUnion(buildings.filter { minHeight($0.tags) < 0.5 && $0.landmark == nil }.map(\.poly))
-    return (buildings, footprint)
+    return (buildings, footprint, hidden)
 }

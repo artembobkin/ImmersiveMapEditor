@@ -11,6 +11,18 @@ final class MapCamera {
 
     var pointsPerUnit: Double { 256 * pow(2, zoom) }
 
+    /// The centre as longitude and latitude, for the engine's camera.
+    var lonLat: (lon: Double, lat: Double) {
+        (centre.x * 360 - 180, atan(sinh(.pi * (1 - 2 * centre.y))) * 180 / .pi)
+    }
+
+    /// The view moved over a place, from the engine's camera.
+    func set(lon: Double, lat: Double, zoom z: Double) {
+        let phi = max(-85, min(85, lat)) * .pi / 180
+        centre = SIMD2((lon + 180) / 360, (1 - asinh(tan(phi)) / .pi) / 2)
+        zoom = min(19, max(3, z))
+    }
+
     func unit(_ p: CGPoint, in size: CGSize) -> SIMD2<Double> {
         centre + (SIMD2(p.x, p.y) - SIMD2(size.width, size.height) / 2) / pointsPerUnit
     }

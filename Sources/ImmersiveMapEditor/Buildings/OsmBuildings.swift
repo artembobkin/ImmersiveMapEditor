@@ -15,6 +15,8 @@ struct OsmBuilding: Identifiable {
     let isPart: Bool
 
     var name: String? { tags["name"] ?? tags["name:en"] }
+    /// How much it matters, by its tags: named, notable, or plain.
+    var note: BuildingNote { BuildingNote(tags) }
     /// Its height in metres, by `height` or `building:levels`, nil without.
     var height: Double? { length(tags["height"]) ?? length(tags["building:levels"]).map { $0 * 3.4 } }
     var minHeight: Double { TileKit.minHeight(tags) }
@@ -23,6 +25,19 @@ struct OsmBuilding: Identifiable {
     /// Whether a point is inside it.
     func contains(_ p: Vec2) -> Bool {
         polygons.contains { rings in rings.reduce(0) { $0 + winding($1, p) } != 0 }
+    }
+
+    /// The centroid of its largest outer ring, where its name sits.
+    var centroid: Vec2 {
+        guard let ring = polygons.map({ $0[0] }).max(by: { abs(signedArea($0)) < abs(signedArea($1)) }), ring.count >= 3 else { return middle }
+        var a = 0.0, c = Vec2.zero
+        for i in ring.indices {
+            let p = ring[i], q = ring[(i + 1) % ring.count]
+            let w = p.x * q.y - q.x * p.y
+            a += w
+            c = c + (p + q) * w
+        }
+        return abs(a) < 1e-9 ? middle : c / (3 * a)
     }
 
     /// A point of it, the middle of its outer rings' corners: where a part
@@ -46,7 +61,21 @@ final class OsmBuildings {
     /// The tile's square in its metres.
     private(set) var square: (Vec2, Vec2)?
     var picked: Set<String> = []
+    /// Whether the known buildings are named on the map.
+    var showNames = true
+    /// The building under the pointer, named in the status line.
+    var hovered: String?
     private(set) var status = ""
+
+    /// What the status line says: the building under the pointer by its
+    /// name, kind and height, else the count.
+    var hoverStatus: String {
+        guard let id = hovered, let b = all.first(where: { $0.id == id }) else { return status }
+        let kind = b.isPart ? (b.tags["building:part"].map { $0 == "yes" ? "part" : "part, \($0)" } ?? "part")
+            : (b.tags["building"].map { $0 == "yes" ? "building" : $0 } ?? "building")
+        return [b.name, kind, b.height.map { String(format: "%.0f m", $0) }, BuildingNote.reason(b.tags).map { "notable: \($0)" }]
+            .compactMap { $0 }.joined(separator: " · ")
+    }
 
     var selected: [OsmBuilding] { all.filter { picked.contains($0.id) } }
 
@@ -80,7 +109,9 @@ final class OsmBuildings {
         square = (Vec2(-half, -half), Vec2(half, half))
         // Outlines first, parts over them, as they are drawn.
         all = buildings.sorted { !$0.isPart && $1.isPart }
-        status = "\(buildings.filter { !$0.isPart }.count) buildings, \(buildings.filter(\.isPart).count) parts"
+        let outlines = buildings.filter { !$0.isPart }
+        status = "\(outlines.count) buildings, \(buildings.filter(\.isPart).count) parts, "
+            + "\(outlines.filter { $0.note == .notable }.count) notable, \(outlines.filter { $0.note == .named }.count) named besides"
     }
 
     /// The whole building under a point: its outline (the smallest building

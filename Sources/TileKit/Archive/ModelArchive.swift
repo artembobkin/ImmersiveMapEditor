@@ -21,30 +21,44 @@ public enum ModelArchive {
         public var lines: [String] = []
     }
 
-    /// Bakes every built tile of zoom `z` into `out`. ASTC blocks of
-    /// `blockEdge` (8, or 4 for a finer texture at four times the size).
+    /// The zoom of the archive's tiles: the engine asks for model tiles of
+    /// this zoom alone (its `ModelTileStore.tileZoom`), whatever zoom the map
+    /// is at, so a built tile of a deeper zoom goes into the archive tile
+    /// over it, the four of one zoom 15 tile baked as one (the user,
+    /// 2026-11-02: an archive of zoom 15 tiles showed nothing on the map).
+    public static let archiveZoom = 14
+
+    /// Bakes every built tile of zoom `z` into `out`, by the archive's
+    /// tiles of `archiveZoom`. ASTC blocks of `blockEdge` (8, or 4 for a
+    /// finer texture at four times the size).
     public static func run(_ paths: WorkspacePaths, z: Int, out: URL, blockEdge: Int = 8,
                            progress: (String) -> Void = { _ in }) throws -> Summary {
+        guard z >= archiveZoom else { throw BakeError("the archive holds tiles of zoom \(archiveZoom): built tiles of zoom \(z) are coarser") }
         let encoder = try TextureEncoder(blockEdge: blockEdge)
         var archive = PMTilesWriter()
         var summary = Summary()
         let zoomFolder = paths.tiles.appendingPathComponent("\(z)")
+        let shift = z - archiveZoom
+        // The built tiles' placements by the archive tile over them.
+        var byTile: [[Int]: [URL]] = [:]
         for column in numberedFolders(in: zoomFolder) {
             for row in numberedFolders(in: column.url) {
-                let build = row.url.appendingPathComponent("build")
-                let placement = build.appendingPathComponent("placement.json")
+                let placement = row.url.appendingPathComponent("build").appendingPathComponent("placement.json")
                 guard FileManager.default.fileExists(atPath: placement.path) else { continue }
-                progress("\(z)/\(column.number)/\(row.number)")
-                guard let tile = try bakeTile(zoom: z, x: column.number, y: row.number, placements: [placement],
-                                              blockEdge: blockEdge, encoder: encoder) else { continue }
-                let data = tile.serialized()
-                archive.tiles.append(PMTilesWriter.Tile(zoom: z, x: column.number, y: row.number, data: data))
-                summary.tiles += 1
-                summary.models += tile.models.count
-                let textureBytes = tile.texture.levels.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } }
-                summary.lines.append("\(z)/\(column.number)/\(row.number): \(tile.indices.count / 3) triangles, \(tile.vertexCount) vertices, "
-                                     + "\(tile.texture.layerCount) texture layers (\(megabytes(textureBytes))), tile \(megabytes(data.count))")
+                byTile[[column.number >> shift, row.number >> shift], default: []].append(placement)
             }
+        }
+        for key in byTile.keys.sorted(by: { ($0[0], $0[1]) < ($1[0], $1[1]) }) {
+            let (x, y, files) = (key[0], key[1], byTile[key]!)
+            progress("\(archiveZoom)/\(x)/\(y)")
+            guard let tile = try bakeTile(zoom: archiveZoom, x: x, y: y, placements: files, blockEdge: blockEdge, encoder: encoder) else { continue }
+            let data = tile.serialized()
+            archive.tiles.append(PMTilesWriter.Tile(zoom: archiveZoom, x: x, y: y, data: data))
+            summary.tiles += 1
+            summary.models += tile.models.count
+            let textureBytes = tile.texture.levels.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } }
+            summary.lines.append("\(archiveZoom)/\(x)/\(y) (\(files.count) built of zoom \(z)): \(tile.indices.count / 3) triangles, \(tile.vertexCount) vertices, "
+                                 + "\(tile.texture.layerCount) texture layers (\(megabytes(textureBytes))), tile \(megabytes(data.count))")
         }
         guard !archive.tiles.isEmpty else { throw BakeError("no built tile of zoom \(z) under \(paths.tiles.path)") }
         archive.metadata = [
@@ -102,6 +116,16 @@ public enum ModelArchive {
         var mergedIndexCount = 0
 
         let tilesAcross = Double(1 << zoom)
+        // The size every layer of the tile's array takes: the largest
+        // texture of its models, the smaller ones grown to it.
+        var layerSize: (width: Int, height: Int)?
+        for (placement, file) in merged + separate {
+            let modelURL = file.deletingLastPathComponent().appendingPathComponent(placement.model)
+            for primitive in try GLBReader.read(modelURL) {
+                guard let size = TextureEncoder.pngSize(primitive.image) else { continue }
+                if layerSize.map({ size.width > $0.width || size.height > $0.height }) ?? true { layerSize = size }
+            }
+        }
         for (placement, file) in merged + separate {
             let origin = placement.origin
             let tile = tileCoordinate(latitude: origin.latitude, longitude: origin.longitude, zoom: zoom)
@@ -127,13 +151,14 @@ public enum ModelArchive {
             var maximum = SIMD3<Float>(repeating: -.infinity)
             for primitive in primitives {
                 let digest = TextureEncoder.digest(of: primitive.image).map { String(format: "%02x", $0) }.joined()
+                    + (layerSize.map { "-\($0.width)x\($0.height)" } ?? "")
                 let layer: Int
                 if let existing = layerDigests.firstIndex(of: digest) {
                     layer = existing
                 } else {
                     layer = layers.count
                     layerDigests.append(digest)
-                    layers.append(try textureEncoder.encode(png: primitive.image, name: placement.id))
+                    layers.append(try textureEncoder.encode(png: primitive.image, name: placement.id, size: layerSize))
                 }
                 guard layer <= Int(UInt8.max) else {
                     throw BakeError("tile \(zoom)/\(x)/\(y): more than 256 different textures")

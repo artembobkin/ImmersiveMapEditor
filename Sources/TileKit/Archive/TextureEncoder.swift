@@ -26,7 +26,8 @@ struct EncodedTexture {
 /// same raw values and nothing is converted on the way.
 final class TextureEncoder {
     let blockEdge: Int
-    private var encodedByDigest: [SHA256.Digest: EncodedTexture] = [:]
+    /// By the PNG's digest and the size it was grown to.
+    private var encodedByDigest: [String: EncodedTexture] = [:]
     private let decodeCheck: ASTCDecodeCheck?
 
     init(blockEdge: Int) throws {
@@ -48,15 +49,26 @@ final class TextureEncoder {
     }
 
     /// Encodes a PNG once: the same bytes asked for again, by another model
-    /// or another tile, come from the cache.
-    func encode(png: Data, name: String) throws -> EncodedTexture {
-        let digest = Self.digest(of: png)
+    /// or another tile, come from the cache. `size` grows a smaller texture
+    /// to it, pixel for pixel (nearest): the layers of a tile's array share
+    /// one size, and a palette of 256 px beside one of 512 px is the same
+    /// palette with every cell twice as wide, its UVs at the same places
+    /// (the user, 2026-11-02: two built tiles of one archive tile differed).
+    func encode(png: Data, name: String, size: (width: Int, height: Int)? = nil) throws -> EncodedTexture {
+        let digest = Self.digest(of: png).map { String(format: "%02x", $0) }.joined() + (size.map { "-\($0.width)x\($0.height)" } ?? "")
         if let encoded = encodedByDigest[digest] {
             return encoded
         }
         var level = try Self.decode(png: png, name: name)
         guard level.width.nonzeroBitCount == 1, level.height.nonzeroBitCount == 1 else {
             throw BakeError("\(name): the texture is \(level.width)x\(level.height), and a mip chain needs powers of two")
+        }
+        if let size, size.width != level.width || size.height != level.height {
+            guard size.width >= level.width, size.height >= level.height,
+                  size.width % level.width == 0, size.height % level.height == 0, size.width / level.width == size.height / level.height else {
+                throw BakeError("\(name): the texture is \(level.width)x\(level.height) and cannot be grown to \(size.width)x\(size.height)")
+            }
+            level = level.grown(by: size.width / level.width)
         }
         let source = level
         var levels: [Data] = []
@@ -113,6 +125,21 @@ final class TextureEncoder {
                 }
             }
             return Pixels(width: halfWidth, height: halfHeight, bytes: result)
+        }
+
+        /// Each pixel `k` by `k` pixels: the same picture, larger.
+        func grown(by k: Int) -> Pixels {
+            guard k > 1 else { return self }
+            let w = width * k, h = height * k
+            var result = [UInt8](repeating: 0, count: w * h * 4)
+            for y in 0..<h {
+                let row = (y / k) * width
+                for x in 0..<w {
+                    let from = (row + x / k) * 4, to = (y * w + x) * 4
+                    for channel in 0..<4 { result[to + channel] = bytes[from + channel] }
+                }
+            }
+            return Pixels(width: w, height: h, bytes: result)
         }
 
         func flippedVertically() -> Pixels {
@@ -298,5 +325,17 @@ final class ASTCDecodeCheck {
                              from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
         }
         return pixels
+    }
+}
+
+extension TextureEncoder {
+    /// A PNG's size from its header (IHDR: the width and height, big-endian,
+    /// after the signature), without decoding it.
+    static func pngSize(_ png: Data) -> (width: Int, height: Int)? {
+        guard png.count >= 24 else { return nil }
+        let b = [UInt8](png.prefix(24))
+        guard b[12] == 0x49, b[13] == 0x48, b[14] == 0x44, b[15] == 0x52 else { return nil }
+        func u32(_ i: Int) -> Int { (Int(b[i]) << 24) | (Int(b[i + 1]) << 16) | (Int(b[i + 2]) << 8) | Int(b[i + 3]) }
+        return (u32(16), u32(20))
     }
 }

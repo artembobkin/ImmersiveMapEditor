@@ -1,9 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// The left panel, the same in every view: the tile shown (open, or picked
-/// while choosing), its folder (everything of it, to look at or delete as
-/// one) and its files, fetched, seeded and built. A file opens in its app.
+/// The left panel: the tile shown (open, or picked while choosing), its
+/// folder (everything of it, to look at or delete as one) and the files the
+/// view is about (the user, 2026-11-02: every file of the tile at once was
+/// too much to find anything in): while choosing, all of them; in Buildings
+/// the landmark open, or the one holding the picked buildings, as a group
+/// of its own, else the tile's landmarks and its OSM; in Roads its roads
+/// and OSM; in Style the palette's config; in Preview its build, and the
+/// landmark shown alone when one is. A file opens in its app.
 struct FilesSidebar: View {
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var phase
@@ -14,27 +19,23 @@ struct FilesSidebar: View {
     var body: some View {
         let workspace = session.workspace
         // Read again when the tiles' builds change, a build ends, or asked.
-        let _ = (workspace.tilesRevision, session.build.running, refreshed)
+        let _ = (workspace.tilesRevision, session.jobs.anyRunning, refreshed)
         List {
             if let tile = session.shownTile {
                 let files = TileFiles(tile: tile, workspace: workspace)
                 let exists = FileManager.default.fileExists(atPath: files.folder.path)
                 Section {
-                    Button { Platform.open(files.folder) } label: {
-                        Label("Open Tile Folder", systemImage: "folder")
-                    }
-                    .disabled(!exists)
-                    .help(exists ? files.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-                                 : "The tile has no folder yet: opening it fetches its OSM")
-                    Button { refreshed += 1 } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(!exists)
-                    .help("Read the tile's folder again: files deleted or added in the Finder (a landmark's references) shown as they are")
+                    PanelButton("Open Tile Folder", systemImage: "folder") { Platform.open(files.folder) }
+                        .disabled(!exists)
+                        .help(exists ? files.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+                                     : "The tile has no folder yet: opening it fetches its OSM")
+                    PanelButton("Refresh", systemImage: "arrow.clockwise") { refreshed += 1 }
+                        .disabled(!exists)
+                        .help("Read the tile's folder again: files deleted or added in the Finder (a landmark's references) shown as they are")
                 } header: {
                     Text(verbatim: tile.name)
                 }
-                ForEach(files.groups) { group in
+                ForEach(shown(files, tile: tile)) { group in
                     Section {
                         if group.files.isEmpty {
                             Text("Nothing yet").foregroundStyle(.secondary)
@@ -50,6 +51,30 @@ struct FilesSidebar: View {
         }
         .listStyle(.sidebar)
         .onChange(of: phase) { if phase == .active { refreshed += 1 } }
+    }
+
+    /// The groups the view is about.
+    private func shown(_ files: TileFiles, tile: TileKey) -> [TileFiles.Group] {
+        guard session.phase == .working else { return files.all }
+        let landmarks = session.candidates
+        switch session.workspace.viewMode {
+        case .buildings:
+            if let open = landmarks.first(where: { $0.id == session.pickedLandmark }) { return [files.landmark(open)] }
+            if let holder = session.buildings.selected.lazy.compactMap({ session.landmark(holding: $0.id) }).first,
+               holder.tile == tile.name, let held = landmarks.first(where: { $0.id == holder.id }) {
+                return [files.landmark(held)]
+            }
+            return [files.group(.landmarks), files.group(.osm)]
+        case .roads:
+            return [files.group(.roads), files.group(.osm)]
+        case .style:
+            return [files.group(.config)]
+        case .engine:
+            return [files.group(.engine), files.group(.build)]
+        case .preview:
+            let alone = landmarks.first { $0.id == session.workspace.previewSubject }
+            return [files.group(.build)] + (alone.map { [files.landmark($0)] } ?? [])
+        }
     }
 }
 

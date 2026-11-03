@@ -16,9 +16,20 @@ final class LandmarkView: MTKView {
     private var turning = false
     /// What to show: a model's GLB, or a landmark's OSM buildings as boxes
     /// while it has no model.
+    /// A model placed in the tile: its file and its origin in the tile's
+    /// metres, east, north and up.
+    struct Placed: Equatable {
+        let url: URL
+        let origin: SIMD3<Double>
+    }
+
     enum Source: Equatable {
         case model(URL)
         case boxes(id: String, [TileLandmark.Box])
+        /// Every model of the tile together where the build places them,
+        /// their palette alone, no build (the user, 2026-11-02: a quick look
+        /// at all the models at once).
+        case models([Placed])
         /// A model lit as the engine lights it: its light baked with these
         /// settings (the Preview view).
         case lit(URL, Lighting.Settings)
@@ -27,6 +38,7 @@ final class LandmarkView: MTKView {
             switch (a, b) {
             case let (.model(x), .model(y)): x == y
             case let (.boxes(x, _), .boxes(y, _)): x == y
+            case let (.models(x), .models(y)): x == y
             case let (.lit(x, s), .lit(y, t)): x == y && s == t
             default: false
             }
@@ -53,7 +65,12 @@ final class LandmarkView: MTKView {
     /// The wireframe over the shading, and back faces culled (a model's,
     /// not the OSM boxes': their winding is not kept).
     var wireframe = false
-    private var cull: Bool { if case .model = source { return true } else { return false } }
+    private var cull: Bool {
+        switch source {
+        case .model, .models: return true
+        default: return false
+        }
+    }
     /// What went wrong reading the model, or how big it is.
     var status: (String) -> Void = { _ in }
     /// The camera as the headless render takes it, whenever it changes:
@@ -107,6 +124,7 @@ final class LandmarkView: MTKView {
         switch next {
         case .model(let url), .lit(let url, _): name = url.lastPathComponent
         case .boxes: name = "OSM boxes"
+        case .models(let placed): name = "\(placed.count) landmarks"
         }
         if case .lit = next { status("Baking the light of \(name)…") } else { status("Reading \(name)…") }
         Task.detached {
@@ -114,6 +132,7 @@ final class LandmarkView: MTKView {
                 switch next {
                 case .model(let url): return try LandmarkRenderer.Model.load(url, device: device)
                 case .boxes(_, let boxes): return try LandmarkRenderer.Model.extruded(boxes, device: device)
+                case .models(let placed): return try LandmarkRenderer.Model.load(placed, device: device)
                 case .lit(let url, let settings):
                     let started = Date()
                     let baked = try LandmarkLight.bake(url, settings: settings)
@@ -220,6 +239,7 @@ final class LandmarkView: MTKView {
         switch next {
         case .model(let url), .lit(let url, _): try LandmarkRenderer.Model.load(url, device: renderer.device)
         case .boxes(_, let boxes): try LandmarkRenderer.Model.extruded(boxes, device: renderer.device)
+        case .models(let placed): try LandmarkRenderer.Model.load(placed, device: renderer.device)
         }
     }
 
@@ -584,35 +604,43 @@ final class LandmarkRenderer {
         var note = ""
 
         static func load(_ url: URL, device: MTLDevice) throws -> Model {
+            try load([LandmarkView.Placed(url: url, origin: .zero)], device: device)
+        }
+
+        /// Several models as one, each moved to its origin (east, north, up).
+        static func load(_ placed: [LandmarkView.Placed], device: MTLDevice) throws -> Model {
             let loader = MTKTextureLoader(device: device)
             var lo = SIMD3<Double>(repeating: .infinity), hi = -lo
             var parts: [Part] = []
             var triangles = 0
-            for part in try GLTF.primitives(url) {
-                // The build's +Z up (east, north, up) back to the view's +Y up,
-                // -Z north, as the tiles are drawn.
-                let tris = part.tris.map { SIMD3($0.x, $0.z, -$0.y) }
-                var v: [Float] = []
-                v.reserveCapacity(tris.count * 8)
-                for t in stride(from: 0, to: tris.count - 2, by: 3) {
-                    let a = tris[t], b = tris[t + 1], c = tris[t + 2]
-                    let n = simd_normalize(simd_cross(b - a, c - a))
-                    for k in 0..<3 {
-                        let p = tris[t + k]
-                        lo = simd_min(lo, p)
-                        hi = simd_max(hi, p)
-                        let uv = part.uvs?[t + k] ?? .zero
-                        v += [Float(p.x), Float(p.y), Float(p.z), Float(n.x), Float(n.y), Float(n.z), Float(uv.x), Float(uv.y)]
+            for p in placed {
+                let o = p.origin
+                for part in try GLTF.primitives(p.url) {
+                    // The build's +Z up (east, north, up) back to the view's +Y up,
+                    // -Z north, as the tiles are drawn.
+                    let tris = part.tris.map { SIMD3($0.x + o.x, $0.z + o.z, -($0.y + o.y)) }
+                    var v: [Float] = []
+                    v.reserveCapacity(tris.count * 8)
+                    for t in stride(from: 0, to: tris.count - 2, by: 3) {
+                        let a = tris[t], b = tris[t + 1], c = tris[t + 2]
+                        let n = simd_normalize(simd_cross(b - a, c - a))
+                        for k in 0..<3 {
+                            let p = tris[t + k]
+                            lo = simd_min(lo, p)
+                            hi = simd_max(hi, p)
+                            let uv = part.uvs?[t + k] ?? .zero
+                            v += [Float(p.x), Float(p.y), Float(p.z), Float(n.x), Float(n.y), Float(n.z), Float(uv.x), Float(uv.y)]
+                        }
                     }
+                    guard !v.isEmpty, let buffer = device.makeBuffer(bytes: v, length: v.count * 4) else { continue }
+                    let texture = part.material.image.flatMap {
+                        try? loader.newTexture(data: $0, options: [.SRGB: false, .generateMipmaps: true,
+                                                                   .textureUsage: MTLTextureUsage.shaderRead.rawValue])
+                    }
+                    let f = part.material.factor.map(Float.init) + [1, 1, 1, 1]
+                    parts.append(Part(vertices: buffer, count: v.count / 8, texture: texture, colour: SIMD4(f[0], f[1], f[2], 1)))
+                    triangles += v.count / 24
                 }
-                guard !v.isEmpty, let buffer = device.makeBuffer(bytes: v, length: v.count * 4) else { continue }
-                let texture = part.material.image.flatMap {
-                    try? loader.newTexture(data: $0, options: [.SRGB: false, .generateMipmaps: true,
-                                                               .textureUsage: MTLTextureUsage.shaderRead.rawValue])
-                }
-                let f = part.material.factor.map(Float.init) + [1, 1, 1, 1]
-                parts.append(Part(vertices: buffer, count: v.count / 8, texture: texture, colour: SIMD4(f[0], f[1], f[2], 1)))
-                triangles += v.count / 24
             }
             return try make(parts: parts, lo: lo, hi: hi, triangles: triangles, device: device)
         }

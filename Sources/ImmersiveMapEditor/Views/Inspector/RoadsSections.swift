@@ -6,39 +6,27 @@ struct RoadsSections: View {
     @Bindable var model: RoadEditor
     let map: RoadsView
 
+    private let pair = [GridItem(.flexible()), GridItem(.flexible())]
+
     var body: some View {
         Section("Tool") {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+            LazyVGrid(columns: pair, spacing: 6) {
                 ForEach(Tool.allCases) { tool in
-                    Button { model.tool = tool } label: {
-                        HStack {
-                            Text(tool.rawValue)
-                            Spacer()
-                            Text(tool.key).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(model.tool == tool ? .accentColor : nil)
+                    PanelButton(tool.rawValue, key: tool.key) { model.tool = tool }
+                        .tint(model.tool == tool ? .accentColor : nil)
                 }
             }
         }
         Section("Points") {
-            HStack {
-                Button("Straighten  S") { model.straighten() }
-                Button("Align  ⇧S") { model.straighten(keep: true) }
+            LazyVGrid(columns: pair, spacing: 6) {
+                PanelButton("Straighten", key: "S") { model.straighten() }
+                PanelButton("Align", key: "⇧S") { model.straighten(keep: true) }
+                PanelButton("Round", key: "R") { model.roundCorners() }
+                PanelButton("Simplify", key: "D") { model.simplifySelection() }
             }
-            HStack {
-                Button("Round  R") { model.roundCorners() }
-                Slider(value: $model.settings.cornerRadius, in: 0.5...20)
-                Text("\(model.settings.cornerRadius, specifier: "%.1f") m").monospacedDigit().frame(width: 48)
-            }
-            HStack {
-                Button("Simplify  D") { model.simplifySelection() }
-                Slider(value: $model.settings.tolerance, in: 0.05...2)
-                Text("\(model.settings.tolerance, specifier: "%.2f") m").monospacedDigit().frame(width: 48)
-            }
-            Button("Delete  ⌫") { model.deleteSelection() }
+            metres("Round radius", $model.settings.cornerRadius, 0.5...20, "%.1f")
+            metres("Simplify tolerance", $model.settings.tolerance, 0.05...2, "%.2f")
+            PanelButton("Delete", key: "⌫") { model.deleteSelection() }
         }
         Section("Selection") { SelectionSections(model: model) }
         Section("Layers") {
@@ -57,7 +45,7 @@ struct RoadsSections: View {
                 opacity("Roadway", $model.layers.roadwayOpacity)
             }
             Toggle("Point handles  H", isOn: $model.layers.handles)
-            Button("Frame the tile  F") { map.frameAll() }
+            PanelButton("Frame the tile", key: "F") { map.frameAll() }
         }
         Section("Document") {
             Text(model.url.lastPathComponent).font(.callout.monospaced())
@@ -67,12 +55,21 @@ struct RoadsSections: View {
         }
     }
 
+    /// A length in metres, as a slider with its value.
+    private func metres(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>, _ format: String) -> some View {
+        HStack {
+            Text(label)
+            Slider(value: value, in: range)
+            Text(String(format: format + " m", value.wrappedValue)).monospacedDigit().frame(width: 52, alignment: .trailing)
+        }
+    }
+
     /// A layer's opacity, as a percentage slider.
-    func opacity(_ label: String, _ value: Binding<Double>) -> some View {
+    private func opacity(_ label: String, _ value: Binding<Double>) -> some View {
         HStack {
             Text(label)
             Slider(value: value, in: 0...1)
-            Text("\(Int((value.wrappedValue * 100).rounded())) %").monospacedDigit().frame(width: 44, alignment: .trailing)
+            Text("\(Int((value.wrappedValue * 100).rounded())) %").monospacedDigit().frame(width: 52, alignment: .trailing)
         }
     }
 }

@@ -40,7 +40,7 @@ struct SelectionSections: View {
                 ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
             }
         case let .action(body):
-            Button(parameter.label) { model.set(id, parameter.label) { body($0) } }
+            PanelButton(parameter.label) { model.set(id, parameter.label) { body($0) } }
         }
     }
 }

@@ -34,24 +34,34 @@ struct BuildingsSections: View {
         if picked.isEmpty {
             Section("Make a landmark") {
                 Text("None picked. \(catalog.status)").foregroundStyle(.secondary)
-                    .help("Click a building, shift-click for more, double-click a whole building with its parts.")
+                    .help("Click a building, shift-click for more, double-click a whole building with its parts; a double-click on a landmark's building opens the landmark.")
+                Toggle("Names", isOn: Binding(get: { catalog.showNames }, set: { catalog.showNames = $0 }))
+                    .help("The known buildings named on the map: the notable ones always (an article in Wikipedia or Wikidata, a heritage or historic tag, a church, theatre, station, palace or museum, drawn deeper teal), the merely named when large enough on screen (light teal).")
             }
         } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
             Section("Picked: \(picked.count)") {
                 Text("All of them are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "." : " of tile \(holder.tile)."))
                     .font(.callout).foregroundStyle(.secondary)
                 if holder.tile == session.workspace.tile?.name {
-                    Button("Open \(holder.name)", systemImage: "building.columns") { session.pickedLandmark = holder.id }
+                    PanelButton("Open \(holder.name)", systemImage: "building.columns") { session.pickedLandmark = holder.id }
                 }
             }
         } else {
             Section("Make a landmark of \(picked.count - heldCount)") {
                 TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
-                Button("Make a Landmark of \(picked.count - heldCount) Buildings", systemImage: "building.columns") {
-                    session.makeLandmark(named: name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name, leavingHeld: true)
+                let title = name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name
+                PanelButton("Make a Landmark of \(picked.count - heldCount) Buildings", systemImage: "building.columns") {
+                    session.makeLandmark(named: title, leavingHeld: true)
                     name = ""
                 }
                 .disabled(picked.count == heldCount)
+                .help("Its folder with landmark.json and footprint.geojson, opened; nothing is modelled yet.")
+                PanelButton("Make It and Model with Claude", systemImage: "sparkles") {
+                    session.makeLandmarkAndModel(named: title)
+                    name = ""
+                }
+                .disabled(picked.count == heldCount)
+                .help("The landmark made and Claude set on it at once, in the queue with the others; the view stays here, its state in the list of landmarks below.")
                 ForEach(holders, id: \.0.folder) { holder, count in
                     HStack {
                         Text("\(count) of the picked are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "" : " of tile \(holder.tile)") + ": left out.")
@@ -76,8 +86,8 @@ struct BuildingsSections: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(b.name ?? b.tags["building"].map { "building = \($0)" } ?? "building part")
-                                Text(verbatim: [b.id, b.isPart ? "part" : nil,
-                                                b.height.map { String(format: "%.0f m high", $0) }].compactMap { $0 }.joined(separator: " · "))
+                                Text(verbatim: [b.id, b.isPart ? "part" : nil, b.height.map { String(format: "%.0f m high", $0) },
+                                                BuildingNote.reason(b.tags).map { "notable: \($0)" }].compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption.monospaced()).foregroundStyle(.secondary)
                             }
                         }

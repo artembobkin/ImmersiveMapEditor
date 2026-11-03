@@ -46,7 +46,7 @@ struct ContentView: View {
         return WindowLayout(consoleShown: session.panels.console) {
             main.overlay(alignment: .topLeading) { PicturePreview() }
         } console: {
-            BottomPanel().environment(session.build)
+            BottomPanel().environment(session.console)
         } status: {
             StatusLine()
         }
@@ -82,6 +82,8 @@ struct ContentView: View {
     @ViewBuilder private var main: some View {
         if session.phase == .working {
             mode
+        } else if session.mapEngine {
+            EngineView()
         } else {
             MapPicker()
         }
@@ -110,6 +112,8 @@ struct ContentView: View {
             .onChange(of: session.pickedLandmark, initial: true) { session.showLandmark() }
         case .style:
             StyleView()
+        case .engine:
+            EngineView()
         case .preview:
             // What the engine will show: the tile built and lit by its light
             // map (or the light alone), or one landmark alone, its light

@@ -174,12 +174,20 @@ public enum Imported {
                                 bays: recipe["bays"] as? [String: Any], glass: sky ? "lm_sky_glass" : nil))
         }
         // What the models cover in plan: an OSM building standing mostly under
-        // a model is the model's too, listed in its `replaces` or not.
+        // a model is the model's too, listed in its `replaces` or not. A
+        // model's faces are united first and the union grown 0.05 m once:
+        // the same cover as every face grown and all united (a buffer
+        // distributes over a union), at one buffer a model instead of one a
+        // face (the user, 2026-11-02: placing 41 models took minutes, nine
+        // tenths of them in those buffers). A model whose union fails (a
+        // face folded on itself) is grown face by face as before.
         var cover: [Geometry] = []
         for m in models {
-            for f in m.faces where abs(f.normal.z) > 0.2 && f.corners.count >= 3 {
-                cover.append(Geometry.polygon(f.corners.map { P2($0.x, $0.y) }).buffer(0.05))
-            }
+            let faces = m.faces.filter { abs($0.normal.z) > 0.2 && $0.corners.count >= 3 }
+                .map { Geometry.polygon($0.corners.map { P2($0.x, $0.y) }) }
+            guard !faces.isEmpty else { continue }
+            let united = Geometry.unaryUnion(faces)
+            cover.append(united.isEmpty ? .unaryUnion(faces.map { $0.buffer(0.05) }) : united.buffer(0.05))
         }
         return (models, replaced, .unaryUnion(cover))
     }

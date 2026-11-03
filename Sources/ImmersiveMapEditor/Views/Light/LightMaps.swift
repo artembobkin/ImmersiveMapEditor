@@ -141,9 +141,14 @@ final class LightSettings {
         return s
     }
 
-    /// The bake command's options for these settings.
+    /// The bake command's options for these settings. The JSON's keys are
+    /// sorted: JSONSerialization orders a dictionary's keys as it likes from
+    /// one call to the next, and the key below, compared to tell a change,
+    /// took that for one (the user, 2026-11-02: the tile's light baked again
+    /// and again, each bake's end a "change").
     var arguments: [String] {
-        let json = (try? JSONSerialization.data(withJSONObject: modifiers.map { $0.json() })).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let json = (try? JSONSerialization.data(withJSONObject: modifiers.map { $0.json() }, options: [.sortedKeys]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
         return ["--size", "\(size)", "--samples", "\(samples)", "--modifiers", json]
     }
 

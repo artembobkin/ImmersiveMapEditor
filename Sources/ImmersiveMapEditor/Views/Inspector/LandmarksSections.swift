@@ -19,12 +19,11 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.emphasisKey) private var emphasis = "photos"
     @AppStorage(ClaudeSettings.exaggerationKey) private var exaggeration = 2.0
     @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 3
+    @AppStorage(ClaudeSettings.atOnceKey) private var atOnce = 3
     @State private var forgetting = false
     @State private var deleting: TileLandmark?
     @State private var settingsShown = false
     @State private var moreShown = false
-
-    private var runner: BuildRunner { session.build }
 
     var body: some View {
         @Bindable var session = session
@@ -35,21 +34,40 @@ struct LandmarksSections: View {
         }
     }
 
+    /// The tile's landmarks in the order the list shows them: the ones Claude
+    /// is modelling first, then the queued, then the runs ended this
+    /// session, the latest first, to look at what came of them, then the
+    /// rest as their folders sort (the user, 2026-11-02: the work in
+    /// progress and just done at the top).
+    private var listed: [TileLandmark] {
+        func key(_ landmark: TileLandmark, _ offset: Int) -> (Int, Double, Int) {
+            guard let run = session.agent.run(of: landmark.id) else { return (3, 0, offset) }
+            if run.state.running { return (0, 0, offset) }
+            if run.state.active { return (1, 0, offset) }
+            return (2, -(run.ended?.timeIntervalSinceReferenceDate ?? 0), offset)
+        }
+        return session.candidates.enumerated().sorted { key($0.element, $0.offset) < key($1.element, $1.offset) }.map(\.element)
+    }
+
     /// The tile's landmarks, to open.
     @ViewBuilder private var list: some View {
         Section("Landmarks: \(session.candidates.count)") {
             if session.candidates.isEmpty {
                 Text("None in this tile yet: pick buildings above and make one.").foregroundStyle(.secondary)
             }
-            ForEach(session.candidates) { landmark in
+            ForEach(listed) { landmark in
                 Button { session.pickedLandmark = landmark.id } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(landmark.name)
-                            Text(verbatim: "\(landmark.buildings.count) buildings · " + (landmark.model == nil ? "no model yet" : "model"))
+                            Text(verbatim: landmark.buildingsCount + " · " + (landmark.model == nil ? "no model yet" : "model"))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
+                        if let run = session.agent.run(of: landmark.id) {
+                            if run.state.running { ProgressView().controlSize(.mini) }
+                            Text(run.status).font(.caption).foregroundStyle(run.state.isFailed ? .red : .secondary)
+                        }
                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
                     .contentShape(Rectangle())
@@ -58,7 +76,7 @@ struct LandmarksSections: View {
                 .contextMenu {
                     Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
                     Button("Delete \(landmark.name)…", systemImage: "trash", role: .destructive) { deleting = landmark }
-                        .disabled(session.agent.running)
+                        .disabled(session.agent.isActive(landmark.id))
                 }
             }
         }
@@ -87,24 +105,24 @@ struct LandmarksSections: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(landmark.name).font(.headline)
-                Text(verbatim: "\(landmark.buildings.count) buildings · " + (landmark.model == nil ? "no model yet: its OSM boxes" : landmark.model!.lastPathComponent)
+                Text(verbatim: landmark.buildingsCount + " · " + (landmark.model == nil ? "no model yet: its OSM boxes" : landmark.model!.lastPathComponent)
                      + (LandmarkAgent.hasConversation(landmark.folder) ? " · Claude has worked on it" : ""))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         Section("Model") {
-            if session.agent.running {
-                Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop() }
+            if session.agent.isActive(landmark.id) {
+                PanelButton("Stop Claude", systemImage: "stop.circle") { session.agent.stop(landmark.id) }
+                    .help("Stops Claude on this landmark alone" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
             } else {
-                Button("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
-                    .disabled(runner.running)
+                PanelButton("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
                     .help("A new attempt from OSM: Claude Code gathers freely licensed photos (the ones kept are used again), writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
             }
             if LandmarkAgent.hasConversation(landmark.folder) {
                 RequestField(landmark: landmark)
             }
-            Button("Build from Its Recipe", systemImage: "hammer") { session.buildLandmark() }
-                .disabled(runner.running)
+            PanelButton("Build from Its Recipe", systemImage: "hammer") { session.buildLandmark() }
+                .disabled(session.isBusy(landmark: landmark.id))
                 .help("Builds model.glb from recipe.json (a starter recipe from OSM's tags when there is none).")
         }
         Section {
@@ -143,14 +161,17 @@ struct LandmarksSections: View {
                     .disabled(session.agent.running)
                     .help("The most replies Claude may make for one landmark, a safety stop: this many a facade and 8 besides, "
                           + (turnsPerFacade > 0 ? "\(ClaudeSettings.maxTurns(facades: facades)) for this one with its \(facades) facades." : "none now: no limit."))
+                Stepper("At once: \(atOnce)", value: $atOnce, in: 1...6)
+                    .onChange(of: atOnce) { session.agent.pump() }
+                    .help("How many landmarks Claude models at the same time, each a session of its own; the rest wait their turn, and the references are gathered for one at a time.")
             }
             DisclosureGroup("More", isExpanded: $moreShown) {
                 Toggle("Wireframe", isOn: $session.landmarkWireframe)
                     .help("The model's edges over its shading.")
-                Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
+                PanelButton("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
                 if LandmarkAgent.hasWork(landmark.folder) {
-                    Button("Forget Claude's Work…", systemImage: "trash", role: .destructive) { forgetting = true }
-                        .disabled(runner.running)
+                    PanelButton("Forget Claude's Work…", systemImage: "trash", role: .destructive) { forgetting = true }
+                        .disabled(session.isBusy(landmark: landmark.id))
                         .confirmationDialog("Forget everything Claude made for \(landmark.name)?", isPresented: $forgetting) {
                             Button("Forget the Photos, Recipe and Model", role: .destructive) {
                                 LandmarkAgent.forget(landmark.folder)
@@ -160,8 +181,8 @@ struct LandmarksSections: View {
                             Text("Its photos, renders, recipe, model and conversation are deleted. The landmark itself stays.")
                         }
                 }
-                Button("Delete the Landmark…", systemImage: "trash", role: .destructive) { deleting = landmark }
-                    .disabled(session.agent.running)
+                PanelButton("Delete the Landmark…", systemImage: "trash", role: .destructive) { deleting = landmark }
+                    .disabled(session.agent.isActive(landmark.id))
                     .confirmationDialog("Delete the landmark \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
                         Button("Delete the Landmark and Everything in Its Folder", role: .destructive) {
                             if let landmark = deleting { session.deleteLandmark(landmark) }
@@ -185,7 +206,7 @@ private struct RequestField: View {
     @State private var pictures: [URL] = []
     @State private var dropping = false
 
-    private var busy: Bool { session.build.running || session.agent.running }
+    private var busy: Bool { session.agent.isActive(landmark.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -211,7 +232,7 @@ private struct RequestField: View {
                 }
             }
             if busy {
-                Text(session.agent.running ? "Claude is still working: wait, or Stop Claude." : "A build is running: wait for it.")
+                Text("Claude is still working on it: wait, or Stop Claude.")
                     .font(.caption).foregroundStyle(.secondary)
             } else if !pictures.isEmpty {
                 Text("\(pictures.count) picture\(pictures.count == 1 ? "" : "s") go with the request.").font(.caption).foregroundStyle(.secondary)

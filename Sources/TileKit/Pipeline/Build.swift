@@ -47,7 +47,18 @@ public enum Build {
         // typical houses, the other buildings as boxes, the sites, the roads.
         let landmarks = parts.contains("landmarks") ? Imported.build(b, models, work, region: region)
             : (made: 0, windows: 0, byModel: [String: [String: Int]]())
-        let (buildings, footprint) = sortBuildings(osm: osm, work: work, paths: paths, replaced: replaced, covered: covered)
+        let (buildings, footprint, hidden) = sortBuildings(osm: osm, work: work, paths: paths, replaced: replaced, covered: covered)
+        // The map's own buildings the tile's mesh stands in for, by their OSM
+        // names, for the engine to leave out under it (placement.json's
+        // "replaces"; the user, 2026-11-02: the Bolshoi stood in its own white
+        // box on the engine's map): the landmarks' buildings and those under
+        // their models when the landmarks are built, and every ordinary
+        // building or part drawn, with the outline a drawn part belongs to.
+        var standsFor = Set<String>()
+        if parts.contains("landmarks") {
+            standsFor.formUnion(replaced)
+            standsFor.formUnion(hidden)
+        }
         var pending: [String: Int] = [:]
         // The parts of one building take one look: a typical house only if
         // every part of it is one.
@@ -70,6 +81,8 @@ public enum Build {
                 // in a neighbour's.
                 b.whole = region.contains(bd.anchor) ? .whole : .foreign
                 ordinary(b, bd.id, bd.tags, bd.poly)
+                standsFor.insert(bd.id)
+                if let key = bd.tags["_key"] { standsFor.insert(key) }
                 b.whole = .cut
             }
         }
@@ -112,6 +125,7 @@ public enum Build {
             "ordinary_buildings_and_parts": ordinaryCount, "landmarks_pending": pending,
             "landmark_model_faces": landmarks.made, "landmark_windows": landmarks.windows,
             "landmark_windows_by_model": landmarks.byModel, "overhang_m": overhang,
+            "replaced_buildings": standsFor.sorted(),
         ]
         for (k, v) in furniture { stats[k] = v }
         let scene = BakeScene(tile: [tile.z, tile.x, tile.y], models: models.map { $0.id }, stats: stats,

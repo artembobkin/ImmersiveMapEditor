@@ -9,8 +9,8 @@ struct TilesSections: View {
         @Bindable var workspace = session.workspace
         Section("View") {
             Toggle("Fly  Tab", isOn: $workspace.flying)
-            Button("Frame  F") { session.tiles?.frameTiles() }
-            Button("Reload the built tiles") { workspace.tilesRevision += 1 }
+            PanelButton("Frame", key: "F") { session.tiles?.frameTiles() }
+            PanelButton("Reload the built tiles") { workspace.tilesRevision += 1 }
         }
         Section("Shown") {
             Text(workspace.tileStatus).foregroundStyle(.secondary)

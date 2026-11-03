@@ -9,12 +9,16 @@ struct TileKey: Hashable, Codable, Comparable {
     static func < (a: TileKey, b: TileKey) -> Bool { (a.y, a.x) < (b.y, b.x) }
 }
 
-/// The views over the open tile, the tabs at the top once a tile is open.
+/// The views over the open tile, the tabs at the top once a tile is open,
+/// in this order (⌘1 to ⌘4): Buildings first, the one a tile opens in
+/// (the user, 2026-11-01).
 enum ViewMode: String, CaseIterable, Identifiable {
-    case roads = "Roads"
     case buildings = "Buildings"
+    case roads = "Roads"
     case style = "Style"
     case preview = "Preview"
+    /// The engine's own map with the model archive over it (the user, 2026-11-02).
+    case engine = "Engine"
     var id: String { rawValue }
 }
 
@@ -28,7 +32,7 @@ final class Workspace {
     let root: URL
     /// Where everything of a tile lies, the pipeline's own description.
     let paths: WorkspacePaths
-    var viewMode: ViewMode = .roads
+    var viewMode: ViewMode = .buildings
     private(set) var fetched: Set<TileKey> = []
     private(set) var built: Set<TileKey> = []
     private(set) var documents: [(url: URL, tiles: RoadPlan.Tiles)] = []
@@ -53,7 +57,6 @@ final class Workspace {
     /// Bumped when the tiles shown or their builds change, so the 3D view
     /// reloads them.
     var tilesRevision = 0
-    var building = false
 
     /// Whether the tile picked is kept for the next run: not for a run
     /// without a window.

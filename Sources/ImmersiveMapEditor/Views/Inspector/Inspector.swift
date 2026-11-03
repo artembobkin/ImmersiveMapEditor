@@ -44,6 +44,7 @@ struct Inspector: View {
                     BuildingsSections()
                     LandmarksSections()
                 case .style: StyleSections()
+                case .engine: EngineSections()
                 }
     }
 }
@@ -103,7 +104,7 @@ struct ActionSection: View {
     var body: some View {
         Section("Build") {
             ForEach(actions, id: \.title) { action in
-                Button(action.title, systemImage: action.systemImage) { session.perform(action) }
+                PanelButton(action.title, systemImage: action.systemImage) { session.perform(action) }
                     .disabled(!session.can(action))
                     .help(action.help)
             }
@@ -157,6 +158,7 @@ extension ViewMode {
         case .preview: "sun.max"
         case .buildings: "building.2"
         case .style: "paintpalette"
+        case .engine: "globe"
         }
     }
 }

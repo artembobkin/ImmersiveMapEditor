@@ -68,7 +68,7 @@ public enum Palette {
     /// The landmarks' own colours, the same in every tile: a model is
     /// repainted in these. Sided like walls, with window tones.
     public private(set) static var landmark: [(String, String)] = [
-        ("lm_white", "#EEE8DC"), ("lm_cream", "#E8D6B2"), ("lm_ochre", "#E3BE7E"), ("lm_red", "#B54A3C"),
+        ("lm_white", "#EEE8DC"), ("lm_cream", "#E8D6B2"), ("lm_ochre", "#E3BE7E"), ("lm_red", "#AA6152"),
         ("lm_rose", "#D39A8A"), ("lm_green", "#5E8C74"), ("lm_dark_green", "#3E5E52"), ("lm_gold", "#D8A93F"),
         ("lm_stone", "#ABA7A3"), ("lm_dark", "#4B4752"), ("lm_roof", "#CBC5BC"),
     ]
@@ -231,10 +231,14 @@ public enum Palette {
 /// them until the export turns them.
 public final class PaletteTexture {
     public static let cell = 16
-    /// 256 px, 256 cells: the base palette, every colour of `Palette.all`.
-    /// A texture of the names a tile uses with their shade steps grows to
-    /// 512 px when they are more than 256.
-    public let size: Int
+    /// Every palette is 512 px, 1024 cells, whatever the tile needs: the
+    /// engine keeps the tiles' palettes as the layers of texture arrays,
+    /// which share one size, and one size everywhere is simplest and
+    /// fastest there (the user, 2026-11-02). A tile that would need more
+    /// cells merges its shade levels until it fits (`Bake`).
+    public static let size = 512
+    public static let cells = (size / cell) * (size / cell)
+    public let size = PaletteTexture.size
     public private(set) var pixels: [UInt8]           // RGB, row 0 on top
     public private(set) var flat: [String: (Double, Double)] = [:]
     /// The name of each cell, in order.
@@ -247,10 +251,8 @@ public final class PaletteTexture {
     /// A palette of just these names (shaded names "name~k" among them,
     /// each k quanta darker), in the order given.
     public init(names: [String]) {
-        let cell = PaletteTexture.cell
-        let n = names.count <= 256 ? 256 : names.count <= 1024 ? 512 : 1024
-        precondition(names.count <= (n / cell) * (n / cell), "too many colours for the palette: \(names.count)")
-        size = n
+        let cell = PaletteTexture.cell, n = PaletteTexture.size
+        precondition(names.count <= PaletteTexture.cells, "too many colours for the palette: \(names.count)")
         self.names = names
         pixels = [UInt8](repeating: 0, count: n * n * 3)
         let perRow = n / cell

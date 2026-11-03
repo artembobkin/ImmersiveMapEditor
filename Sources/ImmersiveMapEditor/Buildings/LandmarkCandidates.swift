@@ -18,6 +18,8 @@ struct TileLandmark: Identifiable {
     let name: String
     let folder: URL
     let buildings: [String]
+    /// How many buildings, in words: "1 building", "3 buildings".
+    var buildingsCount: String { "\(buildings.count) building" + (buildings.count == 1 ? "" : "s") }
     var model: URL? {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
@@ -29,6 +31,17 @@ struct TileLandmark: Identifiable {
         let date = (try? model.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970 ?? 0
         return "\(model.path)@\(Int(date))"
     }
+
+    /// Its centre, longitude and latitude, from landmark.json.
+    var centre: (lon: Double, lat: Double)? {
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("landmark.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let centre = json["centre"] as? [Double], centre.count == 2 else { return nil }
+        return (centre[0], centre[1])
+    }
+
+    /// Whether it has a recipe to build its model from.
+    var hasRecipe: Bool { FileManager.default.fileExists(atPath: folder.appendingPathComponent("recipe.json").path) }
 
     /// One of its OSM buildings as a box: its outline's polygons (rings in
     /// metres around the landmark's centre, east and north), from its base

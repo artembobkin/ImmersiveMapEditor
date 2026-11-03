@@ -52,6 +52,14 @@ enum ClaudeSettings {
         return per <= 0 ? 0 : per * max(1, facades) + 8
     }
 
+    /// How many landmarks Claude models at once (the user, 2026-11-01), the
+    /// rest queued: each run is a session of its own on the subscription.
+    static let atOnceKey = "claude.atOnce"
+    static var atOnce: Int {
+        let v = UserDefaults.standard.object(forKey: atOnceKey) as? Int ?? 3
+        return min(6, max(1, v))
+    }
+
     /// The `claude` to run: the one picked, else the first installed.
     static var executable: URL? {
         if let path = UserDefaults.standard.string(forKey: executableKey), !path.isEmpty {

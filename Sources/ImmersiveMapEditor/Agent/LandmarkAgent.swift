@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import TileKit
 
 /// The landmarks' agent: Claude Code (`claude -p`, on the user's
 /// subscription, through the proxy of Settings) run in a landmark's folder
@@ -7,15 +8,59 @@ import Observation
 /// else: no shell, no file tools, and none of the user's CLAUDE.md files or
 /// memory (ClaudeSettings.environment). It looks for freely licensed photos, writes
 /// the landmark's recipe, renders it and corrects it. Its conversation is
-/// kept (agent.json in the folder), so the user can go on asking. What it
-/// does goes to the console; each model it builds is shown at once.
+/// kept (agent.json in the folder), so the user can go on asking.
+///
+/// The runs, one a landmark (`LandmarkRun`), are jobs of the session's
+/// pool (`JobPool`): several landmarks are modelled at once, up to
+/// `ClaudeSettings.atOnce`, the rest queued (the user, 2026-11-01), the
+/// references gathered for one landmark at a time, Claude in parallel. A
+/// run's log is its own console, shown at the foot of the window while its
+/// landmark is open; a finished run stays until the landmark is modelled
+/// again, so its summary can be read. This is the view of the pool as
+/// landmarks: the runs by landmark, started, stopped and counted.
 @Observable
 @MainActor
 final class LandmarkAgent {
-    private(set) var running = false
-    private var process: Process?
-    /// Called when the agent may have built a new model.
-    var modelChanged: () -> Void = {}
+    private let pool: JobPool
+    /// Called with the landmark's id when a run may have built a new model.
+    var modelChanged: (String) -> Void = { _ in }
+
+    init(pool: JobPool) { self.pool = pool }
+
+    var runs: [LandmarkRun] { pool.jobs.compactMap { $0 as? LandmarkRun } }
+
+    /// The runs still queued or going.
+    var active: [LandmarkRun] { runs.filter { $0.state.active } }
+    /// Whether any landmark is queued or being modelled.
+    var running: Bool { !active.isEmpty }
+    /// The run of a landmark, its last one.
+    func run(of id: String) -> LandmarkRun? { runs.last { $0.id == id } }
+    /// Whether the landmark's own run is queued or going.
+    func isActive(_ id: String) -> Bool { run(of: id)?.state.active ?? false }
+
+    /// What the pool is doing, for the status line: nothing when idle.
+    var status: String? {
+        let going = active.filter { $0.state.running }.count, queued = active.count - going
+        guard going + queued > 0 else { return nil }
+        return "Claude: \(going) modelling" + (queued > 0 ? ", \(queued) queued" : "")
+    }
+
+    /// Queues the landmark: a new attempt from OSM, or a request to go on
+    /// with its conversation. A landmark already queued or going is left
+    /// alone; a finished run of it is replaced.
+    func start(tile: TileKey, id: String, folder: URL, name: String, request: String?) {
+        guard !isActive(id) else { return }
+        let run = LandmarkRun(tile: tile, id: id, name: name, folder: folder, request: request)
+        run.modelChanged = { [weak self] in self?.modelChanged(id) }
+        pool.add(run)
+    }
+
+    func stop(_ id: String) { run(of: id)?.stop() }
+
+    func stopAll() { for run in active { run.stop() } }
+
+    /// The pool asked to start what it can: after At once is changed.
+    func pump() { pool.pump() }
 
     static let system = """
     You make stylized low-poly 3D models of real landmarks for a cartoon-style city map, through the landmark tools only: \
@@ -31,7 +76,7 @@ final class LandmarkAgent {
     static func hasConversation(_ folder: URL) -> Bool { conversation(folder) != nil }
 
     /// What the agent makes in a landmark's folder, besides the photos.
-    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json"]
+    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json", "agent.log", LandmarkRun.streamName]
 
     /// Whether the agent has made anything in `folder`.
     static func hasWork(_ folder: URL) -> Bool {
@@ -52,140 +97,13 @@ final class LandmarkAgent {
         for name in work { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
     }
 
-    private static func conversation(_ folder: URL) -> String? {
+    static func conversation(_ folder: URL) -> String? {
         guard let data = try? Data(contentsOf: folder.appendingPathComponent("agent.json")),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json["session"] as? String
     }
 
-    /// Starts modelling the landmark, or goes on with its conversation when
-    /// `request` is given.
-    func start(folder: URL, name: String, request: String?, console: BuildRunner, followUps: Int = 0) {
-        guard !running else { return }
-        guard let claude = ClaudeSettings.executable else {
-            console.append("No claude found: set its path in Settings > Claude.")
-            return
-        }
-        guard !ClaudeSettings.proxy.isEmpty else {
-            console.append("No proxy set: Claude Code must go through the proxy. Settings > Claude.")
-            return
-        }
-        guard console.begin("Claude: \(name)", stage: "Claude is modelling \(name)") else { return }
-        // A new attempt: the references gathered first, with no agent (the
-        // user, 2026-10-28), the agent started when they are in.
-        if request == nil {
-            Self.startOver(folder)
-            modelChanged()
-            running = true
-            gather(folder: folder, console: console) { [weak self] in
-                guard let self else { return }
-                self.running = false
-                self.launch(claude, folder: folder, name: name, request: nil, console: console, followUps: followUps)
-            }
-            return
-        }
-        launch(claude, folder: folder, name: name, request: request, console: console, followUps: followUps)
-    }
 
-    /// The references of a landmark gathered by the editor itself (its
-    /// --gather-references, the same code the agent's tools run), its
-    /// report in the console; then `done`.
-    private func gather(folder: URL, console: BuildRunner, done: @escaping @MainActor () -> Void) {
-        console.append("Gathering the references: the street photos of every facade, the satellite view, Commons.")
-        let p = Process()
-        p.executableURL = Bundle.main.executableURL
-        p.arguments = ["--gather-references", folder.path]
-        p.environment = ClaudeSettings.environment
-        let pipe = Pipe()
-        p.standardOutput = pipe
-        p.standardError = pipe
-        p.standardInput = FileHandle.nullDevice
-        do {
-            try p.run()
-        } catch {
-            console.append("Cannot gather the references: \(error.localizedDescription)")
-            done()
-            return
-        }
-        process = p
-        Task {
-            do {
-                for try await line in pipe.fileHandleForReading.bytes.lines where !line.hasPrefix("signed ") {
-                    console.append("  " + line)
-                }
-            } catch {}
-            p.waitUntilExit()
-            process = nil
-            done()
-        }
-    }
-
-    private func launch(_ claude: URL, folder: URL, name: String, request: String?, console: BuildRunner, followUps: Int) {
-        var args = ["-p", request ?? Self.firstRequest(name), "--output-format", "stream-json", "--verbose",
-                    "--tools", "WebSearch,WebFetch",
-                    "--allowedTools", "WebSearch,WebFetch,mcp__landmark",
-                    "--permission-mode", "dontAsk",
-                    "--strict-mcp-config", "--mcp-config", Self.mcpConfig(folder),
-                    "--append-system-prompt", Self.system]
-        if let model = UserDefaults.standard.string(forKey: ClaudeSettings.modelKey), !model.isEmpty {
-            args += ["--model", model]
-        }
-        // The safety stop on the turns: the plan fits in well under it.
-        let turns = ClaudeSettings.maxTurns(facades: LandmarkMCP.Server.facadeCount(folder))
-        if turns > 0 { args += ["--max-turns", "\(turns)"] }
-        if let effort = UserDefaults.standard.string(forKey: ClaudeSettings.effortKey), !effort.isEmpty {
-            args += ["--effort", effort]
-        }
-        if request != nil, let session = Self.conversation(folder) {
-            args += ["--resume", session]
-        } else {
-            let session = UUID().uuidString.lowercased()
-            args += ["--session-id", session]
-            let json = try? JSONSerialization.data(withJSONObject: ["session": session, "started": ISO8601DateFormatter().string(from: Date())],
-                                                   options: [.prettyPrinted, .sortedKeys])
-            try? json?.write(to: folder.appendingPathComponent("agent.json"))
-        }
-        if let request { console.append("> \(request)") }
-        let p = Process()
-        p.executableURL = claude
-        p.arguments = args
-        p.currentDirectoryURL = folder
-        p.environment = ClaudeSettings.environment
-        let pipe = Pipe(), errors = Pipe()
-        p.standardOutput = pipe
-        p.standardError = errors
-        p.standardInput = FileHandle.nullDevice
-        do {
-            try p.run()
-        } catch {
-            console.append("Cannot start claude: \(error.localizedDescription)")
-            console.end(false)
-            return
-        }
-        process = p
-        running = true
-        Task {
-            var ok = false
-            do {
-                for try await line in pipe.fileHandleForReading.bytes.lines {
-                    if let event = Self.event(line) {
-                        if let text = event.text { console.append(text) }
-                        if event.toolDone { modelChanged() }
-                        if let result = event.ok { ok = result }
-                    }
-                }
-            } catch {
-                console.append("\(error.localizedDescription)")
-            }
-            p.waitUntilExit()
-            let said = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            if p.terminationStatus != 0, !said.isEmpty { console.append(said) }
-            modelChanged()
-            console.end(ok && p.terminationStatus == 0)
-            running = false
-            process = nil
-        }
-    }
 
     /// What the editor asks when the user wants the facades reviewed on the
     /// final model (not asked on its own since 2026-10-28: the plan ends
@@ -196,7 +114,6 @@ final class LandmarkAgent {
             + "your summary, a line for each facade: what its photo shows and what the model has."
     }
 
-    func stop() { process?.terminate() }
 
     /// The first request: the brief with the plan. Every landmark is
     /// modelled in full detail (the user, 2026-10-28: no levels).
@@ -215,7 +132,7 @@ final class LandmarkAgent {
         The plan, and the budget: one build of the whole from the references, one build of the fixes its comparisons \
         show, a summary. Four tool calls; two builds. Work from what each call returns; do not ask for more pictures \
         than it gives.
-        1. get_landmark, then list_references. The references are gathered for you before you start, and this shows \
+        1. get_landmark (the building, its walls' corners in metres, the recipe format), then list_references. The references are gathered for you before you start, and this shows \
         them: the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
         kept in a folder for each facade, its best one to three in best/, the others in other/, all by name: \
         north-facade/best/photo-03.jpg, the path to give show_reference, compare_with_photo and drop_reference), the \
@@ -240,16 +157,17 @@ final class LandmarkAgent {
         3. The fixes: one set_recipe with everything that differed. It comes back beside the best photo of every facade \
         it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
         \(ClaudeSettings.emphasis != "off" ? """
-        4. What makes it recognisable: the one or two things a person points at from afar (a sign, a tower, a dome, a \\
-        statue, a star, a portico), never more. First ask yourself: you may know this place by its name and its OSM tags \\
+        4. What makes it recognisable: the one or two things a person points at from afar (a tower, a dome, a \\
+        statue, a star, a portico), never more, and never lettering. First ask yourself: you may know this place by its name and its OSM tags \\
         (the quadriga over the Bolshoi's portico, the star in a ring on Detsky Mir's corner). If you know it, just model \\
         it from what you know, placed by the satellite view, and open a photo only if you want to, when you lack its \\
         place or size. \\
         \(ClaudeSettings.emphasis == "photos" ? "Only when you do not know the building, look along the roof and at the corners of the whole-building photo for what stands there. " : "If you do not know the building, leave this step out: no photos for it. ")\\
-        Model each in full in the build of the fixes, a sign as a text shape \\
-        on its frame of boxes, a star as a statue of shape star (in a ring shape where it has one), and mark it \\
-        "emphasis": true: the generator draws it \\(String(format: "%.2g", ClaudeSettings.exaggeration)) times its size, larger than life, \\
-        as a cartoon map does.
+        Model each in full in the build of the fixes, a star as a statue of shape star (in a ring shape where it \\
+        has one), and mark it "emphasis": true: the generator draws it \\(String(format: "%.2g", ClaudeSettings.exaggeration)) times its size, \\
+        larger than life, as a cartoon map does. Lettering is never one of these: solid letters that really stand on \\
+        the building (on its roof or its cornice) are a text shape at their real size; a shop's signboard, a banner or \\
+        an advertisement is not modelled at all.
         5.
         """ : "4.") End with a short summary: a line for each facade, what its photo shows and what the model has; then what you \
         were not sure of.

@@ -42,8 +42,7 @@ enum SatelliteView {
             for ty in y0...y1 {
                 let tile = cache.appendingPathComponent("\(zoom)_\(tx)_\(ty).jpg")
                 if !FileManager.default.fileExists(atPath: tile.path), let url = Self.source.url(z: zoom, x: tx, y: ty) {
-                    let (status, _) = run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "60", "-o", tile.path, url.absoluteString])
-                    if status != 0 { try? FileManager.default.removeItem(at: tile) }
+                    _ = CacheFile.fetch(url.absoluteString, to: tile, curl: ["-fsSL", "--http1.1", "--max-time", "60"], run: run)
                 }
                 guard let src = CGImageSourceCreateWithURL(tile as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
                     missing += 1

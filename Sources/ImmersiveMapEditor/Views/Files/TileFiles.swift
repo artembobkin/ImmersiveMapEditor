@@ -1,4 +1,5 @@
 import Foundation
+import TileKit
 
 /// What a tile's folder holds (WorkspacePaths: tiles/<z>/<x>/<y>/), in the
 /// groups the pipeline writes it: its OSM (osm/), its roads (roads/: the
@@ -43,21 +44,39 @@ struct TileFiles {
         }
     }
 
-    let groups: [Group]
+    /// The groups a tile has: the sidebar shows the ones the view needs.
+    enum Kind { case osm, roads, build, landmarks, config, engine }
 
     /// The tile's folder: everything of it.
     let folder: URL
+    private let tile: TileKey
+    private let paths: WorkspacePaths
 
     init(tile: TileKey, workspace: Workspace) {
-        let p = workspace.paths
+        self.tile = tile
+        paths = workspace.paths
         folder = workspace.folder(tile)
-        groups = [
-            Group(title: "OSM", systemImage: "map", folder: p.tileData(z: tile.z, x: tile.x, y: tile.y)),
-            Group(title: "Roads", systemImage: "road.lanes",
-                  folder: p.roadDocument(z: tile.z, x: tile.x, y: tile.y).deletingLastPathComponent()),
-            Group(title: "Build", systemImage: "cube", folder: p.tileOut(z: tile.z, x: tile.x, y: tile.y)),
-            Group(title: "Landmarks", systemImage: "building.columns", folder: p.tileLandmarks(z: tile.z, x: tile.x, y: tile.y)),
-        ]
+    }
+
+    /// Every group of the tile, as the pipeline writes it.
+    var all: [Group] { [group(.osm), group(.roads), group(.build), group(.landmarks)] }
+
+    func group(_ kind: Kind) -> Group {
+        let (z, x, y) = (tile.z, tile.x, tile.y)
+        switch kind {
+        case .osm: return Group(title: "OSM", systemImage: "map", folder: paths.tileData(z: z, x: x, y: y))
+        case .roads: return Group(title: "Roads", systemImage: "road.lanes", folder: paths.roadDocument(z: z, x: x, y: y).deletingLastPathComponent())
+        case .build: return Group(title: "Build", systemImage: "cube", folder: paths.tileOut(z: z, x: x, y: y))
+        case .landmarks: return Group(title: "Landmarks", systemImage: "building.columns", folder: paths.tileLandmarks(z: z, x: x, y: y))
+        case .config: return Group(title: "Config", systemImage: "paintpalette", folder: paths.config)
+        case .engine: return Group(title: "Engine", systemImage: "globe", folder: paths.root.appendingPathComponent("engine"))
+        }
+    }
+
+    /// One landmark's folder as a group of its own: its references, rounds,
+    /// recipe and model at the top, not folded under Landmarks.
+    func landmark(_ landmark: TileLandmark) -> Group {
+        Group(title: landmark.name, systemImage: "building.columns", folder: landmark.folder)
     }
 
     static func tree(_ files: [File], under folder: URL) -> [Node] {

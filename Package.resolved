@@ -1,13 +1,22 @@
 {
-  "originHash" : "72ffd49b110fee610f52452a72dd46f58ee6af52585064f7d8370a3d8344f1a6",
+  "originHash" : "4814f91d476c2b69955284706605b33b921ed2369937ee6e0127d5b0a3fec612",
   "pins" : [
+    {
+      "identity" : "immersivemap",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/artembobkin/ImmersiveMap.git",
+      "state" : {
+        "revision" : "74c040df5091b960b10b8dcd23698742510d2d67",
+        "version" : "0.11.1"
+      }
+    },
     {
       "identity" : "swiftstreets",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/artembobkin/SwiftStreets.git",
       "state" : {
-        "revision" : "842250c296dafee1da4ad21bc08bba89e5f7cfa2",
-        "version" : "0.1.0"
+        "revision" : "d95ae35d70700857a06e7ebfc5703475cf0d0c44",
+        "version" : "0.1.1"
       }
     },
     {

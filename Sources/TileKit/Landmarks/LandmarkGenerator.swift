@@ -70,6 +70,22 @@ public enum LandmarkGenerator {
     enum Caricature {
         static let proud = 0.45
         static let corniceDepth = 0.8, corniceHeight = 0.9
+        /// A cornice is a profile of three steps up and out: this much of
+        /// its height and of its depth each.
+        static let corniceSteps: [(height: Double, depth: Double)] = [(0.3, 0.35), (0.3, 0.7), (0.4, 1.0)]
+        /// Every window's sill and surround (the user, 2026-11-01: more
+        /// detail from the same words): the sill this deep and high, the
+        /// jambs and lintel this wide and proud.
+        static let sillDepth = 0.22, sillHeight = 0.14
+        static let surroundWidth = 0.18, surroundDepth = 0.08
+        /// Glazing: a glass solid gets a band at every storey and mullions
+        /// along its walls, this thick, standing this proud, this far apart.
+        static let mullion = 0.22, mullionProud = 0.2, mullionStep = 2.0, glazingStorey = 3.4
+        /// The frame of the glass: a post at every corner this wide, a rail
+        /// along the top and the bottom this high, so the volume reads as
+        /// a framed body and not as a block with lines on it (the user,
+        /// 2026-11-01).
+        static let glassPost = 0.4, glassRail = 0.3
         static let plinthHeight = 0.9
         static let bandHeight = 0.4
         static let pilasterWidth = 0.8
@@ -118,6 +134,7 @@ public enum LandmarkGenerator {
             colour(m.plinth?.colour, at + ".plinth")
             colour(m.cornice?.colour, at + ".cornice")
             colour(m.windows?.colour, at + ".windows")
+            colour(m.frame, at + ".frame")
             if let w = m.windows, w.storeys < 1 || w.spacing <= 0 { out.append("\(at).windows: storeys and spacing must be positive") }
             for (k, d) in (m.doors ?? []).enumerated() {
                 if d.at.count != 2 { out.append("\(at).doors[\(k)]: needs at, [x, y], a point on or by the wall") }
@@ -138,6 +155,16 @@ public enum LandmarkGenerator {
         for (i, s) in r.shapes.enumerated() {
             let at = "shapes[\(i)] (\(s.kind))"
             colour(s.colour, at)
+            colour(s.frame, at + ".frame")
+            colour(s.windows?.colour, at + ".windows")
+            if let w = s.windows, w.storeys < 1 || w.spacing <= 0 { out.append("\(at).windows: storeys and spacing must be positive") }
+            for (k, d) in (s.doors ?? []).enumerated() {
+                if d.at.count != 2 { out.append("\(at).doors[\(k)]: needs at, [x, y], a point on or by the wall") }
+                colour(d.colour, at + ".doors[\(k)]")
+            }
+            if s.doors != nil || s.windows != nil, !["box", "prism"].contains(s.kind) || (s.pitch ?? 0) != 0 {
+                out.append("\(at): doors and windows go on an upright box or a prism")
+            }
             let ring = (s.polygon?.count ?? 0) >= 3 || (s.outline.map { source.ring($0) != nil } ?? false)
             if let o = s.outline, source.ring(o) == nil { out.append("\(at): outline \(o) is not one of the landmark's buildings") }
             switch s.kind {
@@ -574,9 +601,16 @@ public enum LandmarkGenerator {
         }
 
         @discardableResult
+        /// `windowsFrom` is where the rows of windows and a hand-placed
+        /// window's sill count from, the plinth's top, while the wall and its
+        /// doors start at `z0`, the mass's foot: a door is cut from the
+        /// ground through the plinth, never left standing on it (the user,
+        /// 2026-11-02: the Ministry of Transport's entrances hung 5 m up on
+        /// its dark plinth, the building as if lifted).
         func walls(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String, windows: LandmarkRecipe.Windows? = nil,
-                   doors: [DoorAt] = []) -> [Cut] {
+                   doors: [DoorAt] = [], windowsFrom: Double? = nil) -> [Cut] {
             guard z1 > z0 else { return [] }
+            let foot = max(z0, min(z1 - 0.5, windowsFrom ?? z0))
             var cuts: [Cut] = []
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
@@ -594,7 +628,7 @@ public enum LandmarkGenerator {
                     // A door's opening starts 2 cm up, so it stays inside the
                     // wall's face (an opening on the foot's edge is no opening).
                     let window = at.door.glass == true || (at.door.sill ?? 0) > 0.01
-                    let sill = max(0.02, min(at.door.sill ?? 0, z1 - z0 - 1))
+                    let sill = window ? max(0.02, foot - z0 + min(at.door.sill ?? 0, z1 - foot - 1)) : 0.02
                     let w = min(at.door.width ?? (window ? 1.6 : 2.4), len * 0.6), h = min(at.door.height ?? (window ? 2.4 : 4), (z1 - z0 - sill) * 0.95)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
                     guard t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 0.5 else { continue }
@@ -608,12 +642,17 @@ public enum LandmarkGenerator {
                                             margin: window ? 0 : max(at.door.portal ?? 0.35, Caricature.portalWidth)))
                     spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
+                // The windows' openings (the rows' and the hand-placed), for
+                // their sills and surrounds.
+                var panes: [[P2]] = doors.filter { $0.edge == i && ($0.door.glass == true || ($0.door.sill ?? 0) > 0.01) }
+                    .compactMap { at in openings.first { $0.margin == 0 && abs($0.ring.map(\.x).min()! + $0.ring.map(\.x).max()! - 2 * at.t) < 1 }?.ring }
                 if let w = windows {
-                    for ring in self.openings(len, z0, z1, w) {
+                    for ring in self.openings(len, foot, z1, w) {
                         let t0 = ring.map(\.x).min()!, t1 = ring.map(\.x).max()!, bottom = ring.map(\.y).min()!
                         // Not over a door, nor on a window placed by hand.
                         guard !spans.contains(where: { t1 > $0.0 - 0.5 && t0 < $0.1 + 0.5 && bottom < $0.2 + 0.3 }) else { continue }
                         openings.append(Opening(ring: ring, depth: LandmarkGenerator.windowDepth, back: "\(colour).glass"))
+                        panes.append(ring)
                     }
                 }
                 for op in openings {
@@ -655,16 +694,72 @@ public enum LandmarkGenerator {
                     proud(a, d, o2, t + w / 2, t + w / 2 + pw, z0, top, Caricature.proud, portal)
                     proud(a, d, o2, t - w / 2, t + w / 2, z0 + h, top, Caricature.proud, portal)
                 }
+                // Every window's sill, and its surround, jambs and a lintel
+                // standing a little proud, unless the wall is told plain (the
+                // user, 2026-11-01: more detail from the same words).
+                if windows?.surround != false {
+                    let light = windows?.colour ?? "lm_white", sw = Caricature.surroundWidth
+                    for pane in panes {
+                        let t0 = pane.map(\.x).min()!, t1 = pane.map(\.x).max()!
+                        let bottom = pane.map(\.y).min()!, top = pane.map(\.y).max()!
+                        guard t0 - sw >= 0.05, t1 + sw <= len - 0.05, bottom - Caricature.sillHeight > z0 + 0.05, top + sw < z1 - 0.05 else { continue }
+                        proud(a, d, o2, t0 - sw, t1 + sw, bottom - Caricature.sillHeight, bottom, Caricature.sillDepth, light)
+                        proud(a, d, o2, t0 - sw, t0, bottom, top, Caricature.surroundDepth, light)
+                        proud(a, d, o2, t1, t1 + sw, bottom, top, Caricature.surroundDepth, light)
+                        proud(a, d, o2, t0 - sw, t1 + sw, top, top + sw, Caricature.surroundDepth, light)
+                    }
+                }
             }
             return cuts
         }
 
-        /// A closed prism: its own solid.
+        /// A closed prism: its own solid. One of glass is glazed.
         func prism(_ ring: [P2], _ z0: Double, _ z1: Double, _ colour: String) {
             begin()
             walls(ring, z0, z1, colour)
             cap(ring, z1, up: true, colour)
             cap(ring, z0, up: false, colour)
+            if LandmarkRecipe.glassColours.contains(colour) { glazing(ring, z0, z1) }
+        }
+
+        /// The glazing of a glass solid (the user, 2026-11-01: a glass box or
+        /// cylinder drawn plain was a block of blue plastic stuck on the
+        /// facade): a frame in the frame's colour standing proud of the glass,
+        /// at the map's caricature scale: a rail along the foot and the top,
+        /// a post at every corner, a band at every storey line and mullions
+        /// along every wall `spacing` apart. Solids of their own, so the
+        /// union joins them to the glass.
+        func glazing(_ ring: [P2], _ z0: Double, _ z1: Double, storey: Double = Caricature.glazingStorey,
+                     spacing: Double? = nil, frame: String? = nil) {
+            guard z1 - z0 > 0.5, ring.count >= 3 else { return }
+            let frame = frame.flatMap { LandmarkRecipe.glassColours.contains($0) ? nil : $0 } ?? "lm_dark"
+            let step = max(0.5, spacing ?? Caricature.mullionStep), m = Caricature.mullion, out = Caricature.mullionProud
+            let rail = min(Caricature.glassRail, (z1 - z0) / 4), outer = grown(ring, out)
+            // The frame: a rail along the foot and the top, a band at every
+            // storey line between.
+            band(ring, outer, z0, z0 + rail, frame)
+            band(ring, outer, z1 - rail, z1, frame)
+            let bands = max(0, Int(((z1 - z0) / storey).rounded(.down)))
+            for k in 1...max(1, bands) where k <= bands && z0 + storey * Double(k) < z1 - rail - m {
+                let z = z0 + storey * Double(k)
+                band(ring, outer, z - m / 2, z + m / 2, frame)
+            }
+            // A post at every corner, mullions between: a corner of a round
+            // ring (a cylinder's segments) is a mullion, not a post.
+            let round = ring.count > 8
+            for i in ring.indices {
+                let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
+                guard len > 1e-6 else { continue }
+                let d = (b - a) / len, o = outward(a, b), o2 = P2(o.x, o.y)
+                let post = round ? m : Caricature.glassPost
+                proud(a, d, o2, 0, min(len, post / 2), z0, z1, out, frame)
+                proud(a, d, o2, max(0, len - post / 2), len, z0, z1, out, frame)
+                let n = max(1, Int((len / step).rounded()))
+                for k in 1..<n {
+                    let t = len * Double(k) / Double(n)
+                    proud(a, d, o2, t - m / 2, t + m / 2, z0, z1, out, frame)
+                }
+            }
         }
 
         /// A block standing proud of a wall (from `a` along `d`, looking
@@ -763,14 +858,30 @@ public enum LandmarkGenerator {
             let lo = m.base + plinth, hi = m.top - cornice
             let doors = place(m.doors ?? [], on: ring)
             begin()
-            let cuts = walls(ring, lo, hi, m.colour, windows: m.windows, doors: doors)
-            if plinth > 0 { walls(ring, m.base, lo, m.colour) }
+            // The wall from the mass's foot, its doors cut from the ground
+            // through the plinth, its windows laid from the plinth's top.
+            let cuts = walls(ring, m.base, hi, m.colour, windows: m.windows, doors: doors, windowsFrom: lo)
             if cornice > 0 { walls(ring, hi, m.top, m.colour) }
             cap(ring, m.base, up: false, m.colour)
             let flat = m.roof == nil || m.roof?.shape == "flat"
             cap(ring, m.top, up: true, flat ? (m.roof?.colour ?? "lm_roof") : m.colour)
-            if let p = m.plinth, plinth > 0 { band(ring, grown(ring, max(p.depth ?? 0.15, Caricature.proud)), m.base, lo, p.colour ?? "lm_stone") }
-            if let c = m.cornice, cornice > 0 { band(ring, grown(ring, max(c.depth ?? 0.4, Caricature.corniceDepth)), hi, m.top, c.colour ?? "lm_white") }
+            // The plinth, broken where a door goes through it.
+            if let p = m.plinth, plinth > 0 { band(ring, grown(ring, max(p.depth ?? 0.15, Caricature.proud)), m.base, lo, p.colour ?? "lm_stone", cuts: cuts) }
+            if let c = m.cornice, cornice > 0 {
+                // A profile of steps up and out, not one block (the user,
+                // 2026-11-01): a bed moulding, a corona, a cymatium.
+                let depth = max(c.depth ?? 0.4, Caricature.corniceDepth)
+                var z = hi
+                for step in Caricature.corniceSteps {
+                    let z1 = min(m.top, z + cornice * step.height)
+                    band(ring, grown(ring, depth * step.depth), z, z1, c.colour ?? "lm_white")
+                    z = z1
+                }
+            }
+            if LandmarkRecipe.glassColours.contains(m.colour) {
+                glazing(ring, lo, hi, storey: m.windows.map { max(2, (hi - lo) / Double($0.storeys)) } ?? Caricature.glazingStorey,
+                        spacing: m.mullions, frame: m.frame)
+            }
             if let p = m.pilasters { pilasters(ring, lo, hi, p, cuts: cuts, wall: m.colour) }
             if let b = m.bands, let w = m.windows, w.storeys >= 2 {
                 let storey = (hi - lo) / Double(w.storeys), out = grown(ring, max(b.depth ?? 0.15, Caricature.proud))
@@ -858,7 +969,7 @@ public enum LandmarkGenerator {
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 4)], colour)
             case "pyramidal":
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 0.8)], colour)
-            default:
+            case "gabled", "skillion":
                 // The roof a closed solid: its slopes and gables over a flat
                 // underside, with a fascia around the eaves when they overhang.
                 begin()
@@ -866,6 +977,65 @@ public enum LandmarkGenerator {
                 guard over > 0.05 else { return planes(ring, top, roof.shape, roof.height, colour, wall: wall, bottom: top) }
                 let eave = grown(ring, over), fascia = Caricature.fascia
                 planes(eave, top + fascia, roof.shape, roof.height, colour, wall: wall, bottom: top)
+            default:
+                // Hipped and mansard: every edge of the outline an eave, the
+                // slopes rising inward from all of them.
+                let over = (roof.overhang ?? 0.6) > 0.05 ? max(roof.overhang ?? 0.6, Caricature.eaves) : 0
+                let eave = over > 0.05 ? grown(ring, over) : ring
+                let fascia = over > 0.05 ? Caricature.fascia : 0
+                hipped(eave, top + fascia, roof.height, mansard: roof.shape == "mansard", colour, bottom: top)
+            }
+        }
+
+        /// A hipped or mansard roof over any outline (the user, 2026-11-01:
+        /// over an L-shaped or a skewed outline the planes of the smallest
+        /// rectangle, cut by the outline, left walls in the facade's colour
+        /// standing over the cornice): every edge of the ring is an eave,
+        /// and the roof rises inward at one slope from all of them, as a
+        /// roof framed on the plan does. The slopes are the ring drawn in
+        /// to its inset (`buffer` with mitred corners), the band between
+        /// triangulated: its creases follow the ring's corners inward, the
+        /// hips and valleys of the real roof. A hipped roof's inset is as
+        /// deep as the outline allows, the ridge where it closes; a mansard's
+        /// is shallow and steep, with a flat top. One closed solid: the
+        /// slopes, the flat tops, the underside and a fascia around the eaves.
+        func hipped(_ ring: [P2], _ top: Double, _ height: Double?, mansard: Bool, _ colour: String, bottom: Double) {
+            let outer = Geometry.polygon(ring + [ring[0]])
+            func inset(_ d: Double) -> [[P2]] {
+                outer.buffer(-d, quadSegs: 1, join: .mitre).polygons.filter { $0.area > 0.05 }.map { ccw(Array($0.exterior.dropLast())) }
+            }
+            // The deepest inset the outline allows, by halving.
+            var lo = 0.0, hi = max(1.0, ring.map { simd_length($0 - ring[0]) }.max() ?? 1)
+            for _ in 0..<14 {
+                let mid = (lo + hi) / 2
+                if inset(mid).isEmpty { hi = mid } else { lo = mid }
+            }
+            let deepest = lo
+            guard deepest > 0.3 else {
+                return planes(ring, top, "hipped", height, colour, wall: colour, bottom: bottom)
+            }
+            let h = height ?? deepest * (mansard ? 1.2 : 0.7)
+            let d = mansard ? min(deepest * 0.9, max(0.5, min(deepest * 0.35, h * 0.4))) : deepest * 0.92
+            let inner = inset(d)
+            guard !inner.isEmpty else {
+                return planes(ring, top, "hipped", height, colour, wall: colour, bottom: bottom)
+            }
+            begin()
+            let edge = outer.boundary
+            func z(_ p: P2) -> Double { top + h * max(0, min(1, edge.distance(.point(p)) / d)) }
+            // The slopes: the band from the eaves in to the inset.
+            let band = Geometry.polygon(ring + [ring[0]], holes: inner.map { $0 + [$0[0]] })
+            for t in band.constrainedDelaunay() where t.count == 3 {
+                tri(V3(t[0].x, t[0].y, z(t[0])), V3(t[1].x, t[1].y, z(t[1])), V3(t[2].x, t[2].y, z(t[2])), V3(0, 0, 1), colour)
+            }
+            for r in inner { cap(r, top + h, up: true, colour) }
+            cap(ring, bottom, up: false, colour)
+            // The fascia: the eaves' edge from the underside up to the slope.
+            if top > bottom + 1e-6 {
+                for i in ring.indices {
+                    let a = ring[i], b = ring[(i + 1) % ring.count]
+                    face([V3(a.x, a.y, bottom), V3(b.x, b.y, bottom), V3(b.x, b.y, top), V3(a.x, a.y, top)], outward(a, b), colour)
+                }
             }
         }
 
@@ -1112,7 +1282,8 @@ public enum LandmarkGenerator {
             begin()
             // What makes the building recognisable, a size up.
             var s = given
-            if s.emphasis == true {
+            // Lettering is never larger than life (the user, 2026-11-01).
+            if s.emphasis == true, s.kind != "text" {
                 let k = Caricature.emphasis
                 s.size = s.size.map { $0.map { $0 * k } }
                 s.radius = s.radius.map { $0 * k }
@@ -1143,12 +1314,28 @@ public enum LandmarkGenerator {
                 guard let size = s.size, size.count == 3 else { return }
                 let (a, b, c) = (size[0] / 2, size[1] / 2, size[2])
                 let corners = [(-a, -b), (a, -b), (a, b), (-a, b)]
-                face(corners.map { f.p($0.0, $0.1, 0) }, f.dir(0, 0, -1), colour)
-                face(corners.map { f.p($0.0, $0.1, c) }, f.dir(0, 0, 1), colour)
-                for k in 0..<4 {
-                    let (p0, p1) = (corners[k], corners[(k + 1) % 4])
-                    let mid = ((p0.0 + p1.0) / 2, (p0.1 + p1.1) / 2)
-                    face([f.p(p0.0, p0.1, 0), f.p(p1.0, p1.1, 0), f.p(p1.0, p1.1, c), f.p(p0.0, p0.1, c)], f.dir(mid.0, mid.1, 0), colour)
+                let upright = (s.pitch ?? 0) == 0
+                let ring = ccw(corners.map { let q = f.p($0.0, $0.1, 0); return P2(q.x, q.y) })
+                if upright, s.doors != nil || s.windows != nil {
+                    // A podium, a porch or a wing drawn as a box takes doors
+                    // and windows as a mass does: entrances cut in, never a
+                    // dark plate laid on the wall (the user, 2026-11-02: the
+                    // Prosecutor General's doors stood proud of its podium).
+                    walls(ring, base, base + c, colour, windows: s.windows, doors: place(s.doors ?? [], on: ring))
+                    cap(ring, base, up: false, colour)
+                    cap(ring, base + c, up: true, colour)
+                } else {
+                    face(corners.map { f.p($0.0, $0.1, 0) }, f.dir(0, 0, -1), colour)
+                    face(corners.map { f.p($0.0, $0.1, c) }, f.dir(0, 0, 1), colour)
+                    for k in 0..<4 {
+                        let (p0, p1) = (corners[k], corners[(k + 1) % 4])
+                        let mid = ((p0.0 + p1.0) / 2, (p0.1 + p1.1) / 2)
+                        face([f.p(p0.0, p0.1, 0), f.p(p1.0, p1.1, 0), f.p(p1.0, p1.1, c), f.p(p0.0, p0.1, c)], f.dir(mid.0, mid.1, 0), colour)
+                    }
+                }
+                // An upright glass box is glazed: a bay, a curtain wall.
+                if LandmarkRecipe.glassColours.contains(colour), upright {
+                    glazing(ring, base, base + c, spacing: s.mullions, frame: s.frame)
                 }
             case "cylinder", "cone":
                 guard var r = s.radius, var h = s.height else { return }
@@ -1170,6 +1357,12 @@ public enum LandmarkGenerator {
                 }
                 face(lo.reversed().map { f.p($0.x, $0.y, 0) }, f.dir(0, 0, -1), colour)
                 if rt > 1e-6 { face(hi.map { f.p($0.x, $0.y, h) }, f.dir(0, 0, 1), colour) }
+                // An upright glass cylinder is glazed: a rotunda, a glass
+                // tower, a mullion at every segment.
+                if LandmarkRecipe.glassColours.contains(colour), s.kind == "cylinder", abs(r - rt) < 1e-6, (s.pitch ?? 0) == 0 {
+                    let ring = ccw(lo.map { let q = f.p($0.x, $0.y, 0); return P2(q.x, q.y) })
+                    glazing(ring, base, base + h, spacing: s.mullions ?? 2 * .pi * r / Double(n), frame: s.frame)
+                }
             case "sphere", "dome":
                 guard let r = s.radius else { return }
                 let bands = max(2, n / 2), whole = s.kind == "sphere"
@@ -1191,7 +1384,7 @@ public enum LandmarkGenerator {
             case "prism":
                 guard let outer = ring(), let top = s.top, top > base else { return }
                 let holes = (s.holes ?? []).map { ccw($0.filter { $0.count == 2 }.map { P2($0[0], $0[1]) }) }.filter { $0.count >= 3 }
-                walls(outer, base, top, colour)
+                walls(outer, base, top, colour, windows: s.windows, doors: place(s.doors ?? [], on: outer))
                 for hole in holes { walls(hole.reversed(), base, top, colour) }
                 cap(outer, holes: holes, top, up: true, colour)
                 cap(outer, holes: holes, base, up: false, colour)

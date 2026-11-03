@@ -15,6 +15,10 @@ import GLTF
 public enum Export {
     static let attribution = "© OpenStreetMap contributors, ODbL"
 
+    /// The zoom of the map tiles whose buildings a model replaces: the
+    /// basemap's deepest, the engine's `ImmersiveMapTilesService.maximumTileZoomLevel`.
+    public static let replacedZoom = 15
+
     /// Writes <name>.glb, placement.json and metadata.json into `out` from
     /// the cut triangles and their light UVs. Returns the GLB's URL.
     @discardableResult
@@ -53,10 +57,16 @@ public enum Export {
         try GLTF.write(url, positions: positions, normals: normals, uv0: uv0s, uv1: uv1s, indices: indices,
                        basePNG: PNG.encode(palette.pixels, width: palette.size, height: palette.size, channels: 3),
                        occlusionPNG: PNG.encode(light, width: lightSize, height: lightSize, channels: 3), name: "tile")
-        let placement: [String: Any] = [
+        var placement: [String: Any] = [
             "id": name.replacingOccurrences(of: "_", with: "-"), "model": "\(name).glb",
             "origin": ["latitude": tile.centreLatitude, "longitude": tile.centreLongitude], "altitude_m": 0,
         ]
+        // The map's own buildings the model stands in for, listed for the
+        // map tiles' deepest zoom, where a feature is one building (the
+        // tiles above merge them, so nothing can be left out there).
+        if let replaced = stats["replaced_buildings"] as? [String], !replaced.isEmpty {
+            placement["replaces"] = ["\(replacedZoom)": replaced]
+        }
         try write(placement, out.appendingPathComponent("placement.json"))
         let osm = tile.info["osm"] as? [String: Any] ?? [:]
         let built = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [.withInternetDateTime])

@@ -7,6 +7,9 @@ APP="build/Immersive Map Editor.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ImmersiveMapEditor "$APP/Contents/MacOS/ImmersiveMapEditor"
+# The resource bundles of the packages linked (the engine's shaders and its
+# overview archive): Bundle.module finds them in Contents/Resources.
+for b in .build/release/*.bundle; do [ -d "$b" ] && cp -R "$b" "$APP/Contents/Resources/"; done
 # The icon: Icon/AppIcon.png (drawn by Icon/MakeIcon.swift) at every size macOS asks for.
 SET=build/AppIcon.iconset
 rm -rf "$SET" && mkdir -p "$SET"

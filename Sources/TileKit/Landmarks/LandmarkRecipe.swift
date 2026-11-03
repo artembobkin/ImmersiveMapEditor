@@ -84,6 +84,15 @@ public struct LandmarkRecipe: Codable {
         /// What makes the building recognisable from afar: drawn a size up
         /// by the generator (the user, 2026-10-28, after Zenly).
         public var emphasis: Bool?
+        /// A glass shape's glazing: the colour of its frame (lm_dark unless
+        /// given) and the spacing of its mullions.
+        public var frame: String?
+        public var mullions: Double?
+        /// An upright box or a prism takes entrances and windows as a mass
+        /// does, cut into its walls (the user, 2026-11-02: a podium's doors
+        /// drawn as dark plates stood proud of it).
+        public var doors: [Door]?
+        public var windows: Windows?
     }
 
     public struct Repeat: Codable {
@@ -121,6 +130,10 @@ public struct LandmarkRecipe: Codable {
         public var pilasters: Pilasters?
         /// String courses: a band standing proud at every storey line.
         public var bands: Band?
+        /// A glass mass's glazing: the colour of its frame (lm_dark unless
+        /// given) and the spacing of its mullions.
+        public var frame: String?
+        public var mullions: Double?
     }
 
     /// A straight cut through an outline, and which side to keep.
@@ -164,7 +177,12 @@ public struct LandmarkRecipe: Codable {
         public var width: Double = 1.4
         public var height: Double = 2.2
         public var arched: Bool?
+        /// The sills' and surrounds' colour, lm_white unless given.
         public var colour: String?
+        /// A surround (jambs and a lintel standing a little proud) around
+        /// every window, with its sill: on unless false, for a plain
+        /// modern wall.
+        public var surround: Bool?
     }
 
     public struct Roof: Codable {
@@ -247,13 +265,15 @@ public struct LandmarkRecipe: Codable {
     must overlap: a tower sinks half a metre into its base, never with a slot between them (the generator sinks a \
     corner that stands on or near a neighbour's wall into it, but do not count on it). A mass is a prism of its outline from base to top, its walls in its colour, with an optional plinth and cornice band \
     standing proud, windows storey by storey on every wall long enough, and a roof on its top. A window is a recess cut \
-    into the wall (the map's style): reveals and glass in tones of the wall, a light sill. Give windows only to a mass that \
+    into the wall (the map's style): reveals and glass in tones of the wall, a light sill, and a surround, jambs and a \
+    lintel standing a little proud, in `windows.colour` (lm_white unless given; `"surround": false` for a plain modern \
+    wall). A cornice is drawn as a profile of three steps up and out. Give windows only to a mass that \
     reads as storeys of windows, with the storeys and spacing the photos show. A window that the rows cannot place (one \
     between pilasters, a single large window, a window of its own above a door) is a door with a `sill` (metres above \
     the wall's foot) and `glass` true: cut in at that place, glass at its back, as the rows' windows are; from 10 m² (a shop front, a glazed \
     arch, a glass wall between piers) its back is the map's glass, lm_glass, which reads as glass from afar where a wall's dark tone reads as a hole. A door is an entrance cut into the wall \
-    nearest its `at` (a point on or by that wall), deeper than a window, its leaf at the back and a portal standing proud \
-    around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
+    nearest its `at` (a point on or by that wall), from the ground up through the plinth, deeper than a window, its leaf at \
+    the back and a portal standing proud around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
     Give every size as the building has it: the generator draws the map's caricature itself, every cornice, band, pilaster, \
     portal, parapet and recess at least about half a metre to a metre, and windows a little larger, so a detail reads from afar. \
@@ -283,18 +303,24 @@ public struct LandmarkRecipe: Codable {
        {"kind": "text", "text": "ЦУМ", "at": [x, y], "base": 30, "height": 3, "depth": 0.4, "heading": 180, "colour": "lm_red"},
        {"kind": "ring", "at": [x, y], "base": 30, "radius": 2.5, "depth": 0.3, "heading": 180, "segments": 24, "colour": "lm_dark"}]
       A text is its letters in a bold sans face, any script, upright and facing `heading`, `height` tall (the capitals) \
-    and `depth` thick, centred on `at`, their feet on `base`: a sign on a roof or a facade, on a frame of boxes. \
+    and `depth` thick, centred on `at`, their feet on `base`: only for solid letters that really stand on the building \
+    (on its roof or its cornice, on a frame of boxes), at their real size; a shop's signboard, a banner or an \
+    advertisement is not modelled. \
     A ring stands upright on its base, its face toward `heading`, `radius` to the middle of its `depth`-thick \
     band (a star in a ring: the ring and a statue of shape star at the same place, the star's height twice the radius). \
     A shape or a feature with `"emphasis": true` is drawn a size up by the generator (half as large again): for the \
-    one or two things that make the building recognisable from afar, a sign, a tower, a dome, a statue; never more. \
+    one or two things that make the building recognisable from afar, a tower, a dome, a statue; never more, and never \
+    a text, which the generator draws at its real size whatever is asked. \
       A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
     forward (a cylinder with pitch 90 lies along its heading: a beam). A sphere stands on its base; a dome is a half \
     sphere, flat side down. A loft draws its ring toward its centre ring by ring, [scale, rise] from the base up: a drum \
     with a moulding, a vase, an onion, a tapering tower. `"repeat": {"count": 6, "step": [3.5, 0, 0]}` makes copies along \
     a step (metres east, north, up); `"around": {"count": 8, "centre": [x, y]}` makes copies turned around a point. Shapes \
     are solids: let them overlap, or sink one a little into what it stands on, rather than share a face exactly. Nothing \
-    cuts a hole: an opening is a prism with holes, or a loft. Few large shapes before many small ones, and 8 to 16 segments.
+    cuts a hole: an opening is a prism with holes, or a loft. An upright box or a prism takes `doors` and `windows` as a mass \
+    does (a podium with its entrances, a porch, a wing OSM does not draw): an entrance is always a recess cut into the wall \
+    with its leaf at the back and a portal around it, never a dark plate laid on the wall. Few large shapes before many \
+    small ones, and 8 to 16 segments.
     - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
     outside on the right. Steps rise from the ground at `depth` to the right of the line up to `height` at the line.
@@ -302,7 +328,10 @@ public struct LandmarkRecipe: Codable {
     that make the building recognisable from a distance (a portico, a dome, a tower, a quadriga, a glass curtain wall, a \
     spire). The building can be of any kind and age: a church (drums with domes or onions, a cross on top), a tower (a tent \
     roof, a star), a palace, a station, a department store, a modern block of glass and stone (a mass in lm_glass with no \
-    windows is a curtain wall), a monument (a pedestal and a statue). Model what is there. No textures, no fine \
+    windows is a curtain wall), a monument (a pedestal and a statue). Every mass, box or cylinder in lm_glass or \
+    lm_sky_glass is glazed by the generator: a band at every storey and mullions every 1.5 m (`mullions` to change) in \
+    `frame` (lm_dark unless given), so a curtain wall, a glass rotunda (an upright cylinder) or a glazed bay (a box \
+    sunk 10 cm into the wall) reads as glass in a frame, never as a solid block. Model what is there. No textures, no fine \
     ornament. Windows only where the building reads as storeys of windows. Every model of the map looks of one family.
     - Everything is physical, as a building is, even where no photo shows it: steps lead up to a landing (a box or a \
     mass at their top height) that reaches the wall and the doors, the floor the portico's columns stand on; a colonnade \

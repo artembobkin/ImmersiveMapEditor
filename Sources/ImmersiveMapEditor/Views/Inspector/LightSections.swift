@@ -16,14 +16,23 @@ struct LightSections: View {
         Section("Show") {
             Picker("Subject", selection: $workspace.previewSubject) {
                 Text("The tile").tag("tile")
+                Text("All the landmarks").tag("landmarks")
                 ForEach(session.candidates.filter { $0.model != nil }) { Text($0.name).tag($0.id) }
             }
-            .help("The tile as the engine shows it, or one landmark alone: its colours and its light from the modifiers below, baked here over a white ground.")
+            .help("The tile as the engine shows it; all the landmarks' models together where the build places them, their palette alone, with no build; or one landmark alone, its colours and its light from the modifiers below, baked here over a white ground.")
+            PanelButton("Rebuild Landmarks from Recipes", systemImage: "hammer") { session.rebuildLandmarks() }
+                .disabled(session.landmarksWithRecipes == 0 || session.workspace.tile.map { session.jobs.isActive(.tile($0)) } ?? true)
+                .help("Every landmark of the tile with a recipe built again from it (\(session.landmarksWithRecipes) of them): after a change of the palette, or of a recipe by hand. The tile itself is not built: see them together as All the landmarks.")
             if workspace.previewSubject == "tile" {
-                Picker("Shading", selection: $workspace.lightShading) {
-                    ForEach([TileShading.lit, .light]) { Text($0.rawValue).tag($0) }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Shading")
+                    Picker("Shading", selection: $workspace.lightShading) {
+                        ForEach([TileShading.lit, .light]) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
                 }
-                .pickerStyle(.segmented)
             } else {
                 slider("Lens", $light.lens, 20...90, "%.0f°")
                     .help("The camera's lens, its vertical field of view: the engine's is 45°. Narrow, like a telephoto, flattens the building and keeps its walls parallel; wide makes what is near loom and the far shrink. The model keeps its size in the frame.")
@@ -49,7 +58,7 @@ struct LightSections: View {
             }
             .help("The light as a stack of modifiers, each on or off with its own settings, shown here and baked into the tile: some into its light map, some into the colours of its faces.")
         }
-        if workspace.previewSubject != "tile" {
+        if !["tile", "landmarks"].contains(workspace.previewSubject) {
             Section("Engine's sun") {
                 Toggle("Shadow", isOn: $light.engineSun)
                     .help("The engine's shadow of the sun on the landmark, from the bearing and height below (the engine's own sun is from \(Int(Palette.sunFrom))°); not baked. Off: the engine adds its own sun.")
@@ -79,6 +88,7 @@ struct LightSections: View {
         .task(id: "\(workspace.tile?.name ?? "") \(workspace.tilesRevision)") {
             if let t = workspace.tile { session.lights.load([t], from: workspace) }
         }
+        .onChange(of: light.previewKey) { session.lightSettingsChanged() }
     }
 
     /// A modifier's parameter as a binding into the stack.

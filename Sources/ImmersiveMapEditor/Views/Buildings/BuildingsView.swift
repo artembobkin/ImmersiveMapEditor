@@ -3,7 +3,9 @@ import SwiftUI
 /// The Buildings view: the tile's buildings of OpenStreetMap from straight
 /// above, their outlines and parts, to pick some (click, shift-click; a
 /// double-click a whole building with its parts) and see their tags, and to
-/// mark them a landmark. Drag to move, scroll or
+/// mark them a landmark. The buildings known by name are tinted, the notable
+/// ones (an article, a heritage tag, a church or theatre) deeper, and named
+/// on the map (`BuildingNote`; the user, 2026-11-01). Drag to move, scroll or
 /// pinch to zoom at the cursor, F frames the tile. The camera is the one
 /// the views share (its ground point and scale).
 struct BuildingsView: View {
@@ -28,14 +30,22 @@ struct BuildingsView: View {
                 let shape = path(b.polygons.flatMap { $0 })
                 let picked = catalog.picked.contains(b.id), marked = candidates.contains(b.id)
                 let fill: Color = picked ? .accentColor.opacity(0.55) : marked ? .orange.opacity(0.45)
-                    : b.isPart ? Color(white: 0.62).opacity(0.5) : Color(white: 0.72)
+                    : Self.tint(b.note, part: b.isPart)
                 ctx.fill(shape, with: .color(fill), style: FillStyle(eoFill: true))
                 ctx.stroke(shape, with: .color(picked ? .accentColor : Color(white: 0.35)), lineWidth: picked ? 2 : (b.isPart ? 0.5 : 1))
             }
+            if catalog.showNames { names(in: ctx, of: catalog.all) }
         }
         .contentShape(Rectangle())
-        // A double-click: the whole building, its outline and every part.
+        // A double-click: a landmark's building opens the landmark, its model
+        // (the user, 2026-11-01); any other picks the whole building, its
+        // outline and every part.
         .onTapGesture(count: 2, coordinateSpace: .local) { p in
+            if let b = catalog.building(at: world(p)), let holder = session.landmark(holding: b.id),
+               holder.tile == session.workspace.tile?.name {
+                session.pickedLandmark = holder.id
+                return
+            }
             let ids = Set(catalog.whole(at: world(p)).map(\.id))
             catalog.picked = shift ? catalog.picked.union(ids) : ids
         }
@@ -59,6 +69,12 @@ struct BuildingsView: View {
             zoom(to: magnifyFrom! * v.magnification, keeping: v.startLocation)
         }.onEnded { _ in magnifyFrom = nil })
         .onScrollWheel { dy, p in zoom(to: scale * pow(2, dy), keeping: p) }
+        .onContinuousHover(coordinateSpace: .local) { phase in
+            switch phase {
+            case .active(let p): catalog.hovered = catalog.building(at: world(p))?.id
+            case .ended: catalog.hovered = nil
+            }
+        }
         .focusable()
         .focusEffectDisabled()
         .onKeyPress("f") {
@@ -70,6 +86,41 @@ struct BuildingsView: View {
         .onChange(of: catalog.square.map { "\($0.0)" }, initial: true) { take() }
         .onChange(of: centre) { give() }
         .onChange(of: scale) { give() }
+    }
+
+    /// A building's colour by how much it matters: grey for the plain ones,
+    /// teal for the named, deeper for the notable; a part the same, lighter.
+    static func tint(_ note: BuildingNote, part: Bool) -> Color {
+        let colour: Color = switch note {
+        case .plain: Color(white: part ? 0.62 : 0.72)
+        case .named: Color(red: 0.64, green: 0.80, blue: 0.80)
+        case .notable: Color(red: 0.30, green: 0.65, blue: 0.68)
+        }
+        return part ? colour.opacity(0.5) : colour
+    }
+
+    /// The names of the known buildings on the map, each only where it fits
+    /// whole inside its building at this zoom, small and in the building's
+    /// own colour (the user, 2026-11-01: names floating over the map, large,
+    /// belonged to nothing). Any building's name is in the status line
+    /// under the pointer.
+    private func names(in ctx: GraphicsContext, of buildings: [OsmBuilding]) {
+        var halo = ctx
+        halo.addFilter(.shadow(color: .white.opacity(0.7), radius: 1))
+        let bounds = CGRect(origin: .zero, size: size)
+        for b in buildings where !b.isPart && b.note != .plain {
+            guard let name = b.name else { continue }
+            let at = screen(b.centroid)
+            guard bounds.contains(at), b.contains(b.centroid) else { continue }
+            let text = ctx.resolve(Text(name).font(.system(size: 9, weight: .medium)).foregroundStyle(Color(red: 0.08, green: 0.26, blue: 0.28)))
+            let box = text.measure(in: CGSize(width: 240, height: 12))
+            let rect = CGRect(x: at.x - box.width / 2, y: at.y - box.height / 2, width: box.width, height: box.height)
+            // Whole inside the outline: its corners and the middles of its
+            // long sides, in the tile's metres.
+            let probes = [rect.minX, rect.midX, rect.maxX].flatMap { x in [rect.minY, rect.maxY].map { CGPoint(x: x, y: $0) } }
+            guard probes.allSatisfy({ b.contains(world($0)) }) else { continue }
+            halo.draw(text, in: rect)
+        }
     }
 
     /// A screen point in the tile's metres (north up).

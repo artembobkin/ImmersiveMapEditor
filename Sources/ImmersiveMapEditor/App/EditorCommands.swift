@@ -36,7 +36,7 @@ struct EditorCommands: Commands {
             if session.phase == .choosing {
                 Button("Open the Tile Picked") { if let t = session.candidate { session.open(tile: t) } }
                     .keyboardShortcut(.return)
-                    .disabled(session.candidate == nil || session.build.running)
+                    .disabled(session.candidate.map { session.jobs.isActive(.tile($0)) } ?? true)
             } else {
                 Button("Choose Another Tile") { session.chooseAnotherTile() }
                     .keyboardShortcut("0")

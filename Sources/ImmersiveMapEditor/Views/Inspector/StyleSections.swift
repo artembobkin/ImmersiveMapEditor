@@ -13,13 +13,13 @@ struct StyleSections: View {
             let n = session.palette.colours.count
             Text(n == 0 ? "The defaults, nothing set over them." : "\(n) colour\(n == 1 ? "" : "s") set over the defaults.")
                 .foregroundStyle(.secondary)
-            Button("Reset All to the Defaults…", systemImage: "arrow.counterclockwise", role: .destructive) { resetting = true }
+            PanelButton("Reset All to the Defaults…", systemImage: "arrow.counterclockwise", role: .destructive) { resetting = true }
                 .disabled(n == 0)
                 .confirmationDialog("Back to the default palette?", isPresented: $resetting) {
                     Button("Reset All", role: .destructive) { session.palette.resetAll() }
                 }
             if let file = session.palette.file {
-                Button("Show the Palette File", systemImage: "doc") { Platform.reveal(file) }
+                PanelButton("Show the Palette File", systemImage: "doc") { Platform.reveal(file) }
                     .disabled(!FileManager.default.fileExists(atPath: file.path))
                     .help(file.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
             }

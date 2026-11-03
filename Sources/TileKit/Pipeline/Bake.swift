@@ -59,8 +59,9 @@ public enum Bake {
         var names: [String] = [], index: [String: Int] = [:]
         var uv0 = [Double](repeating: 0, count: m.count * 6)
         var shadedNames: [String] = []
-        // The largest palette holds 4096 cells: past that the shade's levels
-        // are merged, two to one, then four, until it fits.
+        // The palette holds PaletteTexture.cells (1024, one size for every
+        // tile): past that the shade's levels are merged, two to one, then
+        // four, until it fits.
         var coarse = 1
         while true {
             shadedNames = (0..<m.count).map { t in
@@ -71,7 +72,7 @@ public enum Bake {
             names = []
             index = [:]
             for name in shadedNames where index[name] == nil { index[name] = names.count; names.append(name) }
-            if names.count <= 4096 || coarse >= 32 { break }
+            if names.count <= PaletteTexture.cells || coarse >= 32 { break }
             coarse *= 2
         }
         let palette = PaletteTexture(names: names)

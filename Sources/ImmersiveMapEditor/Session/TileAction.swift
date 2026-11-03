@@ -11,12 +11,15 @@ import Foundation
 /// - Light: the tile's light baked again, its geometry as built.
 enum TileAction {
     case roads, tile, light
+    /// Engine: every built tile into the model archive the Engine view reads.
+    case engine
 
     var title: String {
         switch self {
         case .roads: "Seed the Roads"
         case .tile: "Build the Tile…"
         case .light: "Bake"
+        case .engine: "Update the Archive"
         }
     }
 
@@ -25,6 +28,7 @@ enum TileAction {
         case .roads: "road.lanes"
         case .tile: "cube"
         case .light: "sun.max"
+        case .engine: "shippingbox"
         }
     }
 
@@ -36,6 +40,8 @@ enum TileAction {
             "The tile's model from OSM and the road document, the parts you choose, exported; its light left for Bake (⌘B)"
         case .light:
             "The light and the faces' shade into the tile's textures with the modifiers below, its geometry as built"
+        case .engine:
+            "Every built tile into the engine's model archive in the data folder (engine/), which the map on this view reads (⌘B)"
         }
     }
 }
@@ -48,6 +54,7 @@ extension ViewMode {
         switch self {
         case .roads: [.roads]
         case .preview: [.tile, .light]
+        case .engine: [.engine]
         case .buildings, .style: []
         }
     }
