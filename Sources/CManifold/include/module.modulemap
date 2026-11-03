@@ -1,4 +1,0 @@
-module CManifold {
-    header "cmanifold.h"
-    export *
-}

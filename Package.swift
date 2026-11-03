@@ -12,6 +12,9 @@ let package = Package(
         // and osm2streets (rev fc119c4) with what it stands on.
         .package(url: "https://github.com/artembobkin/SwiftTopology.git", exact: "0.1.0"),
         .package(url: "https://github.com/artembobkin/SwiftStreets.git", exact: "0.1.1"),
+        // Manifold (github.com/elalish/manifold) in Swift, bit for bit with the
+        // C++: the union of a landmark's solids into one shell.
+        .package(url: "https://github.com/artembobkin/SwiftManifold.git", exact: "0.1.0"),
         // The engine itself, read and never changed from here, at its last
         // release: the Engine view shows the model archive on its map (the
         // user, 2026-11-02). A new release is a new exact version here.
@@ -27,17 +30,12 @@ let package = Package(
         .target(name: "GLTF", path: "Sources/GLTF"),
         // The light map's bake on the GPU: Metal ray tracing.
         .target(name: "LightBaker", path: "Sources/LightBaker"),
-        // Manifold (github.com/elalish/manifold, Apache 2.0, its sources in manifold/), behind a small C face:
-        // the union of a landmark's solids into one mesh.
-        .target(name: "CManifold", path: "Sources/CManifold", exclude: ["manifold/LICENSE", "manifold/REVISION"],
-                cxxSettings: [.headerSearchPath("manifold/include"), .define("MANIFOLD_PAR", to: "-1")]),
         // The tile pipeline: OSM to one 3D model per map tile.
-        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", "CManifold", .product(name: "Streets", package: "SwiftStreets"),
+        .target(name: "TileKit", dependencies: ["Geometry", "GLTF", "LightBaker", .product(name: "Manifold", package: "SwiftManifold"), .product(name: "Streets", package: "SwiftStreets"),
                                               .product(name: "StreetGeom", package: "SwiftStreets")], path: "Sources/TileKit"),
         .executableTarget(name: "ImmersiveMapEditor", dependencies: ["TileKit", "Geometry", .product(name: "ImmersiveMap", package: "ImmersiveMap")], path: "Sources/ImmersiveMapEditor"),
         .testTarget(name: "TileKitTests", dependencies: ["TileKit", "Geometry"], path: "Tests/TileKitTests"),
         .testTarget(name: "ImmersiveMapEditorTests", dependencies: ["ImmersiveMapEditor", "Geometry"], path: "Tests/ImmersiveMapEditorTests"),
     ],
-    swiftLanguageModes: [.v5],
-    cxxLanguageStandard: .cxx17
+    swiftLanguageModes: [.v5]
 )
