@@ -17,7 +17,7 @@ import simd
 /// Faces are oriented by a hint of which way they look (outward), so a
 /// recipe cannot turn one inside out. Nothing is below the ground.
 public enum LandmarkGenerator {
-    public static let roofShapes = ["flat", "gabled", "skillion", "hipped", "pyramidal", "dome", "onion", "spire", "mansard"]
+    public static let roofShapes = ["flat", "gabled", "skillion", "hipped", "pyramidal", "dome", "onion", "spire", "mansard", "vault"]
 
     /// OSM's roof:shape in the recipe's words: the nearest of its shapes,
     /// flat for one it has no likeness of.
@@ -25,7 +25,8 @@ public enum LandmarkGenerator {
         if roofShapes.contains(osm) { return osm }
         switch osm {
         case "half-hipped", "side_hipped", "hip": return "hipped"
-        case "gambrel", "round": return "mansard"
+        case "gambrel": return "mansard"
+        case "round": return "vault"
         case "saltbox", "side_half-hipped": return "gabled"
         case "lean_to", "shed": return "skillion"
         case "cone", "conical": return "spire"
@@ -87,6 +88,11 @@ public enum LandmarkGenerator {
         /// 2026-11-01).
         static let glassPost = 0.4, glassRail = 0.3
         static let plinthHeight = 0.9
+        /// A plinth is a blind base: taller than this it is a storey with no
+        /// windows, and the building stands on a pedestal (the user,
+        /// 2026-11-03: the Four Seasons on 8 m of blind red). A ground floor
+        /// of its own colour is a mass of its own, with its shop fronts.
+        static let plinthTallest = 3.0
         static let bandHeight = 0.4
         static let pilasterWidth = 0.8
         static let portalWidth = 0.6
@@ -97,6 +103,12 @@ public enum LandmarkGenerator {
         static let chamfer = 0.5
         static let windowStep = 4.5, windowsAlong = 14.0
         static let spireRadius = 1.0, spireTip = 0.25, spireAspect = 5.0
+        /// A facade's walls keep one direction within this turn, and a wall
+        /// shorter than `jog` between them is a jog (a pier's step), not a
+        /// wall of its own: the windows run along the whole facade.
+        static let facadeTurn = 15.0 * Double.pi / 180, jog = 1.2
+        /// A glazed vault's ribs: their thickness and spacing along it.
+        static let vaultRib = 0.2, vaultRibStep = 4.0
         /// What makes the building recognisable (`emphasis`), this much
         /// larger (the user, 2026-10-28: Zenly draws the one thing a person
         /// points at larger than life). The editor's Exaggeration setting,
@@ -132,6 +144,11 @@ public enum LandmarkGenerator {
             colour(m.colour, at)
             colour(m.roof?.colour, at + ".roof")
             colour(m.plinth?.colour, at + ".plinth")
+            if let p = m.plinth, p.height > Caricature.plinthTallest {
+                out.append("\(at).plinth: \(p.height) m is a storey, not a plinth (\(Int(Caricature.plinthTallest)) m at most, a blind base): "
+                           + "a ground floor of its own colour, with its shop fronts, arches or windows, is a mass of its own from the ground to its top, "
+                           + "and the body a mass from there up on the same outline (its base 0.3 m below the ground floor's top, so they overlap)")
+            }
             colour(m.cornice?.colour, at + ".cornice")
             colour(m.windows?.colour, at + ".windows")
             colour(m.frame, at + ".frame")
@@ -203,6 +220,7 @@ public enum LandmarkGenerator {
                 out.append("masses[\(i)]" + (m.id.map { " (\($0))" } ?? "") + ": its cuts or minus leave nothing of it")
             }
             if let shared = sharedWall(rings, r.masses) { out.append(shared) }
+            out += overCourtyards(rings, r.masses, source)
         }
         for (i, f) in r.features.enumerated() {
             let at = "features[\(i)] (\(f.kind))"
@@ -612,6 +630,8 @@ public enum LandmarkGenerator {
             guard z1 > z0 else { return [] }
             let foot = max(z0, min(z1 - 0.5, windowsFrom ?? z0))
             var cuts: [Cut] = []
+            // The rows' windows of every wall, laid along the facades.
+            let facade = windows.map { facadeWindows(ring, foot, z1, $0) } ?? [:]
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
                 guard len > 1e-6 else { continue }
@@ -627,7 +647,12 @@ public enum LandmarkGenerator {
                     // A door stands on the wall's foot; a window (sill, glass) where it is told.
                     // A door's opening starts 2 cm up, so it stays inside the
                     // wall's face (an opening on the foot's edge is no opening).
-                    let window = at.door.glass == true || (at.door.sill ?? 0) > 0.01
+                    // A door with a sill is a window of its own, laid from the
+                    // plinth's top as the rows are; a door's `glass` is a
+                    // glazed entrance, still cut from the foot (the user,
+                    // 2026-11-03: glass doors read as windows hung on the
+                    // Four Seasons' 8 m plinth, the hotel as if on a pedestal).
+                    let window = (at.door.sill ?? 0) > 0.01
                     let sill = window ? max(0.02, foot - z0 + min(at.door.sill ?? 0, z1 - foot - 1)) : 0.02
                     let w = min(at.door.width ?? (window ? 1.6 : 2.4), len * 0.6), h = min(at.door.height ?? (window ? 2.4 : 4), (z1 - z0 - sill) * 0.95)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t))
@@ -638,16 +663,16 @@ public enum LandmarkGenerator {
                     let glazed = w * h >= LandmarkGenerator.glazedArea
                     openings.append(Opening(ring: opening(t, z0 + sill, w, h, arched: at.door.arched == true),
                                             depth: window ? LandmarkGenerator.windowDepth : max(at.door.depth ?? 0.6, Caricature.doorDepth),
-                                            back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : "lm_dark"),
+                                            back: at.door.colour ?? (window ? (glazed ? "lm_glass" : "\(colour).glass") : at.door.glass == true ? "lm_glass" : "lm_dark"),
                                             margin: window ? 0 : max(at.door.portal ?? 0.35, Caricature.portalWidth)))
                     spans.append((t - w / 2, t + w / 2, z0 + sill + h))
                 }
                 // The windows' openings (the rows' and the hand-placed), for
                 // their sills and surrounds.
-                var panes: [[P2]] = doors.filter { $0.edge == i && ($0.door.glass == true || ($0.door.sill ?? 0) > 0.01) }
+                var panes: [[P2]] = doors.filter { $0.edge == i && ($0.door.sill ?? 0) > 0.01 }
                     .compactMap { at in openings.first { $0.margin == 0 && abs($0.ring.map(\.x).min()! + $0.ring.map(\.x).max()! - 2 * at.t) < 1 }?.ring }
-                if let w = windows {
-                    for ring in self.openings(len, foot, z1, w) {
+                if windows != nil {
+                    for ring in facade[i] ?? [] {
                         let t0 = ring.map(\.x).min()!, t1 = ring.map(\.x).max()!, bottom = ring.map(\.y).min()!
                         // Not over a door, nor on a window placed by hand.
                         guard !spans.contains(where: { t1 > $0.0 - 0.5 && t0 < $0.1 + 0.5 && bottom < $0.2 + 0.3 }) else { continue }
@@ -684,7 +709,7 @@ public enum LandmarkGenerator {
                 // solids of their own; the wall's solid goes on after them.
                 let wallSolid = solid
                 defer { solid = wallSolid }
-                for at in doors where at.edge == i && at.door.glass != true && (at.door.sill ?? 0) <= 0.01 {
+                for at in doors where at.edge == i && (at.door.sill ?? 0) <= 0.01 {
                     let w = min(at.door.width ?? 2.4, len * 0.6), h = min(at.door.height ?? 4, (z1 - z0) * 0.9)
                     let t = max(w / 2 + 0.3, min(len - w / 2 - 0.3, at.t)), pw = max(at.door.portal ?? 0.35, Caricature.portalWidth)
                     guard pw > 0.01, t - w / 2 >= 0.2, t + w / 2 <= len - 0.2, h > 1 else { continue }
@@ -804,6 +829,81 @@ public enum LandmarkGenerator {
                 for s in 0..<w.storeys {
                     let zc = lo + storey * (Double(s) + 0.5)
                     out.append(opening(t, zc - height / 2, width, height, arched: w.arched == true))
+                }
+            }
+            return out
+        }
+
+        /// The rows' windows of every wall of a ring, by the wall's index,
+        /// laid along facades: a run of walls keeping one direction (within
+        /// `Caricature.facadeTurn`), the jogs between them (walls under
+        /// `Caricature.jog` long, a pier's step) skipped, is one facade, its
+        /// windows spaced along its whole length by `openings` and each
+        /// column cut into the wall it falls on, moved to the middle of that
+        /// wall when it does not fit where it fell (a bay between piers). So
+        /// a facade OSM draws as piers and bays gets its windows, where each
+        /// bay alone was too short for one (the user, 2026-11-03: GUM's
+        /// front had none). A wall standing alone is laid as before.
+        func facadeWindows(_ ring: [P2], _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [Int: [[P2]]] {
+            let n = ring.count
+            var out: [Int: [[P2]]] = [:]
+            guard n >= 3 else { return out }
+            struct Edge { let a, b: P2; let len: Double; let d: P2 }
+            let edges = (0..<n).map { i -> Edge in
+                let a = ring[i], b = ring[(i + 1) % n], len = simd_length(b - a)
+                return Edge(a: a, b: b, len: len, d: len > 1e-9 ? (b - a) / len : P2(1, 0))
+            }
+            // The runs, each the indices of its walls in order.
+            var runs: [[Int]] = []
+            var current: [Int] = []
+            var dir = P2.zero
+            for i in 0..<n {
+                let e = edges[i]
+                guard e.len > 1e-6 else { continue }
+                if current.isEmpty {
+                    current = [i]
+                    dir = e.d
+                } else if simd_dot(e.d, dir) > cos(Caricature.facadeTurn) {
+                    current.append(i)
+                } else if e.len < Caricature.jog {
+                    continue
+                } else {
+                    runs.append(current)
+                    current = [i]
+                    dir = e.d
+                }
+            }
+            if !current.isEmpty { runs.append(current) }
+            // The ring closes: a facade may run over its first corner.
+            if runs.count >= 2, let last = runs.last, let first = runs.first,
+               simd_dot(edges[last[0]].d, edges[first[0]].d) > cos(Caricature.facadeTurn) {
+                runs[0] = last + first
+                runs.removeLast()
+            }
+            for run in runs {
+                let d = edges[run[0]].d, start = edges[run[0]].a
+                let spans = run.map { (lo: simd_dot(edges[$0].a - start, d), hi: simd_dot(edges[$0].b - start, d)) }
+                let length = spans.last!.hi
+                guard length > 1 else { continue }
+                // The columns of windows along the facade, by their place.
+                var columns: [Double: [[P2]]] = [:]
+                for r in openings(length, lo, hi, w) {
+                    let xs = r.map(\.x)
+                    columns[((xs.min()! + xs.max()!) / 2 * 1000).rounded() / 1000, default: []].append(r)
+                }
+                var placed: [Int: [Double]] = [:]
+                for (t, rings) in columns.sorted(by: { $0.key < $1.key }) {
+                    let xs = rings[0].map(\.x), width = xs.max()! - xs.min()!
+                    guard let k = run.indices.first(where: { spans[$0].lo - 0.01 <= t && t <= spans[$0].hi + 0.01 }) else { continue }
+                    let i = run[k], e = edges[i]
+                    var local = t - spans[k].lo
+                    if local - width / 2 < 0.3 || local + width / 2 > e.len - 0.3 {
+                        guard e.len >= width + 0.8 else { continue }
+                        local = e.len / 2
+                    }
+                    if placed[i, default: []].contains(where: { abs($0 - local) < width + 0.4 }) { continue }
+                    placed[i, default: []].append(local)
+                    out[i, default: []] += rings.map { $0.map { P2($0.x + (local - t), $0.y) } }
                 }
             }
             return out
@@ -969,6 +1069,8 @@ public enum LandmarkGenerator {
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 4)], colour)
             case "pyramidal":
                 loft(ring, c, top, [(1, 0), (0, roof.height ?? r * 0.8)], colour)
+            case "vault":
+                vault(ring, top, roof.height, colour)
             case "gabled", "skillion":
                 // The roof a closed solid: its slopes and gables over a flat
                 // underside, with a fascia around the eaves when they overhang.
@@ -984,6 +1086,46 @@ public enum LandmarkGenerator {
                 let eave = over > 0.05 ? grown(ring, over) : ring
                 let fascia = over > 0.05 ? Caricature.fascia : 0
                 hipped(eave, top + fascia, roof.height, mansard: roof.shape == "mansard", colour, bottom: top)
+            }
+        }
+
+        /// A barrel vault along the outline's long side: a half-ellipse
+        /// across its smallest rectangle, `height` high (half its width
+        /// unless given), from end to end, one closed solid on the flat
+        /// underside. In a glass colour a glazed vault with its ribs: an arch
+        /// of the frame's colour every `Caricature.vaultRibStep` and at both
+        /// ends, and a rail along the crown and along both eaves (the user,
+        /// 2026-11-03: GUM's galleries as gabled planes of glass read as
+        /// plain blue slabs).
+        func vault(_ ring: [P2], _ top: Double, _ height: Double?, _ colour: String) {
+            let rect = Array(Geometry.polygon(ring + [ring[0]]).minimumRotatedRectangle.exterior.dropLast())
+            guard rect.count == 4 else { return cap(ring, top, up: true, colour) }
+            let c = rect.reduce(P2.zero, +) / 4
+            var u = rect[1] - rect[0], v = rect[2] - rect[1]
+            if simd_length(u) < simd_length(v) { swap(&u, &v) }
+            let hl = simd_length(u) / 2, hw = simd_length(v) / 2
+            u /= hl * 2
+            v /= hw * 2
+            let h = max(0.5, height ?? hw), n = 12
+            // The profile at `x` along the vault: from one eave over the crown
+            // to the other, the ring closed by the flat underside.
+            func profile(_ x: Double) -> [V3] {
+                (0...n).map { k in
+                    let a = Double.pi * Double(k) / Double(n), p = c + u * x + v * (hw * cos(a))
+                    return V3(p.x, p.y, top + h * sin(a))
+                }
+            }
+            sweep([profile(-hl), profile(hl)], colour)
+            guard LandmarkRecipe.glassColours.contains(colour) else { return }
+            let frame = "lm_dark", r = Caricature.vaultRib
+            let count = max(1, Int((2 * hl / Caricature.vaultRibStep).rounded()))
+            for k in 0...count {
+                let arc = profile(-hl + 2 * hl * Double(k) / Double(count))
+                for j in 0..<n { tube(arc[j], arc[j + 1], r, r, segments: 6, frame) }
+            }
+            for a in [0.0, Double.pi / 2, Double.pi] {
+                let p0 = c - u * hl + v * (hw * cos(a)), p1 = c + u * hl + v * (hw * cos(a))
+                tube(V3(p0.x, p0.y, top + h * sin(a)), V3(p1.x, p1.y, top + h * sin(a)), r, r, segments: 6, frame)
             }
         }
 
@@ -1282,8 +1424,12 @@ public enum LandmarkGenerator {
             begin()
             // What makes the building recognisable, a size up.
             var s = given
-            // Lettering is never larger than life (the user, 2026-11-01).
-            if s.emphasis == true, s.kind != "text" {
+            // Lettering is never larger than life (the user, 2026-11-01), nor
+            // a cone or a dome, a tower's tent roof, a spire, a lantern's cap:
+            // drawn larger it is a mushroom over what carries it, which is
+            // told by its own size (the user, 2026-11-03: GUM's and the
+            // Historical Museum's towers, the Senate's lantern).
+            if s.emphasis == true, s.kind != "text", s.kind != "cone", s.kind != "dome" {
                 let k = Caricature.emphasis
                 s.size = s.size.map { $0.map { $0 * k } }
                 s.radius = s.radius.map { $0 * k }
@@ -1713,6 +1859,32 @@ public enum LandmarkGenerator {
                     again = true
                     break
                 }
+            }
+        }
+        return out
+    }
+
+    /// The masses standing in a courtyard of the landmark (the open sky its
+    /// OSM parts enclose above a floor, `LandmarkSource.courtyards`): a mass
+    /// whose footprint takes a good part of one and rises over its floor, a
+    /// line each for the recipe's check (the user, 2026-11-03: the Hotel
+    /// Moskva's courtyard roofed over by one mass of its whole outline, the
+    /// satellite view ignored). The wings around a courtyard are masses cut
+    /// from the outline, and what is under it ends at its floor.
+    static func overCourtyards(_ rings: [[P2]?], _ masses: [LandmarkRecipe.Mass], _ source: LandmarkSource) -> [String] {
+        let yards = source.courtyards
+        guard !yards.isEmpty else { return [] }
+        var out: [String] = []
+        for (i, m) in masses.enumerated() {
+            guard let ring = rings[i] else { continue }
+            let shape = Geometry.polygon(ring + [ring[0]])
+            for yard in yards where m.top > yard.floor + 1 {
+                let open = Geometry.polygon(yard.ring + [yard.ring[0]]), c = yard.centre
+                guard shape.intersection(open).area > max(40, open.area * 0.4) else { continue }
+                out.append("masses[\(i)]" + (m.id.map { " (\($0))" } ?? "")
+                           + String(format: ": stands in the courtyard at (%.0f, %.0f), %.0f m² open to the sky above %.0f m: ", c.x, c.y, open.area, yard.floor)
+                           + (yard.floor > 0 ? String(format: "what is under the courtyard ends at %.0f m (the podium its garden lies on), and ", yard.floor) : "")
+                           + "the wings around it are masses cut from the outline (cuts, and minus where they overlap), none over the courtyard")
             }
         }
         return out

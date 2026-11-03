@@ -10,6 +10,10 @@ import Observation
 @MainActor
 final class Console {
     private(set) var log = ""
+    /// The log as lines, what the bottom panel shows (a row each, laid out
+    /// only where in view: one text of the whole log, selectable, was laid
+    /// out again at every change of the panel's size; the user, 2026-11-03).
+    private(set) var lines: [String] = []
     private(set) var running = false
     /// The stage, how far it is when that is known, a detail.
     struct Stage: Equatable {
@@ -24,12 +28,24 @@ final class Console {
     /// The log started over with the job's title, the job running.
     func begin(_ title: String, stage name: String? = nil) {
         log = title.isEmpty ? "" : title + "\n"
+        lines = title.isEmpty ? [] : [title]
         running = true
         stage = name.map { Stage(name: $0) }
         step = (0, 0)
+        #if DEBUG
+        // Every job runs the editor's own binary (the pipeline, Claude's
+        // tools), and a Debug one is tens of times slower (the user,
+        // 2026-11-03: a landmark modelled in 5 minutes instead of 2;
+        // GUM's set_recipe took 322 s in Debug and 8 s in Release).
+        append("The editor runs in Debug: its builds and Claude's tools run tens of times slower than in Release. Run the Release scheme.")
+        #endif
     }
 
-    func append(_ text: String) { log += text.hasSuffix("\n") ? text : text + "\n" }
+    func append(_ text: String) {
+        let whole = text.hasSuffix("\n") ? text : text + "\n"
+        log += whole
+        lines += whole.dropLast().split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    }
 
     /// What the job is doing now, said by the job itself.
     func stage(name: String) { stage = Stage(name: name) }
@@ -41,6 +57,7 @@ final class Console {
     func end(_ ok: Bool) {
         stage = nil
         log += "\n" + (ok ? "Done." : "Stopped.") + "\n"
+        lines += ["", ok ? "Done." : "Stopped."]
         running = false
     }
 

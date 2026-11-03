@@ -24,6 +24,8 @@ struct LandmarksSections: View {
     @State private var deleting: TileLandmark?
     @State private var settingsShown = false
     @State private var moreShown = false
+    /// The open landmark's facades, for the turn limit's words.
+    @State private var facades = 4
 
     var body: some View {
         @Bindable var session = session
@@ -67,6 +69,16 @@ struct LandmarksSections: View {
                         if let run = session.agent.run(of: landmark.id) {
                             if run.state.running { ProgressView().controlSize(.mini) }
                             Text(run.status).font(.caption).foregroundStyle(run.state.isFailed ? .red : .secondary)
+                            // A run stopped from the list, where its state
+                            // shows (the user, 2026-11-03: one started by
+                            // mistake with no way to cut it short).
+                            if run.state.active {
+                                Button { session.agent.stop(landmark.id) } label: {
+                                    Image(systemName: "stop.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Stops Claude on \(landmark.name), killed when it does not go in 3 s.")
+                            }
                         }
                         Image(systemName: "chevron.right").foregroundStyle(.tertiary)
                     }
@@ -74,6 +86,9 @@ struct LandmarksSections: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    if session.agent.isActive(landmark.id) {
+                        Button("Stop Claude", systemImage: "stop.circle") { session.agent.stop(landmark.id) }
+                    }
                     Button("Open Its Folder", systemImage: "folder") { Platform.open(landmark.folder) }
                     Button("Delete \(landmark.name)…", systemImage: "trash", role: .destructive) { deleting = landmark }
                         .disabled(session.agent.isActive(landmark.id))
@@ -113,7 +128,7 @@ struct LandmarksSections: View {
         Section("Model") {
             if session.agent.isActive(landmark.id) {
                 PanelButton("Stop Claude", systemImage: "stop.circle") { session.agent.stop(landmark.id) }
-                    .help("Stops Claude on this landmark alone" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
+                    .help("Stops Claude on this landmark alone, killed when it does not go in 3 s" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
             } else {
                 PanelButton("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
                     .help("A new attempt from OSM: Claude Code gathers freely licensed photos (the ones kept are used again), writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
@@ -156,9 +171,14 @@ struct LandmarksSections: View {
                 Slider(value: $exaggeration, in: 1...4, step: 0.25) { Text(String(format: "Exaggeration ×%.2g", exaggeration)) }
                     .disabled(session.agent.running || emphasis == "off")
                     .help("How much larger than life a distinctive detail is drawn: 1 is its real size.")
-                let facades = LandmarkMCP.Server.facadeCount(landmark.folder)
                 Stepper("Turn limit a facade: \(turnsPerFacade)", value: $turnsPerFacade, in: 0...20)
                     .disabled(session.agent.running)
+                    // The count once a landmark, off the main thread: in the
+                    // body it ran at every redraw (the user, 2026-11-03).
+                    .task(id: landmark.id) {
+                        let folder = landmark.folder
+                        facades = await Task.detached { LandmarkMCP.Server.facadeCount(folder) }.value
+                    }
                     .help("The most replies Claude may make for one landmark, a safety stop: this many a facade and 8 besides, "
                           + (turnsPerFacade > 0 ? "\(ClaudeSettings.maxTurns(facades: facades)) for this one with its \(facades) facades." : "none now: no limit."))
                 Stepper("At once: \(atOnce)", value: $atOnce, in: 1...6)

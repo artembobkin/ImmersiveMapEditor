@@ -45,6 +45,22 @@ final class JobPool {
 
     func stopAll() { for job in active { job.stop() } }
 
+    /// Every job stopped for the editor to quit: each told to stop (its
+    /// process terminated), all given 2 s to end, then any process still
+    /// there killed outright, so no claude and no build goes on working for
+    /// no one (the user, 2026-11-03: the runs went on after a restart).
+    /// Synchronous, on the way out of the app.
+    func quit() {
+        for job in active { job.stop() }
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, jobs.contains(where: { $0.process?.isRunning == true }) {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        for job in jobs {
+            if let p = job.process, p.isRunning { kill(p.processIdentifier, SIGKILL) }
+        }
+    }
+
     /// Starts the queued jobs their rules allow. A job started here reports
     /// its state at once, which asks for a pump again: the one going keeps
     /// count.

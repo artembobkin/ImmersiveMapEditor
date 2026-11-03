@@ -59,6 +59,20 @@ struct StreetScene {
         let samples: [(p: P2, n: P2)]
     }
 
+    /// How many facades the landmark's hull has, from its landmark.json
+    /// alone: what the turn limit and the panel ask, without the tile's
+    /// buildings around it (the user, 2026-11-03: the panel built the whole
+    /// scene for the count, the tile's OSM read and every building made,
+    /// at each of its redraws, the window frozen).
+    static func facadeCount(folder: URL) -> Int? {
+        guard let source = try? LandmarkSource(folder.appendingPathComponent("landmark.json")) else { return nil }
+        let all = source.buildings.flatMap { $0.polygons.flatMap { $0.first ?? [] } }
+        let hull = Geometry.collection(all.map { Geometry.point($0) }).convexHull
+        var ring = hull.kind == .polygon ? Array(hull.exterior.dropLast()) : all
+        if signedArea(ring) < 0 { ring.reverse() }
+        return facades(of: ring).count
+    }
+
     init(folder: URL) throws {
         let source = try LandmarkSource(folder.appendingPathComponent("landmark.json"))
         (lon, lat) = source.centre

@@ -23,7 +23,7 @@ final class PipelineJob: Job {
     private let steps: [[String]]
     /// Called when the job ends, with whether every command went through.
     private let then: @MainActor (Bool) -> Void
-    private var process: Process?
+    private(set) var process: Process?
     private var stopping = false
 
     init(subject: JobSubject, title: String, root: URL, steps: [[String]], then: @escaping @MainActor (Bool) -> Void = { _ in }) {

@@ -44,6 +44,9 @@ protocol Job: AnyObject, Observable {
     func canStart(alongside running: [any Job]) -> Bool
     func start()
     func stop()
+    /// The process doing its work, while one is: for the editor's quit,
+    /// which kills what `stop` did not end in time.
+    var process: Process? { get }
     /// Set by the pool: called whenever the state changes, so the next
     /// queued job can start.
     var stateChanged: () -> Void { get set }

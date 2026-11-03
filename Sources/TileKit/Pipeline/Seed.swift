@@ -7,7 +7,7 @@ import Streets
 /// what the editor shows under it. The tile must be fetched. Writes, in the
 /// tile's folder:
 ///
-///   roads/seed/osm.json      the tile's OSM, each element once
+///   roads/seed/osm.json      the tiles' OSM as one, each element once, in Overpass's form
 ///   roads/seed/streets/      osm2streets over it and its margin
 ///   roads/seed/context.json  the editor's underlay: building outlines, road
 ///                            centre lines, crossings and bus stops, in lon
@@ -50,16 +50,12 @@ public enum Seed {
         return path
     }
 
-    /// The tiles' osm.json as one, every element once.
+    /// The tiles' OSM as one, every element once, in Overpass's form (from
+    /// each tile's osm.bin, `OsmCache`).
     static func merge(_ region: Region, _ folder: URL, _ paths: WorkspacePaths) throws -> [[String: Any]] {
         var seen = Set<String>(), elements: [[String: Any]] = []
         for (x, y) in region.tiles {
-            let url = paths.tileData(z: region.z, x: x, y: y).appendingPathComponent("osm.json")
-            guard let data = try? Data(contentsOf: url) else {
-                throw PipelineError("\(url.path) is missing: fetch the tile first")
-            }
-            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            for case let e as [String: Any] in root["elements"] as? [Any] ?? [] {
+            for e in try OsmCache.elements(in: paths.tileData(z: region.z, x: x, y: y)).overpass {
                 let key = "\(e["type"] ?? "")/\(e["id"] ?? "")"
                 if seen.insert(key).inserted { elements.append(e) }
             }

@@ -52,7 +52,10 @@ struct EditorApp: App {
     init() {
         // A folder given on the command line, else the data folder of Settings.
         let args = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }
-        _session = State(initialValue: Session(root: args.first.map { URL(fileURLWithPath: $0) } ?? DataFolder.current))
+        let session = Session(root: args.first.map { URL(fileURLWithPath: $0) } ?? DataFolder.current)
+        _session = State(initialValue: session)
+        // Nothing of the editor's outlives it: every job's process ended.
+        Platform.onQuit { session.quit() }
     }
 
     var body: some Scene {

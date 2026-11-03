@@ -15,8 +15,12 @@ struct WindowLayout<Main: View, Console: View, Status: View>: View {
     @ViewBuilder var main: () -> Main
     @ViewBuilder var console: () -> Console
     @ViewBuilder var status: () -> Status
-    /// The console's height, kept between runs, dragged by its top edge.
+    /// The console's height, kept between runs, dragged by its top edge:
+    /// the drag moves the view's own state, and the setting is written
+    /// once, when it ends (a write to the defaults at every event of the
+    /// drag made the window stutter; the user, 2026-11-03).
     @AppStorage("console.height") private var height = 220.0
+    @State private var dragging: Double?
     @State private var dragFrom: Double?
 
     var body: some View {
@@ -27,7 +31,7 @@ struct WindowLayout<Main: View, Console: View, Status: View>: View {
                 resizer
                 console()
                     .frame(maxWidth: .infinity)
-                    .frame(height: height)
+                    .frame(height: dragging ?? height)
             }
             Divider()
             status()
@@ -54,8 +58,12 @@ struct WindowLayout<Main: View, Console: View, Status: View>: View {
                     .pointerStyle(.rowResize)
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global).onChanged { v in
                         if dragFrom == nil { dragFrom = height }
-                        height = min(700, max(90, dragFrom! - v.translation.height))
-                    }.onEnded { _ in dragFrom = nil })
+                        dragging = min(700, max(90, dragFrom! - v.translation.height))
+                    }.onEnded { _ in
+                        if let dragging { height = dragging }
+                        dragging = nil
+                        dragFrom = nil
+                    })
             }
             .zIndex(1)
     }

@@ -40,31 +40,87 @@ public final class Osm {
     public private(set) var relations: [OsmRelation] = []
     private var points: [Int64: P2] = [:]
 
+    /// The elements as read: what `OsmCache` keeps.
+    struct Elements {
+        var nodes: [Int64: OsmNode] = [:]
+        var nodeOrder: [Int64] = []
+        var ways: [Int64: OsmWay] = [:]
+        var wayOrder: [Int64] = []
+        var relations: [OsmRelation] = []
+
+        /// The elements as Overpass's JSON has them (type, id, lat, lon,
+        /// nodes, members, tags), nodes then ways then relations, for what
+        /// still takes that form: the seed's OSM XML, the fetch's summary.
+        var overpass: [[String: Any]] {
+            var out: [[String: Any]] = []
+            for id in nodeOrder {
+                guard let n = nodes[id] else { continue }
+                var e: [String: Any] = ["type": "node", "id": n.id, "lat": n.lat, "lon": n.lon]
+                if !n.tags.isEmpty { e["tags"] = n.tags }
+                out.append(e)
+            }
+            for id in wayOrder {
+                guard let w = ways[id] else { continue }
+                var e: [String: Any] = ["type": "way", "id": w.id, "nodes": w.nodes]
+                if !w.tags.isEmpty { e["tags"] = w.tags }
+                out.append(e)
+            }
+            for r in relations {
+                var e: [String: Any] = ["type": "relation", "id": r.id,
+                                        "members": r.members.map { ["type": $0.type, "ref": $0.ref, "role": $0.role] as [String: Any] }]
+                if !r.tags.isEmpty { e["tags"] = r.tags }
+                out.append(e)
+            }
+            return out
+        }
+    }
+
+    /// The folder's OSM read: its osm.bin, or an osm.json found there
+    /// converted into it (`OsmCache`; the user, 2026-11-03).
     public init(_ projection: Projecting) throws {
         self.projection = projection
-        let data = try Data(contentsOf: projection.folder.appendingPathComponent("osm.json"))
+        let e = try OsmCache.elements(in: projection.folder)
+        nodes = e.nodes
+        nodeOrder = e.nodeOrder
+        ways = e.ways
+        wayOrder = e.wayOrder
+        relations = e.relations
+    }
+
+    /// Whether a tile's folder holds its OSM, fetched: osm.bin, or an
+    /// osm.json not converted yet.
+    public static func isFetched(_ folder: URL) -> Bool { OsmCache.isThere(folder) }
+
+    /// What a tile's OSM is now, for a cache derived from it (the editor's
+    /// buildings): another after a fetch.
+    public static func sourceStamp(_ folder: URL) -> String { OsmCache.stamp(of: folder) }
+
+    /// Overpass's JSON parsed: its elements in the file's order.
+    static func parse(_ data: Data) throws -> Elements {
+        var out = Elements()
         let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
         for case let e as [String: Any] in root["elements"] as? [Any] ?? [] {
             guard let type = e["type"] as? String, let id = (e["id"] as? NSNumber)?.int64Value else { continue }
             let tags = e["tags"] as? Tags ?? [:]
             switch type {
             case "node":
-                nodes[id] = OsmNode(id: id, lat: (e["lat"] as? NSNumber)?.doubleValue ?? 0,
-                                    lon: (e["lon"] as? NSNumber)?.doubleValue ?? 0, tags: tags)
-                nodeOrder.append(id)
+                out.nodes[id] = OsmNode(id: id, lat: (e["lat"] as? NSNumber)?.doubleValue ?? 0,
+                                        lon: (e["lon"] as? NSNumber)?.doubleValue ?? 0, tags: tags)
+                out.nodeOrder.append(id)
             case "way":
-                ways[id] = OsmWay(id: id, nodes: (e["nodes"] as? [NSNumber] ?? []).map(\.int64Value), tags: tags)
-                wayOrder.append(id)
+                out.ways[id] = OsmWay(id: id, nodes: (e["nodes"] as? [NSNumber] ?? []).map(\.int64Value), tags: tags)
+                out.wayOrder.append(id)
             case "relation":
                 let members = (e["members"] as? [[String: Any]] ?? []).map {
                     OsmMember(type: $0["type"] as? String ?? "", ref: ($0["ref"] as? NSNumber)?.int64Value ?? 0,
                               role: $0["role"] as? String ?? "")
                 }
-                relations.append(OsmRelation(id: id, members: members, tags: tags))
+                out.relations.append(OsmRelation(id: id, members: members, tags: tags))
             default:
                 break
             }
         }
+        return out
     }
 
     public func point(_ node: Int64) -> P2 {

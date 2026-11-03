@@ -55,6 +55,17 @@ public struct LandmarkRecipe: Codable {
     /// describe the building.
     public var shapes: [Shape] = []
 
+    /// A list left out is empty: the synthesized decoding wanted every key
+    /// whatever its default, and a recipe with no features was refused
+    /// (the user, 2026-11-03: a turn of Claude's lost to it).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        masses = try c.decodeIfPresent([Mass].self, forKey: .masses) ?? []
+        features = try c.decodeIfPresent([Feature].self, forKey: .features) ?? []
+        shapes = try c.decodeIfPresent([Shape].self, forKey: .shapes) ?? []
+    }
+
     public struct Shape: Codable {
         public var kind: String
         public var at: [Double]?
@@ -153,8 +164,10 @@ public struct LandmarkRecipe: Codable {
         public var portal: Double?
         public var colour: String?
         /// A window at a place of its own instead of a door: its sill this
-        /// high above the wall's foot, glass at its back, no portal.
+        /// high above the plinth's top, glass at its back, no portal.
         public var sill: Double?
+        /// A glazed entrance: a door with glass at its back. A window's
+        /// back is glass whatever this says.
         public var glass: Bool?
     }
 
@@ -246,7 +259,7 @@ public struct LandmarkRecipe: Codable {
                            {"at": [x, y], "sill": 9, "width": 1.6, "height": 2.8, "arched": true, "glass": true}],
                  "pilasters": {"spacing": 3.5, "width": 1.0, "depth": 0.3, "colour": "lm_white"},
                  "bands": {"height": 0.3, "depth": 0.15, "colour": "lm_white"},
-                 "roof": {"shape": "flat|gabled|skillion|hipped|mansard|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_stone",
+                 "roof": {"shape": "flat|gabled|skillion|hipped|mansard|vault|pyramidal|dome|onion|spire", "height": 6, "colour": "lm_stone",
                           "overhang": 0.6, "parapet": 1.0}}],
      "features": [{"kind": "colonnade", "from": [x, y], "to": [x, y], "base": 1.5, "height": 15, "columns": 8, "radius": 0.7, "colour": "lm_white"},
                   {"kind": "pediment", "from": [x, y], "to": [x, y], "base": 18, "height": 4, "depth": 2, "colour": "lm_cream"},
@@ -259,7 +272,11 @@ public struct LandmarkRecipe: Codable {
     of windows on one wall; the build refuses it). A building of parts with different heights, windows or roofs is one \
     outline cut into them: a part is the outline with `cuts` (a straight line through it, from and to, and a point on \
     the side to `keep`; several cuts for a corner part), and the rest of the outline is the outline `minus` those parts' \
-    ids. The parts meet on the cut and the generator joins them. A `polygon` of its own is only for what OSM has no \
+    ids. The parts meet on the cut and the generator joins them. An outline is one ring around the whole block, its \
+    courtyards and all: where the parts enclose a courtyard open to the sky (get_landmark names each, with its ring and \
+    its floor: the ground, or the roof of the podium its garden lies on), what is under it ends at the floor, the \
+    wings around it are masses cut from the outline, one a side, each `minus` the ones before it where they overlap at \
+    the corners, and no mass rises over the courtyard (the build refuses one). A `polygon` of its own is only for what OSM has no \
     outline of (a tower on the roof, a dome's drum, a porch), and it must stand clear of the outline's walls or on its \
     own. The model is one shell: every mass and shape is a closed solid, and all of them are united. Masses that touch \
     must overlap: a tower sinks half a metre into its base, never with a slot between them (the generator sinks a \
@@ -270,10 +287,14 @@ public struct LandmarkRecipe: Codable {
     wall). A cornice is drawn as a profile of three steps up and out. Give windows only to a mass that \
     reads as storeys of windows, with the storeys and spacing the photos show. A window that the rows cannot place (one \
     between pilasters, a single large window, a window of its own above a door) is a door with a `sill` (metres above \
-    the wall's foot) and `glass` true: cut in at that place, glass at its back, as the rows' windows are; from 10 m² (a shop front, a glazed \
+    the plinth's top): cut in at that place, glass at its back, as the rows' windows are; from 10 m² (a shop front, a glazed \
     arch, a glass wall between piers) its back is the map's glass, lm_glass, which reads as glass from afar where a wall's dark tone reads as a hole. A door is an entrance cut into the wall \
     nearest its `at` (a point on or by that wall), from the ground up through the plinth, deeper than a window, its leaf at \
-    the back and a portal standing proud around it: every building has its entrances where the photos show them. Pilasters are vertical strips standing \
+    the back (glass when `glass` is true, a glazed entrance) and a portal standing proud around it: every building has its entrances where the photos show them. \
+    A plinth is a blind base, 3 m at most. A ground floor of its own colour, a rusticated or granite base with its shop fronts, \
+    arches or windows, is a mass of its own from the ground to its top, with its windows and doors, and the body a mass \
+    from there up on the same outline, its base 0.3 m below the ground floor's top so they overlap (the build refuses a \
+    taller plinth: a building on 8 m of blind wall stands on a pedestal). Pilasters are vertical strips standing \
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
     Give every size as the building has it: the generator draws the map's caricature itself, every cornice, band, pilaster, \
     portal, parapet and recess at least about half a metre to a metre, and windows a little larger, so a detail reads from afar. \
@@ -284,7 +305,7 @@ public struct LandmarkRecipe: Codable {
     metal too), given for every mass: never a guess. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \
     pitched roof with its eaves, so the roof reads as a volume of its own. Gabled, skillion (one slope, \
     rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
-    outline in to a point, so give them a round or square outline. A roof's height defaults to the outline's size.
+    outline in to a point, so give them a round or square outline. A vault is a barrel vault along the outline's long side, `height` high (half its width unless given): in lm_glass a glazed vault with its ribs and rails, as the galleries of a passage or a station hall. A glass roof is always a vault, never gabled or flat planes of lm_glass, which read as blue slabs. A roof's height defaults to the outline's size.
     - A statue is a sculpture by its shape: figure (a standing person), horse, quadriga (a chariot drawn by four horses, \
     as over a theatre's portico), equestrian (a rider on a horse), obelisk, cross (a church), star (a tower's). It faces \
     `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
@@ -310,7 +331,8 @@ public struct LandmarkRecipe: Codable {
     band (a star in a ring: the ring and a statue of shape star at the same place, the star's height twice the radius). \
     A shape or a feature with `"emphasis": true` is drawn a size up by the generator (half as large again): for the \
     one or two things that make the building recognisable from afar, a tower, a dome, a statue; never more, and never \
-    a text, which the generator draws at its real size whatever is asked. \
+    a text, which the generator draws at its real size whatever is asked, nor a cone or a dome shape (a tower's tent roof or spire, a lantern's cap, \
+    which the generator leaves at their size too): what carries them is told by its own size, and a cap drawn larger is a mushroom over a drum. A dome that makes the building recognisable is a mass's dome roof given its real height, or a dome shape over a drum of its real width, never `emphasis`. \
       A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
     forward (a cylinder with pitch 90 lies along its heading: a beam). A sphere stands on its base; a dome is a half \
     sphere, flat side down. A loft draws its ring toward its centre ring by ring, [scale, rise] from the base up: a drum \
@@ -386,6 +408,55 @@ public struct LandmarkSource {
                             base: (b["min_height_m"] as? NSNumber)?.doubleValue ?? 0,
                             height: (b["height_m"] as? NSNumber)?.doubleValue)
         }
+    }
+
+    /// A courtyard: a ring in metres the building's parts enclose, open to
+    /// the sky above its `floor`: the ground, or the roof of the part under
+    /// it (the Hotel Moskva's garden lies on a 16 m podium, its wings around
+    /// it from there up).
+    public struct Courtyard {
+        public let ring: [P2]
+        public let floor: Double
+        public var area: Double { abs(signedArea(ring)) }
+        public var centre: P2 { ring.reduce(P2.zero, +) / Double(ring.count) }
+    }
+
+    /// The courtyards: the holes in the union of the footprints of the parts
+    /// standing above each level (the parts when there are any, else the
+    /// outlines), the level the ground and then every part's top in turn,
+    /// a hole's floor the level it first opens at (gaps under 0.6 m between
+    /// parts closed, a hole under 60 m² or narrower than 8 m, a light well
+    /// between roof parts, left out, a hole found at one level not found
+    /// again at the next). An OSM outline is one ring around the
+    /// whole block, courtyard and all, and only its parts show the courtyard
+    /// open (the user, 2026-11-03: the Hotel Moskva's courtyard roofed over
+    /// by a mass of its outline from the ground to the cornice).
+    public var courtyards: [Courtyard] {
+        let parts = buildings.filter(\.part)
+        let footprints = (parts.isEmpty ? buildings : parts)
+        func shape(_ b: Building) -> [Geometry] {
+            b.polygons.compactMap { rings -> Geometry? in
+                guard let outer = rings.first, outer.count >= 3 else { return nil }
+                return Geometry.polygon(outer + [outer[0]], holes: rings.dropFirst().filter { $0.count >= 3 }.map { $0 + [$0[0]] })
+            }
+        }
+        let tallest = footprints.compactMap(\.height).max() ?? 0
+        let levels = [0.0] + Set(footprints.compactMap(\.height)).sorted().filter { $0 < tallest - 3 }
+        var found: [Courtyard] = []
+        for level in levels {
+            let above = footprints.filter { ($0.height ?? 0) > level + 0.5 }.flatMap(shape)
+            guard !above.isEmpty else { continue }
+            let joined = Geometry.unaryUnion(above).buffer(0.3, quadSegs: 1).buffer(-0.3, quadSegs: 1)
+            for hole in joined.polygons.flatMap(\.interiors) {
+                let ring = Array(hole.dropLast())
+                let open = Geometry.polygon(hole)
+                guard abs(signedArea(ring)) >= 60, open.buffer(-4, quadSegs: 1).area > 0 else { continue }
+                // The same courtyard opens wider at every level above its floor.
+                guard !found.contains(where: { open.intersection(Geometry.polygon($0.ring + [$0.ring[0]])).area > open.area * 0.5 }) else { continue }
+                found.append(Courtyard(ring: ring, floor: level))
+            }
+        }
+        return found
     }
 
     /// An outline's outer ring by its OSM id: its largest polygon's.

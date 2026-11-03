@@ -76,7 +76,7 @@ final class LandmarkAgent {
     static func hasConversation(_ folder: URL) -> Bool { conversation(folder) != nil }
 
     /// What the agent makes in a landmark's folder, besides the photos.
-    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json", "agent.log", LandmarkRun.streamName]
+    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json", "agent.log", LandmarkRun.streamName, LandmarkRun.pidName]
 
     /// Whether the agent has made anything in `folder`.
     static func hasWork(_ folder: URL) -> Bool {
@@ -158,7 +158,8 @@ final class LandmarkAgent {
         it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
         \(ClaudeSettings.emphasis != "off" ? """
         4. What makes it recognisable: the one or two things a person points at from afar (a tower, a dome, a \\
-        statue, a star, a portico), never more, and never lettering. First ask yourself: you may know this place by its name and its OSM tags \\
+        statue, a star, a portico), never more, never lettering, and never a cone or a dome shape, a tower's spire or a lantern's cap (what carries it is \\
+        told by its own size; a cap drawn larger is a mushroom; a dome is given its real height in the recipe). First ask yourself: you may know this place by its name and its OSM tags \\
         (the quadriga over the Bolshoi's portico, the star in a ring on Detsky Mir's corner). If you know it, just model \\
         it from what you know, placed by the satellite view, and open a photo only if you want to, when you lack its \\
         place or size. \\
@@ -229,6 +230,11 @@ final class LandmarkAgent {
                 var shown = ["  \(first.prefix(200))"]
                 if let k = all.firstIndex(where: { $0.hasPrefix("NOT PHYSICAL") }) {
                     shown += all[k...].map { "  ⚠ \($0.prefix(300))" }
+                }
+                // A refused recipe's problems, each (the user, 2026-11-03:
+                // "Not built, the recipe has problems:" and nothing after).
+                if first.hasPrefix("Not built") {
+                    shown += all.dropFirst().prefix(12).map { "  ✗ \($0.prefix(300))" }
                 }
                 return shown.joined(separator: "\n")
             }

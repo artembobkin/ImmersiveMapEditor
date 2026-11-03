@@ -3,12 +3,15 @@ import Geometry
 
 /// Downloads the source data of one map tile into data/<z>_<x>_<y>/:
 ///
-///   osm.json   every OSM element in the tile plus a margin, from Overpass,
-///              with the full geometry of the multipolygons that reach in
+///   osm.bin    every OSM element in the tile plus a margin, from Overpass,
+///              with the full geometry of the multipolygons that reach in:
+///              its JSON parsed once into TileKit's binary (OsmCache) and
+///              deleted, a sixth of the size, read in a few hundredths of a
+///              second (the user, 2026-11-03)
 ///   tile.json  the tile's bounds, its Mercator centre and scale, and where
 ///              and when everything was fetched
 ///
-/// An osm.json on disk is kept unless asked to fetch again, so the sources
+/// The OSM on disk is kept unless asked to fetch again, so the sources
 /// stay fixed while the style is worked out.
 public enum Fetch {
     static let overpass = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
@@ -96,26 +99,34 @@ public enum Fetch {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var info = describe(z: z, x: x, y: y, margin: margin)
         print(String(format: "[tile] %d/%d/%d: %.1f m across", z, x, y, info["size_m"] as! Double))
-        let osmURL = folder.appendingPathComponent("osm.json"), infoURL = folder.appendingPathComponent("tile.json")
+        let osmURL = folder.appendingPathComponent(OsmCache.json), infoURL = folder.appendingPathComponent("tile.json")
         let q = query(info["fetch_bounds"] as! [String: Double])
         var source: String?
-        let data: Data
-        if FileManager.default.fileExists(atPath: osmURL.path) && !force {
-            print("[osm] on disk, kept")
-            data = try Data(contentsOf: osmURL)
-        } else {
-            (source, data) = try download(q)
-            try data.write(to: osmURL)
-        }
-        let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        // Overpass's timestamp of the data, read off the JSON when it is
+        // downloaded; the JSON is then kept as osm.bin alone (OsmCache).
+        var timestamp: Any = NSNull()
         let previous = (try? JSONSerialization.jsonObject(with: Data(contentsOf: infoURL)) as? [String: Any])??["osm"]
             as? [String: Any] ?? [:]
+        if Osm.isFetched(folder) && !force {
+            print("[osm] on disk, kept")
+            timestamp = previous["timestamp"] ?? NSNull()
+        } else {
+            let data: Data
+            (source, data) = try download(q)
+            if let osm3s = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["osm3s"] as? [String: Any],
+               let t = osm3s["timestamp_osm_base"] {
+                timestamp = t
+            }
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(OsmCache.name))
+            try data.write(to: osmURL)
+        }
+        let elements = try OsmCache.elements(in: folder).overpass
         let now = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: "Z", with: "+00:00")
-        let summary = summary(parsed["elements"] as? [[String: Any]] ?? [])
+        let summary = summary(elements)
         info["osm"] = [
             "source": source ?? previous["source"] ?? NSNull(),
             "fetched": source != nil ? now : (previous["fetched"] ?? NSNull()),
-            "timestamp": (parsed["osm3s"] as? [String: Any])?["timestamp_osm_base"] ?? NSNull(),
+            "timestamp": timestamp,
             "query": q,
             "summary": summary,
             "attribution": "© OpenStreetMap contributors, ODbL",

@@ -65,7 +65,7 @@ public enum Pipeline {
         let out = paths.tiles
         for (x, y) in tiles {
             let data = paths.tileData(z: z, x: x, y: y)
-            if options.refetch || !FileManager.default.fileExists(atPath: data.appendingPathComponent("osm.json").path) {
+            if options.refetch || !Osm.isFetched(data) {
                 try Fetch.tile(paths, z: z, x: x, y: y, force: options.refetch)
             }
         }

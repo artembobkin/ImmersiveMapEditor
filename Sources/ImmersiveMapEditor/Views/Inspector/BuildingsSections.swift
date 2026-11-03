@@ -13,6 +13,7 @@ import TileKit
 struct BuildingsSections: View {
     @Environment(Session.self) private var session
     @State private var name = ""
+    @State private var deleting: TileLandmark?
     @State private var listing = false
 
     /// The landmarks holding any of the picked buildings, each with how many.
@@ -44,6 +45,30 @@ struct BuildingsSections: View {
                     .font(.callout).foregroundStyle(.secondary)
                 if holder.tile == session.workspace.tile?.name {
                     PanelButton("Open \(holder.name)", systemImage: "building.columns") { session.pickedLandmark = holder.id }
+                    // Claude on it again from here, model or no model (the user,
+                    // 2026-11-03), the view staying on the tile's buildings.
+                    if session.agent.isActive(holder.id) {
+                        // A run started by mistake stopped from here, where it
+                        // was started (the user, 2026-11-03).
+                        PanelButton("Stop Claude", systemImage: "stop.circle") { session.agent.stop(holder.id) }
+                            .help("Stops Claude on this landmark alone, killed when it does not go in 3 s" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
+                    } else {
+                        let busy = session.isBusy(landmark: holder.id)
+                        PanelButton(busy ? "Building It" : "Model It with Claude Again", systemImage: "sparkles") { session.modelLandmark(id: holder.id) }
+                            .disabled(busy)
+                            .help("A new attempt from OSM: the photos kept are used again, the recipe, model and conversation of the last one go. The run is queued, the view stays here.")
+                    }
+                    PanelButton("Delete the Landmark…", systemImage: "trash", role: .destructive) { deleting = session.candidates.first { $0.id == holder.id } }
+                        .disabled(session.agent.isActive(holder.id))
+                        .help("Its folder goes with its photos, recipe, model and rounds; stop Claude first while it is on it.")
+                        .confirmationDialog("Delete the landmark \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
+                            Button("Delete the Landmark and Everything in Its Folder", role: .destructive) {
+                                if let landmark = deleting { session.deleteLandmark(landmark) }
+                                deleting = nil
+                            }
+                        } message: {
+                            Text("Its folder goes with its photos, recipe, model and rounds. Its buildings are built as ordinary ones at the next build.")
+                        }
                 }
             }
         } else {

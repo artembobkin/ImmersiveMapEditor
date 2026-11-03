@@ -20,7 +20,14 @@ struct TileLandmark: Identifiable {
     let buildings: [String]
     /// How many buildings, in words: "1 building", "3 buildings".
     var buildingsCount: String { "\(buildings.count) building" + (buildings.count == 1 ? "" : "s") }
-    var model: URL? {
+    /// Its model, found when the tile's landmarks are listed (every list and
+    /// panel asked for it, and each asking read the folder; the user,
+    /// 2026-11-03): `Session.readCandidates` lists again when a model is
+    /// built.
+    var model: URL?
+
+    /// The first GLB of a landmark's folder.
+    static func model(in folder: URL) -> URL? {
         ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
             .filter { $0.pathExtension.lowercased() == "glb" }.sorted { $0.path < $1.path }.first
     }
@@ -84,7 +91,7 @@ enum LandmarkCandidates {
             guard let data = try? Data(contentsOf: f.appendingPathComponent("landmark.json")),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             let osm = (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
-            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm)
+            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm, model: TileLandmark.model(in: f))
         }
     }
 

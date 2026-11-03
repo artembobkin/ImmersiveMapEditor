@@ -15,14 +15,25 @@ struct BottomPanel: View {
             }
             ScrollViewReader { reader in
                 ScrollView {
-                    Text(console.log.isEmpty ? "Nothing run on this yet. Tile > Build the Tile (⌘B), or Claude on a landmark." : console.log)
-                        .font(.system(size: 11, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
+                    // A row a line, laid out only where in view (one text of
+                    // the whole log, selectable, was laid out again at every
+                    // change of the panel's height, the window frozen while
+                    // it was dragged; the user, 2026-11-03).
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if console.lines.isEmpty {
+                            Text("Nothing run on this yet. Tile > Build the Tile (⌘B), or Claude on a landmark.")
+                        }
+                        ForEach(console.lines.indices, id: \.self) { i in
+                            Text(verbatim: console.lines[i].isEmpty ? " " : console.lines[i])
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .font(.system(size: 11, design: .monospaced))
+                    .padding(10)
                     Color.clear.frame(height: 1).id("end")
                 }
-                .onChange(of: console.log, initial: true) { reader.scrollTo("end", anchor: .bottom) }
+                .onChange(of: console.lines.count, initial: true) { reader.scrollTo("end", anchor: .bottom) }
             }
         }
     }

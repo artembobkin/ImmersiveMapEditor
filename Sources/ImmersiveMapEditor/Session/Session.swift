@@ -41,11 +41,22 @@ final class Session {
     var hoveredPicture: URL?
     /// The open tile's landmarks (its landmarks/ folder), the one picked in
     /// the Landmarks view, and the OSM elements they are made of.
-    private(set) var candidates: [TileLandmark] = []
+    private(set) var candidates: [TileLandmark] = [] {
+        didSet { candidateBuildings = Set(candidates.flatMap(\.buildings)) }
+    }
     var pickedLandmark: String?
     /// The Landmarks view's wireframe over the shading.
     var landmarkWireframe = false { didSet { landmarkView?.wireframe = landmarkWireframe } }
-    var candidateBuildings: [String] { candidates.flatMap(\.buildings) }
+    /// The OSM ids of the open tile's landmarks' buildings, kept as a set:
+    /// the Buildings view asks for every building it draws.
+    private(set) var candidateBuildings: Set<String> = []
+    /// The data folder's registry, open once (opening it ran its schema
+    /// each time, and the editor opened it for every building it asked
+    /// about; the user, 2026-11-03), and the landmark holding each OSM
+    /// building, every tile's, in memory from it: `landmark(holding:)` is
+    /// a lookup. Refreshed by `syncRegistry`.
+    private var registry: Registry?
+    private var holders: [String: Registry.LandmarkRecord] = [:]
     private(set) var landmarkView: LandmarkView?
     /// When and how sharp the imagery over the working tile was taken, by its
     /// source's metadata (Esri says it, Mapbox does not).
@@ -77,7 +88,21 @@ final class Session {
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         palette.load(workspace.paths)
-        agent.modelChanged = { [weak self] id in if self?.pickedLandmark == id { self?.showLandmark(again: true) } }
+        agent.modelChanged = { [weak self] id in
+            self?.refreshModel(of: id)
+            if self?.pickedLandmark == id { self?.showLandmark(again: true) }
+        }
+        // What a crashed or force-quit editor left running on this folder.
+        LandmarkRun.killOrphans(in: root)
+        syncRegistry()
+    }
+
+    /// The editor on its way out: the road document saved, every job
+    /// stopped and its process ended (the user, 2026-11-03: Claude's runs
+    /// went on after a restart, working for no one).
+    func quit() {
+        model?.saveIfNeeded()
+        jobs.quit()
     }
 
     /// Another data folder instead of the current one, back to choosing a
@@ -90,6 +115,9 @@ final class Session {
         palette.load(workspace.paths)
         candidate = workspace.tile
         phase = .choosing
+        registry = nil
+        holders = [:]
+        syncRegistry()
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
@@ -107,7 +135,12 @@ final class Session {
         guard !jobs.isActive(.tile(tile)) else { return }
         closeRoads()
         candidate = tile
-        if workspace.tile != tile { viewCamera.forget() }
+        if workspace.tile != tile {
+            viewCamera.forget()
+            // Cleared now, not when its reading starts: the Buildings view
+            // comes first and would frame the last tile's buildings.
+            buildings.clear()
+        }
         workspace.tile = tile
         var steps: [[String]] = []
         if !workspace.fetched.contains(tile) { steps.append(["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
@@ -173,7 +206,7 @@ final class Session {
     func deleteLandmark(_ landmark: TileLandmark) {
         guard !agent.isActive(landmark.id) else { return }
         try? FileManager.default.removeItem(at: landmark.folder)
-        if let tile = workspace.tile { try? Registry(workspace.paths).remove(landmark: landmark.id, z: tile.z, x: tile.x, y: tile.y) }
+        if let tile = workspace.tile { try? registry?.remove(landmark: landmark.id, z: tile.z, x: tile.x, y: tile.y) }
         if pickedLandmark == landmark.id { pickedLandmark = nil }
         readCandidates()
         workspace.tilesRevision += 1
@@ -184,7 +217,18 @@ final class Session {
     /// shown again, the files listed again.
     func landmarkWorkChanged() {
         workspace.tilesRevision += 1
+        if let id = pickedLandmark { refreshModel(of: id) }
         showLandmark(again: true)
+    }
+
+    /// A landmark's model found again in its folder: the list keeps where
+    /// each model is (`TileLandmark.model`), and Claude's run or Forget
+    /// may have written or deleted it since (the user, 2026-11-03: the view
+    /// read a model.glb that was gone).
+    func refreshModel(of id: String) {
+        guard let i = candidates.firstIndex(where: { $0.id == id }) else { return }
+        let found = TileLandmark.model(in: candidates[i].folder)
+        if found != candidates[i].model { candidates[i].model = found }
     }
 
     /// Claude on the picked landmark: queued in the pool, which runs several
@@ -362,15 +406,22 @@ final class Session {
     func readCandidates() {
         guard let tile = workspace.tile else { return }
         candidates = LandmarkCandidates.list(workspace.paths, tile: tile)
-        if let registry = try? Registry(workspace.paths) {
-            for problem in registry.sync(workspace.paths) { console.append("registry: \(problem)") }
-        }
+        syncRegistry()
+    }
+
+    /// The registry brought up to date with the landmark folders (only
+    /// what changed is written) and the holders' index read from it again.
+    func syncRegistry() {
+        if registry == nil { registry = try? Registry(workspace.paths) }
+        guard let registry else { return }
+        for problem in registry.sync(workspace.paths) { console.append("registry: \(problem)") }
+        var index: [String: Registry.LandmarkRecord] = [:]
+        for l in registry.all() { for osm in l.buildings { index[osm] = l } }
+        holders = index
     }
 
     /// The landmark an OSM building is already part of, in any tile.
-    func landmark(holding osm: String) -> Registry.LandmarkRecord? {
-        (try? Registry(workspace.paths))?.landmark(holding: osm)
-    }
+    func landmark(holding osm: String) -> Registry.LandmarkRecord? { holders[osm] }
 
     /// The buildings picked in the Buildings view made a landmark candidate.
     /// Returns the id of the landmark made, nil when none was; the new

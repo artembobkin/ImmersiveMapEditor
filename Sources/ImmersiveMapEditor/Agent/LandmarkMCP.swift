@@ -276,6 +276,25 @@ enum LandmarkMCP {
                              + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
                              + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
             }
+            // The courtyards the parts leave open (the user, 2026-11-03: the
+            // Hotel Moskva's roofed over by one mass of its outline, the
+            // satellite view ignored): named here, and a mass over one is
+            // refused by the recipe's check.
+            let yards = source.courtyards
+            if !yards.isEmpty {
+                lines.append("")
+                lines.append("Open to the sky inside it: \(yards.count) courtyard\(yards.count == 1 ? "" : "s") the parts enclose "
+                             + "(the outline is one ring around the whole block, courtyard and all). No mass rises over a courtyard's floor (the build refuses it): "
+                             + "what is under it ends at the floor (the ground, or the podium its garden lies on), the wings around it are masses cut from the outline "
+                             + "(cuts, and minus where they overlap at the corners), and the courtyard stays open. "
+                             + "Each as a ring in metres (x east, y north), its area, middle and floor first:")
+                for yard in yards {
+                    let c = yard.centre
+                    let g = Geometry.lineString(yard.ring + [yard.ring[0]]).simplify(0.3).coords
+                    lines.append(String(format: "%.0f m² at (%.0f, %.0f), its floor at %.0f m: [", yard.area, c.x, c.y, yard.floor)
+                                 + g.dropLast().map { String(format: "[%.1f, %.1f]", $0.x, $0.y) }.joined(separator: ", ") + "]")
+                }
+            }
             // The walls themselves, in metres (the user, 2026-11-01: placed by
             // eye off the satellite view, porticos, panels and signs stood
             // metres before the wall, in the air).
@@ -994,7 +1013,7 @@ enum LandmarkMCP {
         /// How many facades the landmark has (its hull's sides), for the
         /// agent's budget of turns.
         static func facadeCount(_ folder: URL) -> Int {
-            (try? StreetScene(folder: folder))?.facades.count ?? 4
+            StreetScene.facadeCount(folder: folder) ?? 4
         }
 
         /// The facades of a landmark's folder with best photos that its

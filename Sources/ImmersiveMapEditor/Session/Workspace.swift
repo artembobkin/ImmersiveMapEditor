@@ -96,7 +96,7 @@ final class Workspace {
             for y in (try? fm.contentsOfDirectory(atPath: zoom.appendingPathComponent(x).path)) ?? [] {
                 guard let xi = Int(x), let yi = Int(y) else { continue }
                 let t = TileKey(z: z, x: xi, y: yi)
-                if fm.fileExists(atPath: paths.tileData(z: z, x: xi, y: yi).appendingPathComponent("osm.json").path) { f.insert(t) }
+                if Osm.isFetched(paths.tileData(z: z, x: xi, y: yi)) { f.insert(t) }
                 if fm.fileExists(atPath: paths.tileOut(z: z, x: xi, y: yi).appendingPathComponent("placement.json").path) { b.insert(t) }
                 let doc = paths.roadDocument(z: z, x: xi, y: yi)
                 if fm.fileExists(atPath: doc.path) { docs.append((doc, RoadPlan.Tiles(z: z, x0: xi, y0: yi, x1: xi, y1: yi))) }

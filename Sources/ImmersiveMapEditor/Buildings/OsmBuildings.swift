@@ -60,6 +60,9 @@ final class OsmBuildings {
     private(set) var projection: Tile?
     /// The tile's square in its metres.
     private(set) var square: (Vec2, Vec2)?
+    /// Whether the tile's OSM is being read: the view shows a spinner
+    /// meanwhile and frames the tile once it is read (the user, 2026-11-03).
+    private(set) var loading = false
     var picked: Set<String> = []
     /// Whether the known buildings are named on the map.
     var showNames = true
@@ -79,6 +82,19 @@ final class OsmBuildings {
 
     var selected: [OsmBuilding] { all.filter { picked.contains($0.id) } }
 
+    /// Forgets the tile read, at once, for another to be opened: the view
+    /// shown before the other's OSM is read has no buildings of the last
+    /// tile to frame and hand to the shared camera (the user, 2026-11-03:
+    /// a tile opened after another was shown where the last one was).
+    func clear() {
+        tile = nil
+        all = []
+        picked = []
+        projection = nil
+        square = nil
+        hovered = nil
+    }
+
     /// Reads the buildings of `tile` from its OSM, unless they are read.
     func load(_ tile: TileKey?, paths: WorkspacePaths) async {
         guard tile != self.tile else { return }
@@ -86,17 +102,32 @@ final class OsmBuildings {
         all = []
         picked = []
         projection = nil
+        square = nil
         guard let tile else { return }
-        status = "Reading the tile's OSM…"
         let folder = paths.tileData(z: tile.z, x: tile.x, y: tile.y)
+        let stamp = Osm.sourceStamp(folder)
+        // A tile read before comes back at once, unless its OSM was
+        // fetched again meanwhile.
+        if let kept = parsed[tile], kept.stamp == stamp {
+            show(kept.tile, kept.buildings)
+            return
+        }
+        loading = true
+        defer { if self.tile == tile { loading = false } }
+        status = "Reading the tile's OSM…"
         let read = await Task.detached { () -> (Tile, [OsmBuilding])? in
-            guard let t = try? Tile(folder: folder), let osm = try? Osm(t) else { return nil }
+            guard let t = try? Tile(folder: folder) else { return nil }
+            // The buildings as last made from this OSM, kept beside it; else
+            // made from the OSM (its own cache, or the JSON) and kept.
+            if let kept = BuildingsCache.read(folder: folder, stamp: stamp) { return (t, kept) }
+            guard let osm = try? Osm(t) else { return nil }
             let buildings = osm.areas().compactMap { a -> OsmBuilding? in
                 let part = a.tags["building:part"] != nil && a.tags["building:part"] != "no"
                 guard part || (a.tags["building"] != nil && a.tags["building"] != "no") else { return nil }
                 let polygons = a.shape.polygons.map { p in [p.exterior] + p.interiors }.map { $0.map { $0.map { Vec2($0.x, $0.y) } } }
                 return OsmBuilding(id: "\(a.kind)/\(a.id)", tags: a.tags, polygons: polygons, isPart: part)
             }
+            BuildingsCache.write(buildings, folder: folder, stamp: stamp)
             return (t, buildings)
         }.value
         guard self.tile == tile else { return }
@@ -104,10 +135,29 @@ final class OsmBuildings {
             status = "No OSM for the tile yet."
             return
         }
+        parsed[tile] = (t, buildings, stamp)
+        order.removeAll { $0 == tile }
+        order.append(tile)
+        if order.count > Self.kept, let oldest = order.first {
+            order.removeFirst()
+            parsed[oldest] = nil
+        }
+        show(t, buildings)
+    }
+
+    /// The tiles read, kept for coming back to them: the last `kept`, each
+    /// with the stamp of the osm.json it was read from (the user, 2026-11-03:
+    /// a tile opened again waited for its OSM to be read again).
+    private var parsed: [TileKey: (tile: Tile, buildings: [OsmBuilding], stamp: String)] = [:]
+    private var order: [TileKey] = []
+    private static let kept = 4
+
+    /// A tile's buildings shown: its projection and square, the buildings
+    /// outlines first and parts over them, as they are drawn, the status.
+    private func show(_ t: Tile, _ buildings: [OsmBuilding]) {
         projection = t
         let half = t.size / 2
         square = (Vec2(-half, -half), Vec2(half, half))
-        // Outlines first, parts over them, as they are drawn.
         all = buildings.sorted { !$0.isPart && $1.isPart }
         let outlines = buildings.filter { !$0.isPart }
         status = "\(outlines.count) buildings, \(buildings.filter(\.isPart).count) parts, "

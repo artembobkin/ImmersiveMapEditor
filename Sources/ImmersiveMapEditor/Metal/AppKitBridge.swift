@@ -78,6 +78,16 @@ enum Platform {
         }
     }
 
+    /// `body` run when the app is about to quit (⌘Q, a logout), on the main
+    /// thread, before the process ends: SwiftUI has no word for it, AppKit's
+    /// notification does.
+    @MainActor
+    static func onQuit(_ body: @escaping @MainActor () -> Void) {
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { body() }
+        }
+    }
+
     /// Runs `body` on the main actor, the main thread's run loop serving the
     /// main queue for good: the asynchronous work of the executable without
     /// a window, which must not be an `async` main. An async `@main` here

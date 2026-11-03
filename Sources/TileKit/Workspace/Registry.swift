@@ -135,14 +135,45 @@ public final class Registry {
         }
     }
 
-    /// The landmark an OSM building is part of, if any.
+    /// The landmark an OSM building is part of, if any: one query for the
+    /// record, one for its buildings (it loaded every landmark of the zoom
+    /// with all their buildings, and the editor asked it for every picked
+    /// building: a click on GUM's 211 parts took seconds; the user,
+    /// 2026-11-03).
     public func landmark(holding osm: String) -> LandmarkRecord? {
-        guard let q = try? prepare("SELECT z, x, y, id FROM landmark_buildings WHERE osm = ?") else { return nil }
+        guard let q = try? prepare("""
+        SELECT l.z, l.x, l.y, l.id, l.name, l.folder, l.latitude, l.longitude, l.has_model
+        FROM landmark_buildings b JOIN landmarks l ON l.z = b.z AND l.x = b.x AND l.y = b.y AND l.id = b.id
+        WHERE b.osm = ?
+        """) else { return nil }
         defer { sqlite3_finalize(q) }
         bind(q, 1, osm)
         guard sqlite3_step(q) == SQLITE_ROW else { return nil }
-        let (z, x, y, id) = (Int(sqlite3_column_int(q, 0)), Int(sqlite3_column_int(q, 1)), Int(sqlite3_column_int(q, 2)), text(q, 3))
-        return landmarks(z: z).first { $0.x == x && $0.y == y && $0.id == id }
+        var record = record(q)
+        record.buildings = buildings(of: record)
+        return record
+    }
+
+    /// Every landmark of every zoom, with its buildings.
+    public func all() -> [LandmarkRecord] {
+        ((try? zooms()) ?? []).flatMap { landmarks(z: $0) }
+    }
+
+    /// A landmark's row read: z, x, y, id, name, folder, latitude,
+    /// longitude, has_model, its buildings left empty.
+    private func record(_ q: OpaquePointer) -> LandmarkRecord {
+        LandmarkRecord(id: text(q, 3), name: text(q, 4), z: Int(sqlite3_column_int(q, 0)), x: Int(sqlite3_column_int(q, 1)),
+                       y: Int(sqlite3_column_int(q, 2)), folder: text(q, 5), latitude: sqlite3_column_double(q, 6),
+                       longitude: sqlite3_column_double(q, 7), hasModel: sqlite3_column_int(q, 8) != 0, buildings: [])
+    }
+
+    private func buildings(of l: LandmarkRecord) -> [String] {
+        guard let b = try? prepare("SELECT osm FROM landmark_buildings WHERE z = ? AND x = ? AND y = ? AND id = ? ORDER BY osm") else { return [] }
+        defer { sqlite3_finalize(b) }
+        sqlite3_bind_int(b, 1, Int32(l.z)); sqlite3_bind_int(b, 2, Int32(l.x)); sqlite3_bind_int(b, 3, Int32(l.y)); bind(b, 4, l.id)
+        var out: [String] = []
+        while sqlite3_step(b) == SQLITE_ROW { out.append(text(b, 0)) }
+        return out
     }
 
     /// Every landmark of a zoom, with its buildings.
@@ -150,18 +181,9 @@ public final class Registry {
         var out: [LandmarkRecord] = []
         guard let q = try? prepare("SELECT z, x, y, id, name, folder, latitude, longitude, has_model FROM landmarks WHERE z = ? ORDER BY x, y, id") else { return [] }
         sqlite3_bind_int(q, 1, Int32(z))
-        while sqlite3_step(q) == SQLITE_ROW {
-            out.append(LandmarkRecord(id: text(q, 3), name: text(q, 4), z: Int(sqlite3_column_int(q, 0)), x: Int(sqlite3_column_int(q, 1)),
-                                      y: Int(sqlite3_column_int(q, 2)), folder: text(q, 5), latitude: sqlite3_column_double(q, 6),
-                                      longitude: sqlite3_column_double(q, 7), hasModel: sqlite3_column_int(q, 8) != 0, buildings: []))
-        }
+        while sqlite3_step(q) == SQLITE_ROW { out.append(record(q)) }
         sqlite3_finalize(q)
-        for i in out.indices {
-            guard let b = try? prepare("SELECT osm FROM landmark_buildings WHERE z = ? AND x = ? AND y = ? AND id = ? ORDER BY osm") else { continue }
-            sqlite3_bind_int(b, 1, Int32(out[i].z)); sqlite3_bind_int(b, 2, Int32(out[i].x)); sqlite3_bind_int(b, 3, Int32(out[i].y)); bind(b, 4, out[i].id)
-            while sqlite3_step(b) == SQLITE_ROW { out[i].buildings.append(text(b, 0)) }
-            sqlite3_finalize(b)
-        }
+        for i in out.indices { out[i].buildings = buildings(of: out[i]) }
         return out
     }
 
@@ -175,6 +197,12 @@ public final class Registry {
         let fm = FileManager.default
         var problems: [String] = []
         var seen = Set<String>()
+        // What is registered, to write only what changed: a sync that
+        // registered every folder again ran at every read of the tile's
+        // landmarks, a transaction a landmark and a holder check a building
+        // (the user, 2026-11-03: the editor slow to open a tile and to pick).
+        var known: [String: LandmarkRecord] = [:]
+        for l in all() { known["\(l.z)/\(l.x)/\(l.y)/\(l.id)"] = l }
         for zName in (try? fm.contentsOfDirectory(atPath: paths.tiles.path)) ?? [] {
             guard let z = Int(zName) else { continue }
             let zoom = paths.tiles.appendingPathComponent(zName)
@@ -188,18 +216,21 @@ public final class Registry {
                         guard let data = fm.contents(atPath: folder.appendingPathComponent("landmark.json").path),
                               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                               let centre = json["centre"] as? [Double], centre.count == 2 else { continue }
-                        seen.insert("\(z)/\(x)/\(y)/\(id)")
+                        let key = "\(z)/\(x)/\(y)/\(id)"
+                        seen.insert(key)
                         let hasModel = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).contains { $0.hasSuffix(".glb") }
                         let buildings = (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
                         let record = LandmarkRecord(id: id, name: json["name"] as? String ?? id, z: z, x: x, y: y,
                                                     folder: "tiles/\(z)/\(x)/\(y)/landmarks/\(id)", latitude: centre[1], longitude: centre[0],
                                                     hasModel: hasModel, buildings: buildings)
+                        if let k = known[key], k.name == record.name, k.hasModel == hasModel, k.latitude == record.latitude,
+                           k.longitude == record.longitude, k.buildings.sorted() == buildings.sorted() { continue }
                         do { try register(record) } catch { problems.append("\(record.folder): \(error)") }
                     }
                 }
             }
         }
-        for l in (try? zooms())?.flatMap({ landmarks(z: $0) }) ?? [] where !seen.contains("\(l.z)/\(l.x)/\(l.y)/\(l.id)") {
+        for (key, l) in known where !seen.contains(key) {
             try? remove(landmark: l.id, z: l.z, x: l.x, y: l.y)
         }
         return problems
