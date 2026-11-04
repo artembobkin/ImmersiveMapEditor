@@ -30,6 +30,9 @@ enum LandmarkMCP {
     }
 
     final class Server {
+        /// How many of a landmark's OSM buildings get_landmark lists, the
+        /// largest first: the answer must come through Claude Code whole.
+        static let listedBuildings = 120
         let folder: URL
         var references: URL { folder.appendingPathComponent("references") }
         /// The data folder, for the caches every landmark shares.
@@ -266,7 +269,13 @@ enum LandmarkMCP {
             var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1)." + axis,
                          "Its OSM buildings (\(source.buildings.count)): id, part or outline, base..height m, plan size and middle (x east, y north, m), area, the tags that shape it.",
                          "The outlines of the largest come below, the rest by get_outlines (ids)."]
-            for b in source.buildings {
+            // The largest first, and only so many: St Basil's 514 parts made
+            // an answer Claude Code would not pass on, and the run died of it
+            // (the user, 2026-11-04). The small ones, drums, finials and
+            // steps, are drawn as shapes from the photos anyway.
+            let byArea = source.buildings.sorted { $0.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } > $1.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } }
+            let listed = byArea.prefix(Self.listedBuildings)
+            for b in listed {
                 let pts = b.polygons.flatMap { $0.first ?? [] }
                 guard let first = pts.first else { continue }
                 let lo = pts.reduce(first) { simd_min($0, $1) }, hi = pts.reduce(first) { simd_max($0, $1) }
@@ -275,6 +284,11 @@ enum LandmarkMCP {
                 lines.append("\(b.osm) \(b.part ? "part" : "outline") \(f(b.base))..\(b.height.map(f) ?? "?") m, "
                              + "\(f(hi.x - lo.x))×\(f(hi.y - lo.y)) at (\(f((lo.x + hi.x) / 2)), \(f((lo.y + hi.y) / 2))), \(Int(area)) m²"
                              + (tags.isEmpty ? "" : ", " + tags.joined(separator: " ")))
+            }
+            if source.buildings.count > listed.count {
+                let smallest = listed.last.map { $0.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } } ?? 0
+                lines.append("… and \(source.buildings.count - listed.count) smaller parts under \(Int(smallest)) m² each, not listed: drums, finials, porches and steps, "
+                             + "which the recipe draws as shapes from the photos; get_outlines gives any of them by id.")
             }
             // The courtyards the parts leave open (the user, 2026-11-03: the
             // Hotel Moskva's roofed over by one mass of its outline, the
@@ -383,7 +397,7 @@ enum LandmarkMCP {
             try recipe.write(recipeURL)
             let model = LandmarkGenerator.build(recipe, source)
             try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
-            let said = "Built model.glb: \(model.summary)"
+            let said = (["Built model.glb: \(model.summary)"] + LandmarkGenerator.advice(recipe, source)).joined(separator: "\n")
             // A round of the work: this recipe and model, and the pictures made of them after.
             let round = nextRound()
             try FileManager.default.createDirectory(at: round, withIntermediateDirectories: true)

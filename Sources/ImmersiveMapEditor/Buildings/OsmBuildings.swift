@@ -15,6 +15,12 @@ struct OsmBuilding: Identifiable {
     let isPart: Bool
 
     var name: String? { tags["name"] ?? tags["name:en"] }
+    /// Its street and number, "Юбилейный проспект, 12", when OSM has them:
+    /// the name of a landmark made of a building with no name of its own.
+    var address: String? {
+        guard let street = tags["addr:street"], let number = tags["addr:housenumber"] else { return nil }
+        return "\(street), \(number)"
+    }
     /// How much it matters, by its tags: named, notable, or plain.
     var note: BuildingNote { BuildingNote(tags) }
     /// Its height in metres, by `height` or `building:levels`, nil without.
@@ -82,6 +88,36 @@ final class OsmBuildings {
 
     var selected: [OsmBuilding] { all.filter { picked.contains($0.id) } }
 
+    /// The tile's folder, for what is read of its OSM on demand.
+    private var folder: URL?
+    /// The named streets of the tile, read once when first asked: name and
+    /// polyline in the tile's metres.
+    private var streets: [(name: String, points: [Vec2])]?
+
+    /// The name of the named street nearest to a point, within `within`
+    /// metres, for naming a landmark of a building with no name and no
+    /// address (the user, 2026-11-04: "Landmark 1" told nothing).
+    func nearestStreet(to p: Vec2, within: Double = 200) -> String? {
+        if streets == nil, let folder, let t = try? Tile(folder: folder), let osm = try? Osm(t) {
+            streets = osm.wayOrder.compactMap { id -> (String, [Vec2])? in
+                guard let way = osm.ways[id], way.tags["highway"] != nil, let name = way.tags["name"] else { return nil }
+                let points = osm.wayCoords(way).map { Vec2($0.x, $0.y) }
+                return points.count >= 2 ? (name, points) : nil
+            }
+        }
+        var best: (String, Double)?
+        for street in streets ?? [] {
+            for k in 0..<(street.points.count - 1) {
+                let a = street.points[k], b = street.points[k + 1], ab = b - a
+                let len2 = ab.dot(ab)
+                let t = len2 > 0 ? max(0, min(1, (p - a).dot(ab) / len2)) : 0
+                let d = (p - (a + ab * t)).length
+                if d < within, d < (best?.1 ?? .infinity) { best = (street.name, d) }
+            }
+        }
+        return best?.0
+    }
+
     /// Forgets the tile read, at once, for another to be opened: the view
     /// shown before the other's OSM is read has no buildings of the last
     /// tile to frame and hand to the shared camera (the user, 2026-11-03:
@@ -93,6 +129,8 @@ final class OsmBuildings {
         projection = nil
         square = nil
         hovered = nil
+        folder = nil
+        streets = nil
     }
 
     /// Reads the buildings of `tile` from its OSM, unless they are read.
@@ -105,6 +143,8 @@ final class OsmBuildings {
         square = nil
         guard let tile else { return }
         let folder = paths.tileData(z: tile.z, x: tile.x, y: tile.y)
+        self.folder = folder
+        streets = nil
         let stamp = Osm.sourceStamp(folder)
         // A tile read before comes back at once, unless its OSM was
         // fetched again meanwhile.

@@ -51,7 +51,19 @@ public enum ModelArchive {
         for key in byTile.keys.sorted(by: { ($0[0], $0[1]) < ($1[0], $1[1]) }) {
             let (x, y, files) = (key[0], key[1], byTile[key]!)
             progress("\(archiveZoom)/\(x)/\(y)")
-            guard let tile = try bakeTile(zoom: archiveZoom, x: x, y: y, placements: files, blockEdge: blockEdge, encoder: encoder) else { continue }
+            // A tile that cannot be read is left out and named, the rest
+            // archived (the user, 2026-11-04: one unreadable GLB, a build
+            // of parts a tile had none of, failed the whole archive).
+            let baked: ModelTile?
+            do {
+                baked = try bakeTile(zoom: archiveZoom, x: x, y: y, placements: files, blockEdge: blockEdge, encoder: encoder)
+            } catch {
+                let note = "\(archiveZoom)/\(x)/\(y) left out, its builds could not be read (rebuild the tile): \(error)"
+                print("[archive] \(note)")
+                summary.lines.append(note)
+                continue
+            }
+            guard let tile = baked else { continue }
             let data = tile.serialized()
             archive.tiles.append(PMTilesWriter.Tile(zoom: archiveZoom, x: x, y: y, data: data))
             summary.tiles += 1

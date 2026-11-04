@@ -403,7 +403,11 @@ public enum GLTF {
             var acc: [(String, JSON)] = [("bufferView", .int(add(bytes, target: 34962))), ("componentType", .int(5126)),
                                          ("count", .int(count)), ("type", .string(width == 2 ? "VEC2" : "VEC3"))]
             if bounds {
-                var lo = [Float](repeating: .infinity, count: width), hi = [Float](repeating: -.infinity, count: width)
+                // Of no vertices, a bounds of zeros: infinities are no JSON,
+                // and a tile built of parts it has none of (a tile with no
+                // landmarks, landmarks alone asked) made a GLB its own
+                // validation could not read (the user, 2026-11-04).
+                var lo = [Float](repeating: count == 0 ? 0 : .infinity, count: width), hi = [Float](repeating: count == 0 ? 0 : -.infinity, count: width)
                 for i in 0..<count {
                     for k in 0..<width {
                         lo[k] = min(lo[k], values[i * width + k])

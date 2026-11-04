@@ -21,7 +21,79 @@ final class Session {
     /// The tile picked on the map while choosing: the one opened next. It
     /// starts as the tile open last.
     var candidate: TileKey?
+    /// The tiles marked on the map with shift-clicks, to fetch at once
+    /// (the user, 2026-11-04: one tile at a time was no way to get data).
+    var chosen: Set<TileKey> = []
     let camera = MapCamera()
+    /// The places kept to come back to on the map (`Places`).
+    let places = Places()
+
+    /// The map moved to what was typed, a tile or a point, which is picked;
+    /// false when the text means neither.
+    @discardableResult
+    func goTo(_ text: String) -> Bool {
+        guard let destination = Places.destination(text) else { return false }
+        switch destination {
+        case .tile(let tile):
+            let n = pow(2, Double(tile.z))
+            let lon = (Double(tile.x) + 0.5) / n * 360 - 180
+            let lat = atan(sinh(.pi * (1 - 2 * (Double(tile.y) + 0.5) / n))) * 180 / .pi
+            camera.set(lon: lon, lat: lat, zoom: 15.6)
+            pick(tile.z == Workspace.zoom ? tile : tileAt(lat: lat, lon: lon), adding: false)
+        case .point(let lat, let lon):
+            camera.set(lon: lon, lat: lat, zoom: 15.6)
+            pick(tileAt(lat: lat, lon: lon), adding: false)
+        }
+        return true
+    }
+
+    /// The map moved to a kept place.
+    func jump(to place: Place) {
+        camera.set(lon: place.longitude, lat: place.latitude, zoom: place.zoom)
+        pick(tileAt(lat: place.latitude, lon: place.longitude), adding: false)
+    }
+
+    /// Where the map looks now, kept under a name.
+    func savePlace(named name: String) {
+        let (lon, lat) = camera.lonLat
+        places.add(Place(name: name, latitude: lat, longitude: lon, zoom: camera.zoom))
+    }
+
+    /// The z15 tile a point lies in.
+    func tileAt(lat: Double, lon: Double) -> TileKey {
+        let n = pow(2, Double(Workspace.zoom)), phi = lat * .pi / 180
+        let x = Int(((lon + 180) / 360 * n).rounded(.down))
+        let y = Int(((1 - log(tan(phi) + 1 / cos(phi)) / .pi) / 2 * n).rounded(.down))
+        return TileKey(z: Workspace.zoom, x: x, y: y)
+    }
+
+    /// A tile clicked on the map: picked alone, or, with shift, marked with
+    /// the others (and unmarked when it was).
+    func pick(_ tile: TileKey, adding: Bool) {
+        if adding {
+            if chosen.contains(tile) { chosen.remove(tile) } else { chosen.insert(tile) }
+            if chosen.isEmpty { candidate = nil } else { candidate = tile }
+        } else {
+            chosen = []
+            candidate = tile
+        }
+    }
+
+    /// The tiles marked (with the one picked) whose OSM is not on disk.
+    var chosenToFetch: [TileKey] {
+        let all = chosen.union(candidate.map { [$0] } ?? [])
+        return all.filter { !workspace.fetched.contains($0) }.sorted { ($0.y, $0.x) < ($1.y, $1.x) }
+    }
+
+    /// The OSM of every marked tile fetched, one after another in one job
+    /// of the data folder, the console counting them.
+    func fetchChosen() {
+        let tiles = chosenToFetch
+        guard !tiles.isEmpty, !jobs.isActive(.workspace) else { return }
+        // On past a tile Overpass refuses, the rest fetched and the failures told at the end.
+        run(tiles.map { ["fetch", "\($0.z)", "\($0.x)", "\($0.y)"] }, on: .workspace,
+            title: "Fetch OSM for \(tiles.count) tile" + (tiles.count == 1 ? "" : "s"), goOn: true)
+    }
     let raster = RasterTiles()
     /// Every job of the session: the builds of tiles, Claude on landmarks.
     let jobs = JobPool()
@@ -88,6 +160,7 @@ final class Session {
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         palette.load(workspace.paths)
+        places.load(workspace.paths)
         agent.modelChanged = { [weak self] id in
             self?.refreshModel(of: id)
             if self?.pickedLandmark == id { self?.showLandmark(again: true) }
@@ -113,6 +186,7 @@ final class Session {
         roads = nil
         workspace = Workspace(root: root)
         palette.load(workspace.paths)
+        places.load(workspace.paths)
         candidate = workspace.tile
         phase = .choosing
         registry = nil
@@ -131,10 +205,16 @@ final class Session {
 
     /// Opens a tile to work on: its OSM fetched and its roads seeded first
     /// when they are missing, then its views.
-    func open(tile: TileKey) {
+    /// A landmark to open once the tile is, from the list of Claude's runs
+    /// on the map (the user, 2026-11-04).
+    private var pendingLandmark: String?
+
+    func open(tile: TileKey, landmark: String? = nil) {
         guard !jobs.isActive(.tile(tile)) else { return }
         closeRoads()
         candidate = tile
+        pendingLandmark = landmark
+        if landmark != nil { workspace.viewMode = .buildings }
         if workspace.tile != tile {
             viewCamera.forget()
             // Cleared now, not when its reading starts: the Buildings view
@@ -360,6 +440,10 @@ final class Session {
             Task { @MainActor in
                 await self.buildings.load(tile, paths: paths)
                 self.readCandidates()
+                if let id = self.pendingLandmark, self.candidates.contains(where: { $0.id == id }) {
+                    self.pendingLandmark = nil
+                    self.pickedLandmark = id
+                }
             }
         }
         if phase == .working, mode == .preview {
@@ -427,7 +511,7 @@ final class Session {
     /// Returns the id of the landmark made, nil when none was; the new
     /// landmark opens unless `open` is false.
     @discardableResult
-    func makeLandmark(named name: String, leavingHeld: Bool = false, open: Bool = true) -> String? {
+    func makeLandmark(named name: String, leavingHeld: Bool = false) -> String? {
         guard let tile = workspace.tile, let projection = buildings.projection, !buildings.selected.isEmpty else { return nil }
         // One landmark a building, in any tile (the user, 2026-10-29): the
         // buildings a landmark holds are left out, or refuse the whole.
@@ -446,9 +530,10 @@ final class Session {
                                                      projection: projection, paths: workspace.paths)
             buildings.picked = []
             readCandidates()
-            // The files panel shows it, and the new landmark opens.
+            // The files panel and the list show it; the view stays on the
+            // tile's buildings, the landmark opened from the list when wanted
+            // (the user, 2026-11-04: making one is not opening it).
             workspace.tilesRevision += 1
-            if open { pickedLandmark = folder.lastPathComponent }
             return folder.lastPathComponent
         } catch {
             problem = "Cannot make the landmark \(name): \(error.localizedDescription)"
@@ -456,11 +541,65 @@ final class Session {
         }
     }
 
+    /// The tile's notable buildings (an article, a heritage or historic
+    /// tag, a kind people know by name) not yet landmarks, with their
+    /// centre inside the tile, the largest first: what Model the Notable
+    /// takes (the user, 2026-11-04: one button for the tile's best).
+    var notableToModel: [OsmBuilding] {
+        guard let (lo, hi) = buildings.square else { return [] }
+        return buildings.all.filter { b in
+            !b.isPart && b.note == .notable && landmark(holding: b.id) == nil
+                && (lo.x...hi.x).contains(b.centroid.x) && (lo.y...hi.y).contains(b.centroid.y)
+        }.sorted { $0.area > $1.area }
+    }
+
+    /// The name of a landmark made of `building` (and the parts in it): its
+    /// name, else its address, else the nearest named street with the
+    /// building's number of the tile ("Jalan Veteran 3", the user,
+    /// 2026-11-04: in Jakarta few buildings have a name or an address,
+    /// and "Landmark 1" told nothing), else "Landmark N".
+    func nameFor(_ building: OsmBuilding) -> String {
+        if let name = building.name ?? building.address { return name }
+        let number = LandmarkCandidates.nextName(among: candidates).dropFirst("Landmark ".count)
+        if let street = buildings.nearestStreet(to: building.centroid) { return "\(street) \(number)" }
+        return "Landmark \(number)"
+    }
+
+    /// Each of the `limit` largest notable buildings made a landmark, whole
+    /// with the parts standing in it, named by its name or address, to be
+    /// looked over in the list and on the map before any modelling; the
+    /// view stays on the tile's buildings. Returns how many were made.
+    @discardableResult
+    func makeNotableLandmarks(limit: Int) -> Int {
+        guard let tile = workspace.tile, let projection = buildings.projection else { return 0 }
+        var made = 0
+        for b in notableToModel.prefix(limit) {
+            let parts = buildings.all.filter { $0.isPart && landmark(holding: $0.id) == nil && b.contains($0.middle) }
+            let name = nameFor(b)
+            guard (try? LandmarkCandidates.make(name: name, buildings: [b] + parts, tile: tile,
+                                               projection: projection, paths: workspace.paths)) != nil else { continue }
+            readCandidates()
+            made += 1
+        }
+        workspace.tilesRevision += 1
+        return made
+    }
+
+    /// The tile's landmarks without a model, or every one of them again,
+    /// queued on Claude (the user, 2026-11-04: a choice between the ones
+    /// not modelled yet and all of them anew). The ones Claude is on stay
+    /// as they are.
+    func modelLandmarks(onlyWithoutModel: Bool) {
+        for landmark in candidates where !agent.isActive(landmark.id) && (!onlyWithoutModel || landmark.model == nil) {
+            modelLandmark(id: landmark.id)
+        }
+    }
+
     /// The picked buildings made a landmark and Claude set on it at once,
     /// the view staying on the tile's buildings (the user, 2026-11-01: one
     /// button from the building to the model, without watching the run).
     func makeLandmarkAndModel(named name: String) {
-        if let id = makeLandmark(named: name, leavingHeld: true, open: false) { modelLandmark(id: id) }
+        if let id = makeLandmark(named: name, leavingHeld: true) { modelLandmark(id: id) }
     }
 
     // MARK: The engine
@@ -621,9 +760,21 @@ final class Session {
     /// Whether the build sheet is up, the parts to choose.
     var buildAsked = false
 
-    /// Builds the working tile with the parts chosen, from the sheet.
+    /// The tile a build is for: the one open, or the one picked on the map
+    /// (the user, 2026-11-04: a tile built from the map too, no need to
+    /// open it).
+    var buildTarget: TileKey? { phase == .working ? workspace.tile : candidate }
+
+    /// Whether the build sheet can be asked for the target: its OSM there,
+    /// no job on it.
+    var canBuildTarget: Bool {
+        guard phase != .preparing, let tile = buildTarget else { return false }
+        return workspace.fetched.contains(tile) && !jobs.isActive(.tile(tile))
+    }
+
+    /// Builds the target tile with the parts chosen, from the sheet.
     func buildTileNow() {
-        guard let tile = workspace.tile else { return }
+        guard let tile = buildTarget else { return }
         buildAsked = false
         run([buildStep(tile)], on: .tile(tile), title: "Build \(tile.name)")
     }
@@ -648,10 +799,11 @@ final class Session {
     /// Queues pipeline commands on the workspace as one job of its subject,
     /// the road document open saved first; when it ends, the workspace is
     /// read again so every view shows the result.
-    private func run(_ steps: [[String]], on subject: JobSubject, title: String, then: @escaping @MainActor (Bool) -> Void = { _ in }) {
+    private func run(_ steps: [[String]], on subject: JobSubject, title: String, goOn: Bool = false,
+                     then: @escaping @MainActor (Bool) -> Void = { _ in }) {
         model?.saveIfNeeded()
         let workspace = self.workspace
-        jobs.add(PipelineJob(subject: subject, title: title, root: workspace.root, steps: steps) { ok in
+        jobs.add(PipelineJob(subject: subject, title: title, root: workspace.root, steps: steps, goOn: goOn) { ok in
             workspace.scan()
             workspace.tilesRevision += 1
             then(ok)

@@ -81,37 +81,77 @@ public enum Palette {
     /// The colours set over the defaults, by name.
     public private(set) static var overrides: [String: String] = [:]
 
+    /// The landmark colours a palette adds beyond the defaults, by name and
+    /// hex, in order: a city's materials (terracotta, marble) the defaults
+    /// have no cell for (the user, 2026-11-04: palettes by name, Moscow's,
+    /// Indonesia's, a common one, to choose from and try).
+    public private(set) static var extras: [(String, String)] = []
+    /// The name of the palette in use, from its file.
+    public private(set) static var activeName = "Common"
+
+    static func validHex(_ v: String) -> Bool { v.count == 7 && v.hasPrefix("#") && Int(v.dropFirst(), radix: 16) != nil }
+
     /// Puts colours in over the defaults (an empty dictionary: the defaults
-    /// alone) and derives every tone again.
-    public static func apply(_ colours: [String: String]) {
-        overrides = colours.filter { Int($0.value.dropFirst(), radix: 16) != nil && $0.value.count == 7 }
+    /// alone), adds the landmark colours given beyond them, and derives
+    /// every tone again.
+    public static func apply(_ colours: [String: String], extra: [(String, String)] = [], name: String = "Common") {
+        overrides = colours.filter { validHex($0.value) }
+        let known = Set(defaults.flatMap { $0.colours.map(\.0) })
+        extras = extra.filter { validHex($0.1) && !known.contains($0.0) && $0.0.hasPrefix("lm_") }
+        activeName = name
         func set(_ table: [(String, String)]) -> [(String, String)] { table.map { ($0.0, overrides[$0.0] ?? $0.1) } }
         base = set(defaults[0].colours)
         walls = set(defaults[1].colours)
         props = set(defaults[2].colours)
-        landmark = set(defaults[3].colours)
+        landmark = set(defaults[3].colours + extras)
         all = derive()
         names = Set(all.map(\.0))
         hexByName = Dictionary(all, uniquingKeysWith: { a, _ in a })
     }
 
-    /// The palette file of a data folder.
+    /// The palette in use, the file of a data folder: `{"name", "colours",
+    /// "landmark_extra"}`, a copy of the one chosen of `palettesFolder`.
     public static func file(_ paths: WorkspacePaths) -> URL { paths.config.appendingPathComponent("palette.json") }
+    /// The palettes kept by name, `config/palettes/<name>.json`, the same form.
+    public static func palettesFolder(_ paths: WorkspacePaths) -> URL { paths.config.appendingPathComponent("palettes") }
 
-    /// Reads the data folder's palette, if it has one, over the defaults.
-    public static func load(_ paths: WorkspacePaths) {
-        guard let data = try? Data(contentsOf: file(paths)),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let colours = json["colours"] as? [String: String] else { return apply([:]) }
-        apply(colours)
+    /// What a palette file holds.
+    public struct File {
+        public var name: String
+        public var colours: [String: String]
+        public var extra: [(String, String)]
+
+        public init(name: String, colours: [String: String] = [:], extra: [(String, String)] = []) {
+            self.name = name
+            self.colours = colours
+            self.extra = extra
+        }
+
+        public static func read(_ url: URL) -> File? {
+            guard let data = try? Data(contentsOf: url), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            let extra = (json["landmark_extra"] as? [[String]] ?? []).filter { $0.count == 2 }.map { ($0[0], $0[1]) }
+            return File(name: json["name"] as? String ?? url.deletingPathExtension().lastPathComponent,
+                        colours: json["colours"] as? [String: String] ?? [:], extra: extra)
+        }
+
+        public func write(_ url: URL) throws {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let json: [String: Any] = ["name": name, "colours": colours, "landmark_extra": extra.map { [$0.0, $0.1] },
+                                       "note": "A palette of the editor's Style view: the colours set over its defaults by name, and the landmark colours added."]
+            try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
+        }
     }
 
-    /// Writes the colours set to the data folder's palette and applies them.
-    public static func save(_ colours: [String: String], _ paths: WorkspacePaths) throws {
-        apply(colours)
-        try FileManager.default.createDirectory(at: paths.config, withIntermediateDirectories: true)
-        let json: [String: Any] = ["colours": overrides, "note": "The colours set over the editor's defaults, by name: edited in the Style view."]
-        try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]).write(to: file(paths))
+    /// Reads the data folder's palette in use, if it has one, over the defaults.
+    public static func load(_ paths: WorkspacePaths) {
+        guard let file = File.read(file(paths)) else { return apply([:]) }
+        apply(file.colours, extra: file.extra, name: file.name)
+    }
+
+    /// Writes a palette as the one in use and applies it.
+    public static func save(_ palette: File, _ paths: WorkspacePaths) throws {
+        apply(palette.colours, extra: palette.extra, name: palette.name)
+        try palette.write(file(paths))
     }
 
     /// Every colour name the palette has.

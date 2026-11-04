@@ -33,6 +33,15 @@ final class LandmarkAgent {
     var active: [LandmarkRun] { runs.filter { $0.state.active } }
     /// Whether any landmark is queued or being modelled.
     var running: Bool { !active.isEmpty }
+
+    /// The runs in the order a list shows them: going, then queued, then
+    /// ended, the latest first.
+    var listed: [LandmarkRun] {
+        let keyed = runs.enumerated().map { i, r -> (LandmarkRun, (Int, Double, Int)) in
+            (r, r.state.running ? (0, 0, i) : r.state.active ? (1, 0, i) : (2, -(r.ended?.timeIntervalSinceReferenceDate ?? 0), i))
+        }
+        return keyed.sorted { $0.1 < $1.1 }.map(\.0)
+    }
     /// The run of a landmark, its last one.
     func run(of id: String) -> LandmarkRun? { runs.last { $0.id == id } }
     /// Whether the landmark's own run is queued or going.
@@ -129,9 +138,10 @@ final class LandmarkAgent {
         return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
-        The plan, and the budget: one build of the whole from the references, one build of the fixes its comparisons \
-        show, a summary. Four tool calls; two builds. Work from what each call returns; do not ask for more pictures \
-        than it gives.
+        The plan, and the budget: one build of the whole from the references, then builds of the fixes while the \
+        comparisons still show something to fix, three of them at most, each with everything that differed, and a \
+        summary. A plain building takes two builds, a rich facade four; never a build for a detail alone, and stop as \
+        soon as a build changes little. Work from what each call returns; do not ask for more pictures than it gives.
         1. get_landmark (the building, its walls' corners in metres, the recipe format), then list_references. The references are gathered for you before you start, and this shows \
         them: the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
         kept in a folder for each facade, its best one to three in best/, the others in other/, all by name: \
@@ -154,13 +164,16 @@ final class LandmarkAgent {
         model rendered beside the best photo of every facade from that photo's own camera, and beside the satellite view \
         from above: that is your review. Count what each photo shows against the model (columns, windows, storeys, \
         arches, entrances, the cornice, the relief, the roof, the colours).
-        3. The fixes: one set_recipe with everything that differed. It comes back beside the best photo of every facade \
-        it changed. No further build unless something is plainly wrong (a mass missing, a roof of the wrong shape).
+        3. The fixes: a set_recipe with everything that differed, all of it in one build, never one thing at a time. It \
+        comes back beside the best photo of every facade it changed: count again, and build again only while a photo \
+        still shows something the model lacks (a bay, a balcony stack, a storey, a roof of another shape), three fix \
+        builds at most. When a build changes little, that is the end.
         \(ClaudeSettings.emphasis != "off" ? """
-        4. What makes it recognisable: the one or two things a person points at from afar (a tower, a dome, a \\
-        statue, a star, a portico), never more, never lettering, and never a cone or a dome shape, a tower's spire or a lantern's cap (what carries it is \\
-        told by its own size; a cap drawn larger is a mushroom; a dome is given its real height in the recipe). First ask yourself: you may know this place by its name and its OSM tags \\
-        (the quadriga over the Bolshoi's portico, the star in a ring on Detsky Mir's corner). If you know it, just model \\
+        4. What makes it recognisable: the one or two things a person points at from afar (a sculpture, a star, a cross, a ball finial: what stands free on the building), \\
+        never more. The building's own body, a tower, a dome, a cone, a drum, a portico, a platform, lettering, is never one: it is given \\
+        its real size in the recipe and drawn at it, emphasis on anything but a statue, a ring or a sphere ignored and said back with the build. First ask yourself: you may know this place by its name and its OSM tags \\
+        (a quadriga over a theatre's portico, a star in a ring on a store's corner, a gilded flame on a monument's tip, a \\
+        crescent over a dome). Any country, any age: the words are the same. If you know it, just model \\
         it from what you know, placed by the satellite view, and open a photo only if you want to, when you lack its \\
         place or size. \\
         \(ClaudeSettings.emphasis == "photos" ? "Only when you do not know the building, look along the roof and at the corners of the whole-building photo for what stands there. " : "If you do not know the building, leave this step out: no photos for it. ")\\
@@ -235,6 +248,11 @@ final class LandmarkAgent {
                 // "Not built, the recipe has problems:" and nothing after).
                 if first.hasPrefix("Not built") {
                     shown += all.dropFirst().prefix(12).map { "  ✗ \($0.prefix(300))" }
+                }
+                // What the generator ignored of a recipe it built (emphasis
+                // where it is not for), said back after the summary.
+                if first.hasPrefix("Built") {
+                    shown += all.dropFirst().filter { $0.contains("ignored") }.prefix(6).map { "  ⚠ \($0.prefix(300))" }
                 }
                 return shown.joined(separator: "\n")
             }

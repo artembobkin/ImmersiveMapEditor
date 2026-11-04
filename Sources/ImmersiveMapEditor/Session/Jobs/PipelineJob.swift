@@ -25,12 +25,24 @@ final class PipelineJob: Job {
     private let then: @MainActor (Bool) -> Void
     private(set) var process: Process?
     private var stopping = false
+    /// Whether the job goes on past a command that failed, for commands
+    /// that stand apart (a fetch a tile), and reports them at the end.
+    private let goOn: Bool
+    /// What each command came to, in order: its arguments, whether it went
+    /// through, and the pipeline's last word on it when it did not (the
+    /// user, 2026-11-04: the fetch of many tiles told from the panel).
+    private(set) var results: [(arguments: [String], ok: Bool, note: String?)] = []
+    /// The command going now.
+    private(set) var current: [String]?
+    private var lastWord: String?
 
-    init(subject: JobSubject, title: String, root: URL, steps: [[String]], then: @escaping @MainActor (Bool) -> Void = { _ in }) {
+    init(subject: JobSubject, title: String, root: URL, steps: [[String]], goOn: Bool = false,
+         then: @escaping @MainActor (Bool) -> Void = { _ in }) {
         self.subject = subject
         self.title = title
         self.root = root
         self.steps = steps
+        self.goOn = goOn
         self.then = then
         console.begin(title, stage: "Queued")
     }
@@ -58,12 +70,17 @@ final class PipelineJob: Job {
         Task {
             var ok = true
             var exit: Int32 = 0
-            for (i, arguments) in steps.enumerated() where ok && !stopping {
+            for (i, arguments) in steps.enumerated() where (ok || goOn) && !stopping {
                 console.step(i + 1, of: steps.count)
+                current = arguments
+                lastWord = nil
                 exit = await run(arguments)
-                ok = exit == 0
+                results.append((arguments, exit == 0, exit == 0 ? nil : lastWord))
+                ok = ok && exit == 0
             }
-            end(stopping ? .stopped : ok ? .done : .failed("exit \(exit)"))
+            current = nil
+            let failed = results.filter { !$0.ok }.count
+            end(stopping ? .stopped : ok ? .done : .failed(goOn ? "\(failed) of \(results.count) failed" : "exit \(exit)"))
         }
     }
 
@@ -106,6 +123,7 @@ final class PipelineJob: Job {
             if line.hasPrefix("@progress "), let s = Console.stage(progress: line.dropFirst(10)) {
                 console.stage(s)
             } else {
+                if line.hasPrefix("pipeline: ") { lastWord = String(line.dropFirst(10)) }
                 console.append(line)
             }
         }

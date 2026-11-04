@@ -35,8 +35,16 @@ struct SettingsView: View {
             }
             Section("Claude") {
                 TextField("claude", text: $claudePath, prompt: Text(ClaudeSettings.executable?.path ?? "~/.local/bin/claude"))
-                TextField("Model", text: $claudeModel, prompt: Text("Claude Code's default (opus, sonnet…)"))
-                TextField("Effort", text: $claudeEffort, prompt: Text("Claude Code's default (low, medium, high, xhigh, max)"))
+                // Lists, not text (the user, 2026-11-04: a typo in a text
+                // field was asked of claude as a model, and every run failed).
+                Picker("Model", selection: Binding(get: { ClaudeSettings.model }, set: { claudeModel = $0 })) {
+                    ForEach(ClaudeSettings.models, id: \.id) { Text($0.title).tag($0.id) }
+                }
+                .help("Which Claude models the landmarks: Claude Code's default, or one by name.")
+                Picker("Effort", selection: Binding(get: { ClaudeSettings.effort }, set: { claudeEffort = $0 })) {
+                    ForEach(ClaudeSettings.efforts, id: \.id) { Text($0.title).tag($0.id) }
+                }
+                .help("How hard it thinks: Claude Code's default, or a level.")
                 SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
                     .onSubmit { ClaudeSettings.proxy = proxy }
                     .onChange(of: proxy) { ClaudeSettings.proxy = proxy }

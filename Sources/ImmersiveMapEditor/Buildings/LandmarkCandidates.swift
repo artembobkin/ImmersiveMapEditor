@@ -91,7 +91,10 @@ enum LandmarkCandidates {
             guard let data = try? Data(contentsOf: f.appendingPathComponent("landmark.json")),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
             let osm = (json["buildings"] as? [[String: Any]] ?? []).compactMap { $0["osm"] as? String }
-            return TileLandmark(id: id, name: json["name"] as? String ?? id, folder: f, buildings: osm, model: TileLandmark.model(in: f))
+            // An older landmark named just "Landmark" shows its folder's number.
+            var name = json["name"] as? String ?? id
+            if name == "Landmark" { name = "Landmark \(number(of: id))" }
+            return TileLandmark(id: id, name: name, folder: f, buildings: osm, model: TileLandmark.model(in: f))
         }
     }
 
@@ -140,6 +143,25 @@ enum LandmarkCandidates {
     /// A folder name from a name, in Latin letters: lowercase a to z and
     /// digits joined by dashes (Большой театр: bolsoj-teatr), numbered when
     /// taken.
+    /// The number in a landmark's folder name: "landmark" 1, "landmark-7" 7,
+    /// any other 0.
+    static func number(of id: String) -> Int {
+        if id == "landmark" { return 1 }
+        if id.hasPrefix("landmark-"), let n = Int(id.dropFirst("landmark-".count)) { return n }
+        return 0
+    }
+
+    /// The name of a landmark made of buildings with no name and no address:
+    /// "Landmark N", N one past the tile's numbered landmarks, unique in the
+    /// tile (the user, 2026-11-04: five named "Landmark" told nothing apart).
+    static func nextName(among existing: [TileLandmark]) -> String {
+        let used = existing.map { landmark -> Int in
+            if landmark.name.hasPrefix("Landmark "), let n = Int(landmark.name.dropFirst("Landmark ".count)) { return n }
+            return number(of: landmark.id)
+        }
+        return "Landmark \((used.max() ?? 0) + 1)"
+    }
+
     static func slug(_ name: String, taken: Set<String>) -> String {
         let latin = name.applyingTransform(.toLatin, reverse: false)?.applyingTransform(.stripDiacritics, reverse: false) ?? name
         let kept = latin.lowercased().unicodeScalars.filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == " " || $0 == "-" }

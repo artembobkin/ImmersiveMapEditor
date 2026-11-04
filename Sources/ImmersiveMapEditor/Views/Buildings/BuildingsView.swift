@@ -63,6 +63,9 @@ struct BuildingsView: View {
         .onTapGesture(count: 2, coordinateSpace: .local) { p in
             if let b = catalog.building(at: world(p)), let holder = session.landmark(holding: b.id),
                holder.tile == session.workspace.tile?.name {
+                // Picked whole as it opens, so coming back finds it picked
+                // (the user, 2026-11-04: a double-click opened and did not pick).
+                catalog.picked = Set(holder.buildings)
                 session.pickedLandmark = holder.id
                 return
             }

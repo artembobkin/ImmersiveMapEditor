@@ -8,6 +8,8 @@ struct MapCanvas: View {
     let raster: RasterTiles
     /// The tile picked, outlined.
     var picked: TileKey?
+    /// The tiles marked to fetch at once, tinted.
+    var chosen: Set<TileKey> = []
 
     var body: some View {
         // Read here, so the map is drawn again as OpenStreetMap's tiles come.
@@ -45,9 +47,10 @@ struct MapCanvas: View {
                 } else if workspace.fetched.contains(t) {
                     ctx.fill(Path(r), with: .color(.yellow.opacity(0.3)))
                 }
-                let picked = self.picked == t
-                if picked { ctx.fill(Path(r), with: .color(.blue.opacity(0.3))) }
+                let picked = self.picked == t, marked = chosen.contains(t)
+                if picked || marked { ctx.fill(Path(r), with: .color(.blue.opacity(picked ? 0.3 : 0.2))) }
                 ctx.stroke(Path(r), with: .color(.black.opacity(0.25)), lineWidth: 1)
+                if marked && !picked { ctx.stroke(Path(r.insetBy(dx: 1, dy: 1)), with: .color(.blue.opacity(0.8)), lineWidth: 1.5) }
                 if workspace.document(holding: t) != nil {
                     ctx.stroke(Path(r.insetBy(dx: 2, dy: 2)), with: .color(.purple.opacity(0.8)), lineWidth: 1.5)
                 }

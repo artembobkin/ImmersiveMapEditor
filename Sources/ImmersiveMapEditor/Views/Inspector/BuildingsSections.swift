@@ -14,6 +14,8 @@ struct BuildingsSections: View {
     @Environment(Session.self) private var session
     @State private var name = ""
     @State private var deleting: TileLandmark?
+    @State private var modellingNotable = false
+    @State private var makingNotable = false
     @State private var listing = false
 
     /// The landmarks holding any of the picked buildings, each with how many.
@@ -38,6 +40,32 @@ struct BuildingsSections: View {
                     .help("Click a building, shift-click for more, double-click a whole building with its parts; a double-click on a landmark's building opens the landmark.")
                 Toggle("Names", isOn: Binding(get: { catalog.showNames }, set: { catalog.showNames = $0 }))
                     .help("The known buildings named on the map: the notable ones always (an article in Wikipedia or Wikidata, a heritage or historic tag, a church, theatre, station, palace or museum, drawn deeper teal), the merely named when large enough on screen (light teal).")
+                // The tile's best made landmarks first, to look over on the
+                // map and in the list, then modelled, the ones without a
+                // model or all anew (the user, 2026-11-04).
+                let notable = session.notableToModel.count
+                PanelButton("Make Landmarks of the Notable…", systemImage: "building.columns") { makingNotable = true }
+                    .disabled(notable == 0)
+                    .help(notable == 0 ? "No notable building inside the tile is without a landmark."
+                          : "Every notable building inside the tile that is not a landmark yet, \(notable) of them (an article, a heritage or historic tag, a kind people know by name), made one whole with its parts: nothing is modelled, look them over first.")
+                    .confirmationDialog("Make landmarks of \(notable) notable building\(notable == 1 ? "" : "s")?", isPresented: $makingNotable) {
+                        Button("All \(notable)") { session.makeNotableLandmarks(limit: notable) }
+                        if notable > 10 { Button("The 10 Largest") { session.makeNotableLandmarks(limit: 10) } }
+                        if notable > 5 { Button("The 5 Largest") { session.makeNotableLandmarks(limit: 5) } }
+                    } message: {
+                        Text("Each becomes a landmark of the tile, whole with its parts, named by its name or address, shown orange on the map and in the list below. Delete the ones not worth a model, then Model the Landmarks.")
+                    }
+                let without = session.candidates.filter { $0.model == nil && !session.agent.isActive($0.id) }.count
+                let idle = session.candidates.filter { !session.agent.isActive($0.id) }.count
+                PanelButton("Model the Landmarks with Claude…", systemImage: "sparkles") { modellingNotable = true }
+                    .disabled(idle == 0)
+                    .help("The tile's landmarks queued on Claude, \(ClaudeSettings.atOnce) at once: the \(without) without a model, or all \(idle) anew. The list of landmarks shows each one's state and stops any.")
+                    .confirmationDialog("Model the landmarks with Claude?", isPresented: $modellingNotable) {
+                        if without > 0 { Button("The \(without) Without a Model") { session.modelLandmarks(onlyWithoutModel: true) } }
+                        Button("All \(idle), Again") { session.modelLandmarks(onlyWithoutModel: false) }
+                    } message: {
+                        Text("A run again starts from OSM: the photos kept are used again, the recipe, model and conversation of the last one go.")
+                    }
             }
         } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
             Section("Picked: \(picked.count)") {
@@ -73,14 +101,18 @@ struct BuildingsSections: View {
             }
         } else {
             Section("Make a landmark of \(picked.count - heldCount)") {
-                TextField("Name", text: $name, prompt: Text(picked.compactMap(\.name).first ?? "Its name"))
-                let title = name.isEmpty ? (picked.compactMap(\.name).first ?? "Landmark") : name
+                // Named by its building, else by its address, else by the nearest
+                // street, else "Landmark N" (the user, 2026-11-04: five named "Landmark").
+                let fallback = picked.first { $0.name != nil } ?? picked.first { $0.address != nil } ?? picked.first
+                let fallbackName = fallback.map(session.nameFor) ?? LandmarkCandidates.nextName(among: session.candidates)
+                TextField("Name", text: $name, prompt: Text(fallbackName))
+                let title = name.isEmpty ? fallbackName : name
                 PanelButton("Make a Landmark of \(picked.count - heldCount) Buildings", systemImage: "building.columns") {
                     session.makeLandmark(named: title, leavingHeld: true)
                     name = ""
                 }
                 .disabled(picked.count == heldCount)
-                .help("Its folder with landmark.json and footprint.geojson, opened; nothing is modelled yet.")
+                .help("Its folder with landmark.json and footprint.geojson, in the list below; nothing is modelled yet, and the view stays here.")
                 PanelButton("Make It and Model with Claude", systemImage: "sparkles") {
                     session.makeLandmarkAndModel(named: title)
                     name = ""

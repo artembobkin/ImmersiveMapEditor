@@ -15,8 +15,10 @@ struct StyleView: View {
             VStack(alignment: .leading, spacing: 22) {
                 ForEach(Palette.defaults, id: \.group) { group in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(group.group).font(.title3.bold()).help(Self.about[group.group] ?? "")
-                        ForEach(group.colours, id: \.0) { colour in
+                        Text(group.group == "Landmarks" ? "Landmarks (\(session.palette.active))" : group.group).font(.title3.bold()).help(Self.about[group.group] ?? "")
+                        // The landmark colours the palette in use adds come after the defaults.
+                        let colours = group.group == "Landmarks" ? group.colours + session.palette.extras : group.colours
+                        ForEach(colours, id: \.0) { colour in
                             ColourRow(name: colour.0, defaultHex: colour.1, group: group.group)
                         }
                     }

@@ -27,6 +27,10 @@ final class LandmarkRun: Job {
     /// What a running run is at.
     private(set) var phase = Phase.gathering
     private(set) var ended: Date?
+    /// When it started, for how long it has been going.
+    private(set) var started: Date?
+    /// The tile its landmark is in.
+    var tile: TileKey? { if case .landmark(let tile, _) = subject { tile } else { nil } }
     /// The process going, its pid kept in the folder's agent.pid while it
     /// runs: an editor started after a crash or a forced quit finds and
     /// ends it by that file (`killOrphans`).
@@ -88,6 +92,7 @@ final class LandmarkRun: Job {
             end(.failed("no proxy"), "No proxy set: Claude Code must go through the proxy. Settings > Claude.")
             return
         }
+        started = Date()
         if request == nil {
             LandmarkAgent.startOver(folder)
             modelChanged()

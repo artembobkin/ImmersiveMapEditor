@@ -37,7 +37,7 @@ public enum LandmarkGenerator {
         }
     }
     public static let featureKinds = ["colonnade", "pediment", "statue", "box", "steps"]
-    public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star"]
+    public static let statueShapes = ["figure", "horse", "quadriga", "equestrian", "obelisk", "cross", "star", "flame", "crescent"]
     public static let shapeKinds = ["box", "cylinder", "cone", "sphere", "dome", "prism", "loft", "text", "ring"]
     /// How deep a window is cut into its wall.
     /// The caricature. The map is seen from afar, and a detail under a metre
@@ -112,9 +112,9 @@ public enum LandmarkGenerator {
         /// What makes the building recognisable (`emphasis`), this much
         /// larger (the user, 2026-10-28: Zenly draws the one thing a person
         /// points at larger than life). The editor's Exaggeration setting,
-        /// passed as LANDMARK_EMPHASIS; 2 when not set.
+        /// passed as LANDMARK_EMPHASIS; 3 when not set (the user, 2026-11-04: 3 by default).
         static var emphasis: Double {
-            let v = Double(ProcessInfo.processInfo.environment["LANDMARK_EMPHASIS"] ?? "") ?? 2
+            let v = Double(ProcessInfo.processInfo.environment["LANDMARK_EMPHASIS"] ?? "") ?? 3
             return min(5, max(1, v))
         }
     }
@@ -126,6 +126,11 @@ public enum LandmarkGenerator {
     /// What is wrong with a recipe, one line each: nothing when it builds.
     public static func check(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
         var out: [String] = []
+        // Nothing in it is nothing to build: an empty recipe sent to see the
+        // format built an empty model over St Basil's (the user, 2026-11-04).
+        if r.masses.isEmpty && r.shapes.isEmpty && r.features.isEmpty {
+            out.append("nothing to build: a recipe needs a mass, a shape or a feature at least (the format is in get_landmark)")
+        }
         let colours = Set(Palette.landmark.map(\.0) + LandmarkRecipe.glassColours)
         func colour(_ c: String?, _ at: String) {
             if let c, !colours.contains(c) { out.append("\(at): colour \(c) is not one of \(colours.sorted().joined(separator: ", "))") }
@@ -147,7 +152,7 @@ public enum LandmarkGenerator {
             if let p = m.plinth, p.height > Caricature.plinthTallest {
                 out.append("\(at).plinth: \(p.height) m is a storey, not a plinth (\(Int(Caricature.plinthTallest)) m at most, a blind base): "
                            + "a ground floor of its own colour, with its shop fronts, arches or windows, is a mass of its own from the ground to its top, "
-                           + "and the body a mass from there up on the same outline (its base 0.3 m below the ground floor's top, so they overlap)")
+                           + "and the body a mass from there up on the same outline (its base at the ground floor's top: the generator makes them touch and joins them)")
             }
             colour(m.cornice?.colour, at + ".cornice")
             colour(m.windows?.colour, at + ".windows")
@@ -179,8 +184,11 @@ public enum LandmarkGenerator {
                 if d.at.count != 2 { out.append("\(at).doors[\(k)]: needs at, [x, y], a point on or by the wall") }
                 colour(d.colour, at + ".doors[\(k)]")
             }
-            if s.doors != nil || s.windows != nil, !["box", "prism"].contains(s.kind) || (s.pitch ?? 0) != 0 {
-                out.append("\(at): doors and windows go on an upright box or a prism")
+            if s.doors != nil, !["box", "prism"].contains(s.kind) || (s.pitch ?? 0) != 0 {
+                out.append("\(at): doors go on an upright box or a prism")
+            }
+            if s.windows != nil, !["box", "prism", "cylinder"].contains(s.kind) || (s.pitch ?? 0) != 0 {
+                out.append("\(at): windows go on an upright box, a prism or a cylinder (a round bay, a ribbon of windows a storey)")
             }
             let ring = (s.polygon?.count ?? 0) >= 3 || (s.outline.map { source.ring($0) != nil } ?? false)
             if let o = s.outline, source.ring(o) == nil { out.append("\(at): outline \(o) is not one of the landmark's buildings") }
@@ -242,6 +250,54 @@ public enum LandmarkGenerator {
         return out
     }
 
+    /// Masses stacked on one footprint made to touch exactly: an upper one
+    /// whose base lies within a metre under the lower one's top sets that
+    /// top (a storey of another colour over a ground floor). Overlapping,
+    /// as the guide once asked, their walls lay in one plane over the
+    /// overlap, and the union gave the band to both colours, a patchwork
+    /// (the user, 2026-11-04: Nikolskaya Plaza, "z-fighting" at the top of
+    /// its red ground floor). Touching, the union still joins them.
+    static func stacked(_ rings: [[P2]?], _ masses: [LandmarkRecipe.Mass]) -> [LandmarkRecipe.Mass] {
+        var out = masses
+        let polygons = rings.map { $0.map { Geometry.polygon($0 + [$0[0]]) } }
+        for i in out.indices {
+            guard let lower = polygons[i] else { continue }
+            for j in out.indices where j != i {
+                guard let upper = polygons[j], out[j].base < out[i].top, out[j].base > out[i].top - 1,
+                      out[j].base > out[i].base + 0.5 else { continue }
+                // The same footprint: what is in one and not the other is next to nothing.
+                guard lower.difference(upper).area + upper.difference(lower).area < max(1, lower.area * 0.02) else { continue }
+                out[i].top = out[j].base
+            }
+        }
+        return out
+    }
+
+    /// What the recipe asks for that the generator will not do, said back
+    /// with the build rather than refusing it (an older recipe builds on):
+    /// emphasis on anything but a sculpture or a finial standing free.
+    public static func advice(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
+        var out: [String] = []
+        // A part of an outline cut low where OSM gives the outline one
+        // height and no parts (the user, 2026-11-04: a tower's west wing
+        // made a 10 m podium off a lighter patch of roof in the satellite
+        // view, against OSM's 19 storeys and the photo).
+        let hasParts = source.buildings.contains(where: \.part)
+        for (i, m) in r.masses.enumerated() {
+            guard !hasParts, m.base < 1, let osm = m.outline, let b = source.buildings.first(where: { $0.osm == osm }),
+                  !b.part, let height = b.height, height > 12, m.top < height * 0.6 else { continue }
+            out.append(String(format: "masses[%d]%@: %.0f m high where OSM gives %@ one height of %.0f m and no parts: a wing lower than the rest needs a photo showing the step in the roofline; the satellite view tells roof colours and plan, never height, and a lighter patch of roof is not a lower wing",
+                              i, m.id.map { " (\($0))" } ?? "", m.top, osm, height))
+        }
+        for (i, s) in r.shapes.enumerated() where s.emphasis == true && !["ring", "sphere"].contains(s.kind) {
+            out.append("shapes[\(i)] (\(s.kind)): emphasis ignored, it is only for a sculpture or a finial standing free (a statue feature, a ring or a sphere shape); a \(s.kind) is drawn at its real size")
+        }
+        for (i, f) in r.features.enumerated() where f.emphasis == true && f.kind != "statue" {
+            out.append("features[\(i)] (\(f.kind)): emphasis ignored, it is only for a sculpture or a finial standing free (a statue feature, a ring or a sphere shape); a \(f.kind) is drawn at its real size")
+        }
+        return out
+    }
+
     /// The model of a recipe: its triangles by colour.
     public static func build(_ r: LandmarkRecipe, _ source: LandmarkSource) -> Model {
         let m = Model()
@@ -249,7 +305,7 @@ public enum LandmarkGenerator {
         sink(&rings, r.masses)
         sinkEdges(&rings, r.masses)
         rings = rings.map { $0.map { chamfered($0, Caricature.chamfer) } }
-        for (k, mass) in r.masses.enumerated() {
+        for (k, mass) in stacked(rings, r.masses).enumerated() {
             guard let ring = rings[k] else { continue }
             m.mass(ring, mass)
         }
@@ -273,7 +329,7 @@ public enum LandmarkGenerator {
         guard problems.isEmpty else { return (problems, "") }
         let model = build(recipe, source)
         try model.write(folder.appendingPathComponent("model.glb"), name: source.name)
-        return ([], model.summary)
+        return ([], ([model.summary] + advice(recipe, source)).joined(separator: "\n"))
     }
 
     // MARK: The model
@@ -281,6 +337,10 @@ public enum LandmarkGenerator {
     public final class Model {
         /// Triangles by colour name, three corners each, X east, Y north, Z up.
         var tris: [String: [V3]] = [:]
+        /// How many sides a round solid gets (a tube, a ball) unless told:
+        /// more for a sculpture drawn larger than life, whose size shows
+        /// the detail (the user, 2026-11-04).
+        var roundSegments = 10
         /// Every triangle in the order it was made, with its colour and the
         /// closed solid it belongs to: what `separate` and `unite` work on.
         var faces: [(a: V3, b: V3, c: V3, colour: String, solid: Int)] = []
@@ -1305,8 +1365,7 @@ public enum LandmarkGenerator {
                 let side = P2(-d.y, d.x) * (r + 0.3), along = d * (r + 0.3)
                 prism(ccw([a - along - side, b + along - side, b + along + side, a - along + side]), base + height - beam, base + height, colour)
             case "pediment":
-                guard let a = p2(f.from), let b = p2(f.to), var height = f.height, height > 0 else { return }
-                if f.emphasis == true { height *= Caricature.emphasis }
+                guard let a = p2(f.from), let b = p2(f.to), let height = f.height, height > 0 else { return }
                 begin()
                 let len = simd_length(b - a), d = (b - a) / max(len, 1e-9), n = P2(d.y, -d.x) * (f.depth ?? 1.5)
                 let m = (a + b) / 2
@@ -1326,10 +1385,19 @@ public enum LandmarkGenerator {
                 let u = P2(sin(heading), cos(heading)), v = P2(-u.y, u.x)
                 var z = base
                 if let pedestal = f.pedestal, pedestal > 0 {
-                    box(at, u, v, w, w, z, z + pedestal, colour)
+                    // A finial's pedestal (a star, a cross, a crescent, a flame) is a
+                    // post, a sculpture's a block (the
+                    // user, 2026-11-04: the Nikolskaya's star stood on a
+                    // platform in the air).
+                    let post = ["star", "cross", "crescent", "flame"].contains(f.shape ?? "")
+                    let side = post ? max(0.15, h * 0.06) : w
+                    box(at, u, v, side, side, z, z + pedestal, colour)
                     z += pedestal
                 }
+                // Larger than life, finer: more sides to its round solids.
+                roundSegments = k > 1 ? 16 : 10
                 sculpture(f.shape ?? "figure", at, u, v, z, h, w, colour)
+                roundSegments = 10
             case "box":
                 let ring = (f.polygon ?? []).compactMap(p2)
                 guard ring.count >= 3, let top = f.top, top > base else { return }
@@ -1424,12 +1492,13 @@ public enum LandmarkGenerator {
             begin()
             // What makes the building recognisable, a size up.
             var s = given
-            // Lettering is never larger than life (the user, 2026-11-01), nor
-            // a cone or a dome, a tower's tent roof, a spire, a lantern's cap:
-            // drawn larger it is a mushroom over what carries it, which is
-            // told by its own size (the user, 2026-11-03: GUM's and the
-            // Historical Museum's towers, the Senate's lantern).
-            if s.emphasis == true, s.kind != "text", s.kind != "cone", s.kind != "dome" {
+            // Only a finial standing free, a ring (a star's) or a ball, grows:
+            // the one rule of emphasis, for every city (the user, 2026-11-04,
+            // after lettering, a tower's cone, a lantern's dome and a star's
+            // platform were each drawn larger and each was wrong): a
+            // sculpture or a finial about its foot, never the building's own
+            // body, roof or cap, which is told by its real size.
+            if s.emphasis == true, ["ring", "sphere"].contains(s.kind) {
                 let k = Caricature.emphasis
                 s.size = s.size.map { $0.map { $0 * k } }
                 s.radius = s.radius.map { $0 * k }
@@ -1494,6 +1563,25 @@ public enum LandmarkGenerator {
                     h = min(h, r * Caricature.spireAspect)
                 }
                 let lo = circle(r), hi = circle(rt)
+                if s.kind == "cylinder", (s.pitch ?? 0) == 0, abs(r - rt) < 1e-6, let w = s.windows, w.storeys >= 1, h > 1 {
+                    // A round bay with a ribbon of windows a storey between
+                    // its parapets: the glass a band recessed into the drum,
+                    // a post at every facet (the user, 2026-11-04: a tower's
+                    // rounded bays, glazed in the photo, came out as plain
+                    // red drums, since only a box or a prism took windows).
+                    let storey = h / Double(w.storeys)
+                    let band = min(max(w.height * Caricature.windowRise, 1.2), storey * 0.65)
+                    let ring = ccw(lo.map { let q = f.p($0.x, $0.y, 0); return P2(q.x, q.y) })
+                    let inner = ccw(circle(max(r - LandmarkGenerator.windowDepth, r * 0.6)).map { let q = f.p($0.x, $0.y, 0); return P2(q.x, q.y) })
+                    let glass = "\(colour).glass", post = w.colour ?? "lm_white", postSide = Caricature.mullion
+                    for k in 0..<w.storeys {
+                        let z0 = base + storey * Double(k), z1 = z0 + storey - band, z2 = z0 + storey
+                        prism(ring, z0, z1, colour)
+                        prism(inner, z1, z2, glass)
+                        for p in inner { box(p, P2(1, 0), P2(0, 1), postSide, postSide, z1, z2, post) }
+                    }
+                    return
+                }
                 for k in 0..<n {
                     let (p0, p1) = (lo[k], lo[(k + 1) % n]), (q0, q1) = (hi[k], hi[(k + 1) % n])
                     let mid = (p0 + p1) / 2
@@ -1581,10 +1669,49 @@ public enum LandmarkGenerator {
                 let a = u * (w / 2), b = v * (w / 2)
                 loft(ccw([c - a - b, c + a - b, c + a + b, c - a + b]), c, z, [(1, 0), (0.62, h * 0.86), (0, h)], colour)
             case "cross":
-                let t = max(0.08, h * 0.08)
+                // A post and a bar, their ends flared, and the ball at its
+                // foot (the user, 2026-11-04: a finial drawn larger than life
+                // asks for its detail).
+                let t = max(0.08, h * 0.08), bar = z + h * 0.68
                 box(c, u, v, t, t, z, z + h, colour)
-                box(c, u, v, t, h * 0.6, z + h * 0.68, z + h * 0.68 + t, colour)
+                box(c, u, v, t, h * 0.6, bar, bar + t, colour)
+                box(c, u, v, t * 1.8, t * 1.8, z + h - t * 1.5, z + h, colour)
+                for side in [-1.0, 1.0] {
+                    box(c + v * (side * (h * 0.3 - t * 0.75)), u, v, t * 1.8, t * 1.5, bar - t * 0.4, bar + t * 1.4, colour)
+                }
+                ball(V3(c.x, c.y, z + t * 1.2), t * 1.4, colour)
+            case "crescent":
+                // A crescent with a star in it, a mosque's finial: an arc of
+                // a ring thickest at its foot and pointed at its horns,
+                // open at the top, on a pole from its foot (the user,
+                // 2026-11-04: Istiqlal's came out as a star in a full ring).
+                let big = h / 2, thick = max(0.06, big * 0.22), post = max(0.06, h * 0.04)
+                let zc = z + h * 0.15 + big
+                let centre = V3(c.x, c.y, zc), U = V3(u.x, u.y, 0), V = V3(v.x, v.y, 0), W = V3(0, 0, 1)
+                tube(V3(c.x, c.y, z), V3(c.x, c.y, zc - big * 0.5), post, post, segments: 8, colour)
+                let m = 20, from = 50.0 * .pi / 180, to = 310.0 * .pi / 180
+                let rings = (0...m).map { k -> [V3] in
+                    let s = Double(k) / Double(m), phi = from + (to - from) * s
+                    let radial = V * sin(phi) + W * cos(phi)
+                    let r = max(0.02, thick * sin(.pi * s))
+                    return ring(centre + radial * big, U, radial, r, r, 8)
+                }
+                sweep(rings, colour)
+                star(c, u, v, zc, big * 0.42, colour)
+            case "flame":
+                // A gilded flame, as on a monument's tip: a teardrop lofted
+                // from a round foot to a point (any country's finial, the
+                // user, 2026-11-04).
+                let r = min(w, h * 0.6) / 2
+                let foot = (0..<12).map { k -> P2 in let t = 2 * Double.pi * Double(k) / 12; return c + P2(r * cos(t), r * sin(t)) }
+                loft(foot, c, z, [(0.55, 0), (1, h * 0.3), (0.72, h * 0.62), (0.3, h * 0.85), (0, h)], colour)
             case "star":
+                // On a pole from its foot to its middle, through the notch
+                // between its lower points: a star is mounted, never left
+                // hanging over a spire's tip (the user, 2026-11-04: the
+                // Spasskaya's star, drawn larger, hung in the air).
+                let t = max(0.06, h * 0.04)
+                tube(V3(c.x, c.y, z), V3(c.x, c.y, z + h / 2), t, t, segments: 8, colour)
                 star(c, u, v, z + h / 2, h / 2, colour)
             default:
                 figure(c, u, v, z, h, colour)
@@ -1624,7 +1751,8 @@ public enum LandmarkGenerator {
         }
 
         /// A straight round tube from `p` to `q`, `r0` thick at `p`, `r1` at `q`.
-        func tube(_ p: V3, _ q: V3, _ r0: Double, _ r1: Double, segments n: Int = 10, _ colour: String) {
+        func tube(_ p: V3, _ q: V3, _ r0: Double, _ r1: Double, segments given: Int? = nil, _ colour: String) {
+            let n = given ?? roundSegments
             let d = q - p, len = simd_length(d)
             guard len > 1e-6 else { return }
             let t = d / len, helper = abs(t.z) < 0.9 ? V3(0, 0, 1) : V3(1, 0, 0)
@@ -1633,7 +1761,8 @@ public enum LandmarkGenerator {
         }
 
         /// A ball.
-        func ball(_ c: V3, _ r: Double, segments n: Int = 10, _ colour: String) {
+        func ball(_ c: V3, _ r: Double, segments given: Int? = nil, _ colour: String) {
+            let n = given ?? roundSegments
             let m = max(3, n / 2)
             let rings = (0...m).map { j -> [V3] in
                 let phi = .pi * Double(j) / Double(m)
@@ -1742,21 +1871,27 @@ public enum LandmarkGenerator {
 
         /// A five-pointed star standing upright, its face toward `u`, `r`
         /// to a point, centred at `zc`.
+        /// A faceted star, as the Kremlin's: a ridge along each ray from a
+        /// raised middle to its sharp tip, the valleys between the rays
+        /// sharp, front and back alike, twenty facets in one closed solid
+        /// (the user, 2026-11-04: a flat plate drawn larger than life asked
+        /// for the detail its size shows).
         func star(_ c: P2, _ u: P2, _ v: P2, _ zc: Double, _ r: Double, _ colour: String) {
             begin()
-            let t = max(0.1, r * 0.2)
+            let t = max(0.08, r * 0.28)
             let pts: [(P2, Double)] = (0..<10).map { k in
                 let rr = k % 2 == 0 ? r : r * 0.4, a = Double.pi / 2 + Double(k) * .pi / 5
                 return (c + v * (rr * cos(a)), zc + rr * sin(a))
             }
-            func p(_ q: (P2, Double), _ side: Double) -> V3 { let s = q.0 + u * (side * t / 2); return V3(s.x, s.y, q.1) }
-            let front = V3(u.x, u.y, 0), centre: (P2, Double) = (c, zc)
-            for k in 0..<10 {
-                let e0 = pts[k], e1 = pts[(k + 1) % 10]
-                tri(p(centre, 1), p(e0, 1), p(e1, 1), front, colour)
-                tri(p(centre, -1), p(e0, -1), p(e1, -1), -front, colour)
-                let mid = ((e0.0 + e1.0) / 2 - c, (e0.1 + e1.1) / 2 - zc)
-                face([p(e0, 1), p(e1, 1), p(e1, -1), p(e0, -1)], V3(mid.0.x, mid.0.y, mid.1), colour)
+            func p(_ q: (P2, Double), _ depth: Double) -> V3 { let s = q.0 + u * depth; return V3(s.x, s.y, q.1) }
+            for side in [1.0, -1.0] {
+                let apex = p((c, zc), side * t)
+                for k in 0..<10 {
+                    let e0 = pts[k], e1 = pts[(k + 1) % 10]
+                    let mid = ((e0.0 + e1.0) / 2 - c, (e0.1 + e1.1) / 2 - zc)
+                    let hint = V3(u.x * side + mid.0.x * 0.3, u.y * side + mid.0.y * 0.3, mid.1 * 0.3)
+                    tri(apex, p(e0, 0), p(e1, 0), hint, colour)
+                }
             }
         }
     }
@@ -1792,7 +1927,8 @@ public enum LandmarkGenerator {
                     break
                 }
             }
-            rings[i] = ring
+            // Only a ring still simple (see sinkEdges).
+            if Geometry.polygon(ring + [ring[0]]).isValid { rings[i] = ring }
         }
     }
 
@@ -1986,7 +2122,11 @@ public enum LandmarkGenerator {
             var cleaned: [P2] = []
             for p in out where cleaned.last.map({ simd_length($0 - p) > 1e-6 }) ?? true { cleaned.append(p) }
             if cleaned.count > 1, simd_length(cleaned[0] - cleaned[cleaned.count - 1]) < 1e-6 { cleaned.removeLast() }
-            if cleaned.count >= 3 { rings[i] = cleaned }
+            // Only a ring still simple: a stretch pushed across a sharp
+            // notch of its own wall crosses itself, and a self-crossing solid
+            // in the union gave a vertex half a metre under the ground (the
+            // user, 2026-11-04: GUM's tile refused, nothing below the ground).
+            if cleaned.count >= 3, Geometry.polygon(cleaned + [cleaned[0]]).isValid { rings[i] = cleaned }
         }
     }
 

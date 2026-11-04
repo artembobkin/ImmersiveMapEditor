@@ -16,6 +16,25 @@ enum ClaudeSettings {
     /// How hard the agents think: Claude Code's --effort (low, medium, high,
     /// xhigh, max), or its default when empty.
     static let effortKey = "claude.effort"
+
+    /// The models and efforts to choose from, by their aliases, the empty
+    /// one Claude Code's own default: lists in every picker, and a stored
+    /// value outside them counts as the default (the user, 2026-11-04: a
+    /// text field took a typo for a model, and every run failed on it).
+    static let models: [(id: String, title: String)] = [
+        ("", "Default"), ("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku"),
+    ]
+    static let efforts: [(id: String, title: String)] = [
+        ("", "Default"), ("low", "Low"), ("medium", "Medium"), ("high", "High"), ("xhigh", "Extra high"), ("max", "Max"),
+    ]
+    static var model: String {
+        let v = UserDefaults.standard.string(forKey: modelKey) ?? ""
+        return models.contains { $0.id == v } ? v : ""
+    }
+    static var effort: String {
+        let v = UserDefaults.standard.string(forKey: effortKey) ?? ""
+        return efforts.contains { $0.id == v } ? v : ""
+    }
     /// How the agent finds the one or two things that make the building
     /// recognisable, for the generator to draw a size up (the user,
     /// 2026-10-28): "known" from what it knows of the place alone (a
@@ -27,7 +46,7 @@ enum ClaudeSettings {
     /// real size); the generator reads it as LANDMARK_EMPHASIS.
     static let exaggerationKey = "landmark.exaggeration"
     static var exaggeration: Double {
-        let v = UserDefaults.standard.object(forKey: exaggerationKey) as? Double ?? 2
+        let v = UserDefaults.standard.object(forKey: exaggerationKey) as? Double ?? 3
         return min(5, max(1, v))
     }
     /// The generator's environment for the editor's settings.
@@ -100,6 +119,10 @@ enum ClaudeSettings {
         var env = ProcessInfo.processInfo.environment
         env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] = "1"
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+        // A tool's answer Claude Code passes on whole: its default of 25 thousand
+        // tokens cut get_landmark off for St Basil's 514 parts (the user,
+        // 2026-11-04); the answers are bounded on our side too.
+        env["MAX_MCP_OUTPUT_TOKENS"] = "60000"
         let proxy = self.proxy, noProxy = self.noProxy
         if !proxy.isEmpty {
             for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] {

@@ -293,7 +293,7 @@ public struct LandmarkRecipe: Codable {
     the back (glass when `glass` is true, a glazed entrance) and a portal standing proud around it: every building has its entrances where the photos show them. \
     A plinth is a blind base, 3 m at most. A ground floor of its own colour, a rusticated or granite base with its shop fronts, \
     arches or windows, is a mass of its own from the ground to its top, with its windows and doors, and the body a mass \
-    from there up on the same outline, its base 0.3 m below the ground floor's top so they overlap (the build refuses a \
+    from there up on the same outline, its base at the ground floor's top, the generator makes them touch and joins them (the build refuses a \
     taller plinth: a building on 8 m of blind wall stands on a pedestal). Pilasters are vertical strips standing \
     proud of the walls (between the windows when they share the spacing); bands are string courses at the storey lines. \
     Give every size as the building has it: the generator draws the map's caricature itself, every cornice, band, pilaster, \
@@ -301,17 +301,18 @@ public struct LandmarkRecipe: Codable {
     A pitched roof has eaves 0.6 m beyond the walls with a fascia (`overhang` to change); a flat roof always gets a \
     parapet with a light rim (give `parapet` its height when the photos show a taller one). A flat roof's colour is the \
     map's own roof grey, lm_roof: leave it out unless satellite_view reads a colour of its own off the imagery (lm_green \
-    or lm_dark_green green, lm_red red, lm_dark black); a pitched roof's colour is what the imagery reads (lm_stone grey \
+    or lm_dark_green green, lm_red red; a dark metal roof is lm_stone, never lm_dark, which reads as a hole from above); a pitched roof's colour is what the imagery reads (lm_stone grey \
     metal too), given for every mass: never a guess. A historic building never ends in a bare flat cap: a parapet, a balustrade of shapes, or a \
     pitched roof with its eaves, so the roof reads as a volume of its own. Gabled, skillion (one slope, \
     rising across the short side), hipped and mansard roofs rise over the outline's smallest rectangle (the ridge along its long side); dome, onion, spire and pyramidal draw the \
     outline in to a point, so give them a round or square outline. A vault is a barrel vault along the outline's long side, `height` high (half its width unless given): in lm_glass a glazed vault with its ribs and rails, as the galleries of a passage or a station hall. A glass roof is always a vault, never gabled or flat planes of lm_glass, which read as blue slabs. A roof's height defaults to the outline's size.
     - A statue is a sculpture by its shape: figure (a standing person), horse, quadriga (a chariot drawn by four horses, \
-    as over a theatre's portico), equestrian (a rider on a horse), obelisk, cross (a church), star (a tower's). It faces \
+    as over a theatre's portico), equestrian (a rider on a horse), obelisk, cross (a church's), star (a tower's or a store's), flame (a \
+    monument's gilded tip), crescent (a crescent with a star in it, a mosque's, open at the top, on a pole). It faces \
     `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
     under it) with an optional `pedestal`, `height` tall and about `width` wide. Use it for the sculpture that makes the \
-    building recognisable, nothing else. Figures, horses and chariots are drawn as round solids with real silhouettes, \
-    and a statue with `"emphasis": true` is drawn twice its size.
+    building recognisable, nothing else. Figures, horses and chariots are drawn as round solids with real silhouettes, a star faceted with a ridge along each ray, a cross with flared ends and the ball at its foot, \
+    and a statue with `"emphasis": true` is drawn larger than life and finer, with more sides to its round solids.
     - Where these words do not describe the building, model it yourself from shapes, as many as it takes:
       "shapes": [
        {"kind": "box", "at": [x, y], "base": 0, "size": [along, across, up], "heading": 0, "pitch": 0, "colour": "lm_stone"},
@@ -329,10 +330,13 @@ public struct LandmarkRecipe: Codable {
     advertisement is not modelled. \
     A ring stands upright on its base, its face toward `heading`, `radius` to the middle of its `depth`-thick \
     band (a star in a ring: the ring and a statue of shape star at the same place, the star's height twice the radius). \
-    A shape or a feature with `"emphasis": true` is drawn a size up by the generator (half as large again): for the \
-    one or two things that make the building recognisable from afar, a tower, a dome, a statue; never more, and never \
-    a text, which the generator draws at its real size whatever is asked, nor a cone or a dome shape (a tower's tent roof or spire, a lantern's cap, \
-    which the generator leaves at their size too): what carries them is told by its own size, and a cap drawn larger is a mushroom over a drum. A dome that makes the building recognisable is a mass's dome roof given its real height, or a dome shape over a drum of its real width, never `emphasis`. \
+    Emphasis, `"emphasis": true`, is for what stands free on or before the building and makes it recognisable from afar, \
+    the one or two things a person points at: a sculpture or a finial, a statue feature (a figure, a horse, a quadriga, an \
+    obelisk, a cross, a star) or a ring or a sphere shape (a star's ring, a ball finial). The generator draws it a size up \
+    about its foot, so it stays on what carries it (a star on its pole on the spire's tip). Nothing else is ever emphasised, \
+    in any city: the building's own body, a tower, a dome, a cone, a drum, a portico, a platform, a box, lettering, is given its \
+    real size in the recipe and drawn at it, emphasis on it ignored and said back with the build. The caricature of the body comes from the \
+    generator itself. \
       A shape stands at `at` (its centre in plan) on `base`, `heading` turns it (0 north, 90 east), `pitch` tips its top \
     forward (a cylinder with pitch 90 lies along its heading: a beam). A sphere stands on its base; a dome is a half \
     sphere, flat side down. A loft draws its ring toward its centre ring by ring, [scale, rise] from the base up: a drum \
@@ -341,7 +345,9 @@ public struct LandmarkRecipe: Codable {
     are solids: let them overlap, or sink one a little into what it stands on, rather than share a face exactly. Nothing \
     cuts a hole: an opening is a prism with holes, or a loft. An upright box or a prism takes `doors` and `windows` as a mass \
     does (a podium with its entrances, a porch, a wing OSM does not draw): an entrance is always a recess cut into the wall \
-    with its leaf at the back and a portal around it, never a dark plate laid on the wall. Few large shapes before many \
+    with its leaf at the back and a portal around it, never a dark plate laid on the wall. An upright cylinder with `windows` is a \
+    round bay (a tower's rounded corner, a glazed bay of flats) with a ribbon of windows a storey between its parapets, \
+    its posts in `windows.colour`: a bay the photos show glazed is never a plain drum. Few large shapes before many \
     small ones, and 8 to 16 segments.
     - A colonnade stands along the line from `from` to `to`, its columns evenly spaced, a beam on top. A pediment is a triangle \
     over the line, reaching `depth` to the line's right (looking from `from` to `to`): put it on a facade's line with the \
@@ -359,7 +365,10 @@ public struct LandmarkRecipe: Codable {
     mass at their top height) that reaches the wall and the doors, the floor the portico's columns stand on; a colonnade \
     stands on a stylobate (a box) and carries its beam; a statue stands on a pedestal, a pediment or a roof; a balcony has \
     a floor; nothing floats and nothing ends in the air.
-    - Use the OSM outlines where they are good. OSM heights can be wrong: trust the photos, and say so.
+    - Use the OSM outlines where they are good. OSM heights can be wrong: trust the photos, and say so. A height differs \
+    within one outline only where a photo shows a step in the roofline or OSM has parts of their own heights: the \
+    satellite view tells roof colours and plan, never height, and a lighter patch of roof is not a lower wing (the one \
+    height it shows is the shadow's length). An outline of one OSM height with no parts is one height, wing and all.
     """
 
     public static func read(_ url: URL) throws -> LandmarkRecipe {
@@ -468,10 +477,17 @@ public struct LandmarkSource {
     /// there are no parts) from its base to its height, its roof by
     /// roof:shape, its colours the palette's landmark colours nearest to
     /// building:colour and roof:colour, windows by its levels.
+    public static let starterMasses = 80
+
     public func starterRecipe() -> LandmarkRecipe {
         let parts = buildings.filter(\.part)
         var r = LandmarkRecipe()
-        r.masses = (parts.isEmpty ? buildings : parts).map { b in
+        // The largest `starterMasses` parts at most: St Basil's 514 made a
+        // starter the agent's tool could not pass on (the user, 2026-11-04).
+        let taken = (parts.isEmpty ? buildings : parts)
+            .sorted { $0.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } > $1.polygons.reduce(0.0) { $0 + abs(signedArea($1[0])) } }
+            .prefix(Self.starterMasses)
+        r.masses = taken.map { b in
             let top = b.height ?? (b.part ? 10 : 12)
             var m = LandmarkRecipe.Mass(id: b.osm, outline: b.osm, base: b.base, top: max(top, b.base + 0.5),
                                         colour: Self.landmarkColour(b.tags["building:colour"]) ?? "lm_cream")

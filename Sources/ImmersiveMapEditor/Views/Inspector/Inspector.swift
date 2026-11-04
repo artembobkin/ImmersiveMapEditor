@@ -41,7 +41,10 @@ struct Inspector: View {
                     LightSections()
                     if session.workspace.previewSubject == "tile" { TilesSections() }
                 case .buildings:
-                    BuildingsSections()
+                    // A landmark open is all the panel is about: the picked
+                    // buildings' sections stayed above it, with Open Landmark
+                    // and Model with Claude twice (the user, 2026-11-04).
+                    if session.pickedLandmark == nil { BuildingsSections() }
                     LandmarksSections()
                 case .style: StyleSections()
                 case .engine: EngineSections()
@@ -127,7 +130,7 @@ struct BuildSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Build \(session.workspace.tile?.name ?? "the tile")").font(.headline)
+            Text("Build \(session.buildTarget?.name ?? "the tile")").font(.headline)
                 .help("What the tile's model holds. The light is not baked here: Bake does that after.")
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Self.parts, id: \.key) { part in

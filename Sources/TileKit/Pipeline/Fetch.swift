@@ -14,7 +14,15 @@ import Geometry
 /// The OSM on disk is kept unless asked to fetch again, so the sources
 /// stay fixed while the style is worked out.
 public enum Fetch {
-    static let overpass = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+    /// The public Overpass servers, tried in turn and again in rounds: each
+    /// is overloaded now and then, a 502 or 504 a moment long, so a tile is
+    /// asked of the next and of all of them again after a wait before it
+    /// is given up (the user, 2026-11-04: the source down all the time).
+    static let overpass = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+                           "https://overpass.osm.jp/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+                           "https://overpass.kumi.systems/api/interpreter"]
+    /// The rounds over the servers, and the wait before each round after the first.
+    static let rounds = 3, waits = [0.0, 10, 30]
     static let userAgent = "TilePipeline/0.1 (experimental 3D map tiles; github.com/artembobkin/ImmersiveMapEditor)"
 
     static func longitudeOfColumn(_ c: Double, _ z: Int) -> Double { c / pow(2, Double(z)) * 360 - 180 }
@@ -46,31 +54,43 @@ public enum Fetch {
     /// out: they would pull in half the city.
     static func query(_ b: [String: Double]) -> String {
         let box = String(format: "%.7f,%.7f,%.7f,%.7f", b["south"]!, b["west"]!, b["north"]!, b["east"]!)
-        return "[out:json][timeout:300][maxsize:536870912];\n"
+        // The elements with their tags and geometry alone (`out body`): the
+        // metadata of every element (user, version, changeset) was never
+        // kept, and asking for it made the answer a third larger and the
+        // server's work longer; a quota of 256 MB, since a tile is 25 at
+        // most and a server under load refuses a larger ask.
+        return "[out:json][timeout:180][maxsize:268435456];\n"
             + "(node(\(box)); way(\(box)); rel(\(box))[type~\"^(multipolygon|building)$\"];)->.a;\n"
-            + "(.a; .a >;);\nout meta;\n"
+            + "(.a; .a >;);\nout body;\n"
     }
 
     static func download(_ query: String) throws -> (String, Data) {
         var last = "no server answered"
-        for server in overpass {
-            print("[osm] \(server)")
-            var request = URLRequest(url: URL(string: server)!, timeoutInterval: 400)
-            request.httpMethod = "POST"
-            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            var allowed = CharacterSet.alphanumerics
-            allowed.insert(charactersIn: "-._~")
-            request.httpBody = Data(("data=" + query.addingPercentEncoding(withAllowedCharacters: allowed)!).utf8)
-            let result = Receiver.fetch(request, host: URL(string: server)!.host ?? server)
-            if let data = result.data, (result.response as? HTTPURLResponse)?.statusCode == 200,
-               (try? JSONSerialization.jsonObject(with: data)) != nil {
-                return (server, data)
+        for round in 0..<rounds {
+            if round > 0 {
+                let wait = waits[min(round, waits.count - 1)]
+                print("[osm] every server refused; round \(round + 1) of \(rounds) in \(Int(wait)) s")
+                Thread.sleep(forTimeInterval: wait)
             }
-            last = result.error?.localizedDescription ?? "HTTP \((result.response as? HTTPURLResponse)?.statusCode ?? 0)"
-            print("[osm] failed: \(last)")
+            for server in overpass {
+                print("[osm] \(server)")
+                var request = URLRequest(url: URL(string: server)!, timeoutInterval: 400)
+                request.httpMethod = "POST"
+                request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                var allowed = CharacterSet.alphanumerics
+                allowed.insert(charactersIn: "-._~")
+                request.httpBody = Data(("data=" + query.addingPercentEncoding(withAllowedCharacters: allowed)!).utf8)
+                let result = Receiver.fetch(request, host: URL(string: server)!.host ?? server)
+                if let data = result.data, (result.response as? HTTPURLResponse)?.statusCode == 200,
+                   (try? JSONSerialization.jsonObject(with: data)) != nil {
+                    return (server, data)
+                }
+                last = result.error?.localizedDescription ?? "HTTP \((result.response as? HTTPURLResponse)?.statusCode ?? 0)"
+                print("[osm] failed: \(last)")
+            }
         }
-        throw PipelineError("Overpass failed: \(last)")
+        throw PipelineError("Overpass failed on every server in \(rounds) rounds: \(last)")
     }
 
     static func summary(_ elements: [[String: Any]]) -> [String: Any] {

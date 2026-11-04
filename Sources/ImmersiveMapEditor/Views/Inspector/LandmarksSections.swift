@@ -17,7 +17,7 @@ struct LandmarksSections: View {
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
     @AppStorage(ClaudeSettings.emphasisKey) private var emphasis = "photos"
-    @AppStorage(ClaudeSettings.exaggerationKey) private var exaggeration = 2.0
+    @AppStorage(ClaudeSettings.exaggerationKey) private var exaggeration = 3.0
     @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 3
     @AppStorage(ClaudeSettings.atOnceKey) private var atOnce = 3
     @State private var forgetting = false
@@ -142,22 +142,13 @@ struct LandmarksSections: View {
         }
         Section {
             DisclosureGroup("Claude's settings", isExpanded: $settingsShown) {
-                Picker("Model", selection: $model) {
-                    Text("Default").tag("")
-                    Text("Fable").tag("fable")
-                    Text("Opus").tag("opus")
-                    Text("Sonnet").tag("sonnet")
-                    Text("Haiku").tag("haiku")
+                Picker("Model", selection: Binding(get: { ClaudeSettings.model }, set: { model = $0 })) {
+                    ForEach(ClaudeSettings.models, id: \.id) { Text($0.title).tag($0.id) }
                 }
                 .pickerStyle(.menu).disabled(session.agent.running)
                 .help("Which Claude models the landmark: Claude Code's default, or one by name.")
-                Picker("Effort", selection: $effort) {
-                    Text("Default").tag("")
-                    Text("Low").tag("low")
-                    Text("Medium").tag("medium")
-                    Text("High").tag("high")
-                    Text("Extra high").tag("xhigh")
-                    Text("Max").tag("max")
+                Picker("Effort", selection: Binding(get: { ClaudeSettings.effort }, set: { effort = $0 })) {
+                    ForEach(ClaudeSettings.efforts, id: \.id) { Text($0.title).tag($0.id) }
                 }
                 .pickerStyle(.menu).disabled(session.agent.running)
                 .help("How hard Claude thinks before each step: more is slower and dearer, and steadier on the geometry.")

@@ -99,7 +99,15 @@ public enum Pipeline {
                 let result = try Validate.tile(folder)
                 print("  validate  \(result.ok ? "ok" : "FAILED")")
                 for c in result.checks where !c.ok { print("    FAIL \(c.name) \(c.detail)") }
-                state["state"] = result.ok ? "ok" : "failed at validate"
+                // A build of parts the tile has none of is not a build: no
+                // placement, so the tile is not counted as built nor put
+                // in the archive (the user, 2026-11-04: landmarks alone asked
+                // of a tile with none).
+                if result.triangles == 0 {
+                    try? FileManager.default.removeItem(at: folder.appendingPathComponent("placement.json"))
+                    print("  nothing built: the tile has none of the parts asked for (\(options.parts.sorted().joined(separator: ", "))), not counted as built")
+                }
+                state["state"] = result.triangles == 0 ? "empty" : result.ok ? "ok" : "failed at validate"
                 state["triangles"] = result.triangles
                 state["glb_mb"] = round(Double(result.bytes) / 1e5) / 10
             } catch {
@@ -112,8 +120,9 @@ public enum Pipeline {
             try registry.record(tile: z, x, y, state: state["state"] as? String ?? "?", seconds: state["seconds"] as? Double ?? 0,
                                 triangles: state["triangles"] as? Int ?? 0, detail: (state["glb_mb"] as? Double).map { "\($0) MB" } ?? "")
         }
-        let failed = index.values.filter { ($0["state"] as? String) != "ok" }.count
-        print("\(index.count - failed) tiles ok, \(failed) failed")
+        let states = index.values.map { $0["state"] as? String ?? "?" }
+        let failed = states.filter { $0 != "ok" && $0 != "empty" }.count, empty = states.filter { $0 == "empty" }.count
+        print("\(index.count - failed - empty) tiles ok, \(failed) failed" + (empty > 0 ? ", \(empty) empty" : ""))
         return failed == 0
     }
 }
