@@ -34,6 +34,13 @@ for f in $(find "$SHADERS/Avatars/Shaders" "$SHADERS/Globe/Shaders" "$SHADERS/Ho
     xcrun -sdk macosx metal -O3 -c -o "$AIR/$n.air" "$f"
 done
 xcrun -sdk macosx metallib -o "$APP/Contents/Resources/ImmersiveMap_ImmersiveMap.bundle/default.metallib" "$AIR"/*.air
+# And as the app's own default library: SwiftPM's Bundle.module looks for the
+# engine's bundle beside the .app, not in Contents/Resources (where signing
+# allows it), then falls back to the build folder's path compiled in, whose
+# bundle has no library; the engine then takes the main bundle's library
+# (RendererSetup.makeLibrary), which is this one (the user, 2026-11-05: the
+# library in the engine's bundle alone was never read, the crash stayed).
+cp "$APP/Contents/Resources/ImmersiveMap_ImmersiveMap.bundle/default.metallib" "$APP/Contents/Resources/default.metallib"
 rm -rf "$AIR"
 echo "the engine's $n shaders compiled into its default.metallib"
 # The icon: Icon/AppIcon.png (drawn by Icon/MakeIcon.swift) at every size macOS asks for.
