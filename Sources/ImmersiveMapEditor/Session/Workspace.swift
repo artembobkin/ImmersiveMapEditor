@@ -20,6 +20,12 @@ enum ViewMode: String, CaseIterable, Identifiable {
     /// The engine's own map with the model archive over it (the user, 2026-11-02).
     case engine = "Engine"
     var id: String { rawValue }
+
+    /// The views in the window over a tile: all of them, less the Roads view
+    /// while it is hidden (`Features.roads`) and less Style, which is at the
+    /// level of every tile, with the map (the user, 2026-11-05: a tile only
+    /// picks its palette).
+    static var shown: [ViewMode] { allCases.filter { ($0 != .roads || Features.roads) && $0 != .style } }
 }
 
 /// What the app's data folder (`root`, laid out as TileKit's WorkspacePaths:

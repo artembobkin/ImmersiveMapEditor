@@ -124,6 +124,7 @@ public enum Bake {
             let started = Date()
             do {
                 let out = paths.tileOut(z: z, x: x, y: y)
+                Palette.load(paths, z: z, x: x, y: y)
                 let bake = out.appendingPathComponent(folder)
                 let sceneURL = bake.appendingPathComponent("scene.bin")
                 guard FileManager.default.fileExists(atPath: sceneURL.path) else {

@@ -3,12 +3,13 @@
 
 import Foundation
 
-/// The model tile, version 4: every model whose origin lies in one zoom 14
+/// The model tile, version 5: every model whose origin lies in one zoom 14
 /// map tile, merged into one mesh and ready for the GPU. One vertex buffer,
 /// one index buffer and one texture array serve the whole tile, every
-/// vertex is in the tile's own space, and the models that take no state of
-/// their own come first in the indices, so the map draws them all in one
-/// call under one matrix, the tile's.
+/// vertex is in the tile's own space, and the map draws them all in one
+/// call under one matrix, the tile's (version 4 had models that cut into
+/// the ground, drawn one by one after the merged ones: gone with the
+/// engine's 0.12.0, the user, 2026-11-05).
 ///
 /// Tile space is the space the map's own buildings are in: X east and Y
 /// north from the tile's south-west corner, `tileExtent` units to a tile
@@ -27,7 +28,7 @@ import Foundation
 /// Header, `headerByteCount` bytes:
 ///
 ///     0   4 bytes  magic "IMMT"
-///     4   u32      version, 4
+///     4   u32      version, 5
 ///     8   u32 x 3  tile zoom, x, y
 ///     20  u32      model count
 ///     24  u32      vertex count
@@ -43,29 +44,25 @@ import Foundation
 ///     80  u32 x 2  index block offset, byte count
 ///     88  u32 x 2  texture block offset, byte count
 ///     96  u32 x 2  replaced building block offset, byte count
-///     104 u32      merged index count: the indices from the first that
-///                  draw in one call
+///     104 u32      reserved, 0 (version 4: the merged index count)
 ///     108 u32      reserved, 0
 ///     112 f32 x 3  minimum of the tile's bounding box, tile space
 ///     124 f32 x 3  maximum of the tile's bounding box, tile space
 ///
-/// Model table, `modelRecordByteCount` bytes per model. The models whose
-/// indices are merged come first, then the ones that cut into the ground,
-/// which the map draws one by one:
+/// Model table, `modelRecordByteCount` bytes per model:
 ///
 ///     0   f64 x 2  latitude, longitude of the model's origin, degrees
 ///     16  f32      altitude of the origin above the map surface, meters,
 ///                  already in the vertices
-///     20  u32      flags: bit 0, the model cuts into the ground
-///     24  u32 x 2  the buildings the model replaces, in the replaced
+///     20  u32 x 2  the buildings the model replaces, in the replaced
 ///                  building block: first entry, entry count
-///     32  u32      reserved, 0
-///     36  u32 x 2  the model's id in the string block: offset, byte count
-///     44  u32 x 2  first index, index count
-///     52  u32 x 2  first vertex, vertex count
-///     60  f32 x 3  minimum of the model's bounding box, tile space
-///     72  f32 x 3  maximum of the model's bounding box, tile space
-///     84  u32      reserved, 0
+///     28  u32      reserved, 0
+///     32  u32 x 2  the model's id in the string block: offset, byte count
+///     40  u32 x 2  first index, index count
+///     48  u32 x 2  first vertex, vertex count
+///     56  f32 x 3  minimum of the model's bounding box, tile space
+///     68  f32 x 3  maximum of the model's bounding box, tile space
+///     80  u32      reserved, 0
 ///
 /// String block: the ids, UTF-8, one after another.
 ///
@@ -102,7 +99,7 @@ import Foundation
 /// `ceil(w / edge) * ceil(h / edge) * 16` bytes per layer.
 enum ModelTileFormat {
     static let magic: [UInt8] = Array("IMMT".utf8)
-    static let version: UInt32 = 4
+    static let version: UInt32 = 5
     static let replacedBuildingEntryByteCount = 16
     static let headerByteCount = 136
     /// The units of tile space along a tile's edge, the map's own extent.
@@ -112,7 +109,7 @@ enum ModelTileFormat {
     static let earthCircumferenceMeters: Double = 40_075_016.686
     /// The bits of a replaced building entry the element's kind sits above.
     static let replacedBuildingKindShift: UInt64 = 60
-    static let modelRecordByteCount = 88
+    static let modelRecordByteCount = 84
     static let vertexStride = 20
     static let blockAlignment = 16_384
 }
@@ -141,7 +138,6 @@ struct ModelTileModel {
     var latitude: Double
     var longitude: Double
     var altitudeMeters: Float
-    var cutsIntoGround: Bool
     /// The features of the map's own tiles the model stands in for, each in
     /// the map tiles of one zoom.
     var replacedBuildings: [ReplacedBuilding]
@@ -167,11 +163,8 @@ struct ModelTile {
     var zoom: Int
     var x: Int
     var y: Int
-    /// The models whose indices are merged first, then the ones that cut
-    /// into the ground.
+    /// The models, every one's indices merged.
     var models: [ModelTileModel]
-    /// The indices from the first that the map draws in one call.
-    var mergedIndexCount: Int
     var boundsMinimum: SIMD3<Float>
     var boundsMaximum: SIMD3<Float>
     /// `vertexCount` vertices of `ModelTileFormat.vertexStride` bytes.
@@ -192,7 +185,6 @@ struct ModelTile {
             table.append(model.latitude)
             table.append(model.longitude)
             table.append(model.altitudeMeters)
-            table.append(UInt32(model.cutsIntoGround ? 1 : 0))
             table.append(UInt32(replaced.count / ModelTileFormat.replacedBuildingEntryByteCount))
             table.append(UInt32(model.replacedBuildings.count))
             for entry in model.replacedBuildings {
@@ -264,7 +256,7 @@ struct ModelTile {
             writer.append(UInt32(offset))
             writer.append(UInt32(byteCount))
         }
-        writer.append(UInt32(mergedIndexCount))
+        writer.append(UInt32(0))   // reserved (version 4: the merged index count)
         writer.append(UInt32(0))
         for value in [boundsMinimum.x, boundsMinimum.y, boundsMinimum.z,
                       boundsMaximum.x, boundsMaximum.y, boundsMaximum.z] {

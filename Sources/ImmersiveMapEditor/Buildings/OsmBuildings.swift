@@ -13,6 +13,15 @@ struct OsmBuilding: Identifiable {
     let polygons: [[[Vec2]]]
     /// A building:part (drawn over the outlines), not a whole building.
     let isPart: Bool
+    /// A monument, not a building (the user, 2026-11-05: a statue, a
+    /// helicopter on a pedestal, with a label on the engine's map and no
+    /// box): historic=monument or memorial, tourism=artwork, man_made=obelisk,
+    /// an area of OSM or a node, to be made a landmark and modelled.
+    var monument = false
+    /// An OSM node, with no outline: its polygon is a plot of
+    /// `OsmBuildings.plotRadius` round it, drawn as a disc and told to the
+    /// agent as a plot, not a wall.
+    var point = false
 
     var name: String? { tags["name"] ?? tags["name:en"] }
     /// Its street and number, "Юбилейный проспект, 12", when OSM has them:
@@ -80,9 +89,12 @@ final class OsmBuildings {
     /// name, kind and height, else the count.
     var hoverStatus: String {
         guard let id = hovered, let b = all.first(where: { $0.id == id }) else { return status }
-        let kind = b.isPart ? (b.tags["building:part"].map { $0 == "yes" ? "part" : "part, \($0)" } ?? "part")
+        let kind = b.monument ? "monument" + (b.point ? " (a point)" : "")
+            : b.isPart ? (b.tags["building:part"].map { $0 == "yes" ? "part" : "part, \($0)" } ?? "part")
             : (b.tags["building"].map { $0 == "yes" ? "building" : $0 } ?? "building")
-        return [b.name, kind, b.height.map { String(format: "%.0f m", $0) }, BuildingNote.reason(b.tags).map { "notable: \($0)" }]
+        // The address too, for the houses with no name (the user, 2026-11-05:
+        // the Painted Ladies are seven addresses on Steiner Street).
+        return [b.name, b.address, kind, b.height.map { String(format: "%.0f m", $0) }, BuildingNote.reason(b.tags).map { "notable: \($0)" }]
             .compactMap { $0 }.joined(separator: " · ")
     }
 
@@ -161,11 +173,23 @@ final class OsmBuildings {
             // made from the OSM (its own cache, or the JSON) and kept.
             if let kept = BuildingsCache.read(folder: folder, stamp: stamp) { return (t, kept) }
             guard let osm = try? Osm(t) else { return nil }
-            let buildings = osm.areas().compactMap { a -> OsmBuilding? in
+            var buildings = osm.areas().compactMap { a -> OsmBuilding? in
                 let part = a.tags["building:part"] != nil && a.tags["building:part"] != "no"
-                guard part || (a.tags["building"] != nil && a.tags["building"] != "no") else { return nil }
+                let building = part || (a.tags["building"] != nil && a.tags["building"] != "no")
+                let monument = !building && BuildingNote.isMonument(a.tags)
+                guard building || monument else { return nil }
                 let polygons = a.shape.polygons.map { p in [p.exterior] + p.interiors }.map { $0.map { $0.map { Vec2($0.x, $0.y) } } }
-                return OsmBuilding(id: "\(a.kind)/\(a.id)", tags: a.tags, polygons: polygons, isPart: part)
+                return OsmBuilding(id: "\(a.kind)/\(a.id)", tags: a.tags, polygons: polygons, isPart: part, monument: monument)
+            }
+            // The monuments mapped as a node: a disc of `plotRadius` round each,
+            // its plot, so it is drawn, picked and made a landmark as a building is.
+            for node in osm.nodes.values.sorted(by: { $0.id < $1.id }) where BuildingNote.isMonument(node.tags) {
+                let c = osm.point(node.id)
+                let ring = (0..<16).map { k -> Vec2 in
+                    let a = Double(k) / 16 * 2 * .pi
+                    return Vec2(c.x + OsmBuildings.plotRadius * cos(a), c.y + OsmBuildings.plotRadius * sin(a))
+                }
+                buildings.append(OsmBuilding(id: "node/\(node.id)", tags: node.tags, polygons: [[ring]], isPart: false, monument: true, point: true))
             }
             BuildingsCache.write(buildings, folder: folder, stamp: stamp)
             return (t, buildings)
@@ -191,6 +215,8 @@ final class OsmBuildings {
     private var parsed: [TileKey: (tile: Tile, buildings: [OsmBuilding], stamp: String)] = [:]
     private var order: [TileKey] = []
     private static let kept = 4
+    /// The plot round a monument mapped as a node, in metres.
+    nonisolated static let plotRadius = 5.0
 
     /// A tile's buildings shown: its projection and square, the buildings
     /// outlines first and parts over them, as they are drawn, the status.
@@ -200,8 +226,10 @@ final class OsmBuildings {
         square = (Vec2(-half, -half), Vec2(half, half))
         all = buildings.sorted { !$0.isPart && $1.isPart }
         let outlines = buildings.filter { !$0.isPart }
-        status = "\(outlines.count) buildings, \(buildings.filter(\.isPart).count) parts, "
-            + "\(outlines.filter { $0.note == .notable }.count) notable, \(outlines.filter { $0.note == .named }.count) named besides"
+        let monuments = buildings.filter(\.monument).count
+        status = "\(outlines.count - monuments) buildings, \(buildings.filter(\.isPart).count) parts, "
+            + "\(outlines.filter { $0.note == .notable && !$0.monument }.count) notable, \(outlines.filter { $0.note == .named }.count) named besides"
+            + (monuments > 0 ? ", \(monuments) monument\(monuments == 1 ? "" : "s")" : "")
     }
 
     /// The whole building under a point: its outline (the smallest building

@@ -8,17 +8,27 @@ import TileKit
 /// `config/palettes/`, the colours set over TileKit's defaults by name and
 /// the landmark colours added beyond them. The one chosen is copied to
 /// `config/palette.json`, which the pipeline and the landmark generator
-/// read, so every build, every run of Claude and every preview paints with
-/// the palette chosen. The Style view edits the one in use; a change is
-/// saved to both files at once.
+/// read for a tile that remembers none. A tile remembers its own in its
+/// `palette.json` (the user, 2026-11-05: a palette is a city's, and with
+/// one for the data folder a Jakarta tile would not build while Moscow's
+/// was chosen): the toolbar's menu while a tile is open sets the tile's,
+/// while choosing it sets the data folder's. The Style view edits the one
+/// shown, saved to its own file (and to palette.json when it is the data
+/// folder's).
 @Observable
 @MainActor
 final class PaletteEdits {
     private(set) var paths: WorkspacePaths?
     /// The palettes kept, by name, sorted.
     private(set) var names: [String] = []
-    /// The one in use.
+    /// The one shown: the tile's, or the data folder's while choosing.
     private(set) var active = "Common"
+    /// The tile whose palette is shown, none while choosing.
+    private(set) var tile: (z: Int, x: Int, y: Int)?
+    /// The data folder's palette in use, for tiles that remember none.
+    private(set) var defaultName = "Common"
+    /// Whether the tile shown remembers a palette of its own.
+    var remembered: Bool { tile.map { Palette.tileName(paths!, z: $0.z, x: $0.x, y: $0.y) != nil } ?? false }
     /// Its colours set over the defaults, by name.
     private(set) var colours: [String: String] = [:]
     /// Its landmark colours added beyond the defaults.
@@ -39,8 +49,18 @@ final class PaletteEdits {
 
     func load(_ paths: WorkspacePaths) {
         self.paths = paths
+        tile = nil
         seedIfNone(paths)
         Palette.load(paths)
+        take()
+    }
+
+    /// The palette of this tile shown and applied (nil: the data folder's,
+    /// while choosing).
+    func show(tile: (z: Int, x: Int, y: Int)?) {
+        guard let paths else { return }
+        self.tile = tile
+        if let tile { Palette.load(paths, z: tile.z, x: tile.x, y: tile.y) } else { Palette.load(paths) }
         take()
     }
 
@@ -65,15 +85,23 @@ final class PaletteEdits {
         names = ((try? FileManager.default.contentsOfDirectory(atPath: Palette.palettesFolder(paths).path)) ?? [])
             .filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }.sorted()
         active = Palette.activeName
+        defaultName = Palette.File.read(Palette.file(paths))?.name ?? "Common"
         colours = Palette.overrides
         extras = Palette.extras
         revision += 1
     }
 
-    /// The palette of this name put in use: copied to palette.json and applied.
+    /// The palette of this name put in use: remembered by the tile shown and
+    /// applied, or, while choosing, copied to palette.json as the data
+    /// folder's.
     func select(_ name: String) {
         guard let paths, let palette = Palette.File.read(Palette.palettesFolder(paths).appendingPathComponent(name + ".json")) else { return }
-        try? Palette.save(palette, paths)
+        if let tile {
+            try? Palette.remember(name, paths, z: tile.z, x: tile.x, y: tile.y)
+            Palette.load(paths, z: tile.z, x: tile.x, y: tile.y)
+        } else {
+            try? Palette.save(palette, paths)
+        }
         take()
     }
 
@@ -90,7 +118,14 @@ final class PaletteEdits {
     func delete(_ name: String) {
         guard let paths, names.count > 1 else { return }
         try? FileManager.default.removeItem(at: Palette.palettesFolder(paths).appendingPathComponent(name + ".json"))
-        if active == name, let other = names.first(where: { $0 != name }) { select(other) } else { take() }
+        // A tile that remembered it forgets it, and the data folder's falls
+        // back to another; the other tiles that remembered it fall back to
+        // the data folder's at their next build.
+        if let tile, active == name { try? Palette.remember(nil, paths, z: tile.z, x: tile.x, y: tile.y) }
+        if defaultName == name, let other = names.first(where: { $0 != name }) {
+            if let other = Palette.File.read(Palette.palettesFolder(paths).appendingPathComponent(other + ".json")) { try? other.write(Palette.file(paths)) }
+        }
+        show(tile: tile)
     }
 
     func set(_ name: String, _ hex: String) {
@@ -123,13 +158,14 @@ final class PaletteEdits {
         save()
     }
 
-    /// The palette in use written to palette.json and to its own file.
+    /// The palette shown written to its own file, and to palette.json when
+    /// it is the data folder's, then applied again.
     private func save() {
         guard let paths else { return }
         let palette = Palette.File(name: active, colours: colours, extra: extras)
-        try? Palette.save(palette, paths)
         try? palette.write(Palette.palettesFolder(paths).appendingPathComponent(active + ".json"))
-        take()
+        if active == defaultName { try? palette.write(Palette.file(paths)) }
+        show(tile: tile)
     }
 
     /// A colour of the tables, by name, as it is now.

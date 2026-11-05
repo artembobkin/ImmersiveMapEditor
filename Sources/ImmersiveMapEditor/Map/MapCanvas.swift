@@ -51,7 +51,7 @@ struct MapCanvas: View {
                 if picked || marked { ctx.fill(Path(r), with: .color(.blue.opacity(picked ? 0.3 : 0.2))) }
                 ctx.stroke(Path(r), with: .color(.black.opacity(0.25)), lineWidth: 1)
                 if marked && !picked { ctx.stroke(Path(r.insetBy(dx: 1, dy: 1)), with: .color(.blue.opacity(0.8)), lineWidth: 1.5) }
-                if workspace.document(holding: t) != nil {
+                if Features.roads, workspace.document(holding: t) != nil {
                     ctx.stroke(Path(r.insetBy(dx: 2, dy: 2)), with: .color(.purple.opacity(0.8)), lineWidth: 1.5)
                 }
                 if picked { ctx.stroke(Path(r.insetBy(dx: 1, dy: 1)), with: .color(.blue), lineWidth: 2.5) }

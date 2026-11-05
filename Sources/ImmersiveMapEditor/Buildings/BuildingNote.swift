@@ -33,6 +33,21 @@ enum BuildingNote: Int, Comparable {
     /// Why a building is notable: the tag that says so, as "key = value",
     /// for the status line and the picked list (the user, 2026-11-02: a
     /// building tinted as notable with no name, and no way to see why).
+    /// Whether the tags are a monument's: a statue, a memorial with a
+    /// figure (not a plaque or a stone in the pavement), a sculpture, an
+    /// obelisk (the user, 2026-11-05: the helicopter on its pedestal is a
+    /// node with a label and no box).
+    static func isMonument(_ tags: [String: String]) -> Bool {
+        if tags["historic"] == "monument" || tags["man_made"] == "obelisk" { return true }
+        if tags["historic"] == "memorial" {
+            return !["plaque", "blue_plaque", "stolperstein", "stone", "plate", "bench", "tree"].contains(tags["memorial"] ?? "")
+        }
+        if tags["tourism"] == "artwork" {
+            return ["statue", "sculpture", "bust", "installation", "monument", "stone"].contains(tags["artwork_type"] ?? "")
+        }
+        return false
+    }
+
     static func reason(_ tags: [String: String]) -> String? {
         if let v = tags["wikidata"] { return "wikidata = \(v)" }
         if let v = tags["wikipedia"] { return "wikipedia = \(v)" }

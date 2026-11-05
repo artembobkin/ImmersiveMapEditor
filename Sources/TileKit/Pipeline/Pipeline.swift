@@ -88,6 +88,7 @@ public enum Pipeline {
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(stale))
                 }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
+                Palette.load(paths, z: z, x: x, y: y)
                 let t0 = Date()
                 var light = Lighting.Settings()
                 light.samples = options.samples

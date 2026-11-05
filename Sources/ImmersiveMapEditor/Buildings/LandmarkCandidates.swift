@@ -122,6 +122,9 @@ enum LandmarkCandidates {
                 var e: [String: Any] = ["osm": b.id, "part": b.isPart, "tags": b.tags, "min_height_m": b.minHeight,
                                         "outline": rings(b)]
                 if let h = b.height { e["height_m"] = h }
+                // A monument: its outline the plot round the node, not a wall.
+                if b.monument { e["monument"] = true }
+                if b.point { e["point"] = true; e["plot_radius_m"] = OsmBuildings.plotRadius }
                 return e
             },
         ]

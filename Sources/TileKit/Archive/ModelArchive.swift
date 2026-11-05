@@ -113,10 +113,8 @@ public enum ModelArchive {
             throw BakeError("tile \(zoom)/\(x)/\(y): two models share the id \"\(entry.placement.id)\"")
         }
 
-        // The models the map draws in one call first, the ones that cut into
-        // the ground after them: their indices follow the merged ones.
-        let merged = placements.filter { ($0.placement.cutsIntoGround ?? false) == false }
-        let separate = placements.filter { $0.placement.cutsIntoGround ?? false }
+        // Every model is merged: the map draws the tile in one call (no
+        // model cuts into the ground, the user, 2026-11-05).
 
         var models: [ModelTileModel] = []
         var vertices = ByteWriter()
@@ -125,20 +123,19 @@ public enum ModelArchive {
         var layers: [EncodedTexture] = []
         var tileMinimum = SIMD3<Float>(repeating: .infinity)
         var tileMaximum = SIMD3<Float>(repeating: -.infinity)
-        var mergedIndexCount = 0
 
         let tilesAcross = Double(1 << zoom)
         // The size every layer of the tile's array takes: the largest
         // texture of its models, the smaller ones grown to it.
         var layerSize: (width: Int, height: Int)?
-        for (placement, file) in merged + separate {
+        for (placement, file) in placements {
             let modelURL = file.deletingLastPathComponent().appendingPathComponent(placement.model)
             for primitive in try GLBReader.read(modelURL) {
                 guard let size = TextureEncoder.pngSize(primitive.image) else { continue }
                 if layerSize.map({ size.width > $0.width || size.height > $0.height }) ?? true { layerSize = size }
             }
         }
-        for (placement, file) in merged + separate {
+        for (placement, file) in placements {
             let origin = placement.origin
             let tile = tileCoordinate(latitude: origin.latitude, longitude: origin.longitude, zoom: zoom)
             guard tile.x == x, tile.y == y else {
@@ -212,17 +209,12 @@ public enum ModelArchive {
                 indices.append(contentsOf: primitive.indices.map { $0 + baseVertex })
             }
 
-            let cutsIntoGround = placement.cutsIntoGround ?? false
-            if cutsIntoGround == false {
-                mergedIndexCount = indices.count
-            }
             tileMinimum = simd_min(tileMinimum, minimum)
             tileMaximum = simd_max(tileMaximum, maximum)
             models.append(ModelTileModel(id: placement.id,
                                          latitude: origin.latitude,
                                          longitude: origin.longitude,
                                          altitudeMeters: Float(altitude),
-                                         cutsIntoGround: cutsIntoGround,
                                          replacedBuildings: try placement.replacedBuildings(),
                                          firstIndex: UInt32(firstIndex),
                                          indexCount: UInt32(indices.count - firstIndex),
@@ -240,7 +232,6 @@ public enum ModelArchive {
             layers.map { $0.levels[level] }
         }
         return ModelTile(zoom: zoom, x: x, y: y, models: models,
-                         mergedIndexCount: mergedIndexCount,
                          boundsMinimum: tileMinimum,
                          boundsMaximum: tileMaximum,
                          vertices: vertices.data, indices: indices,

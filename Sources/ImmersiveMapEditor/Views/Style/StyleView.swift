@@ -13,7 +13,10 @@ struct StyleView: View {
         let _ = session.palette.revision
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ForEach(Palette.defaults, id: \.group) { group in
+                // The landmarks first: what differs between palettes, and what
+                // the first version builds (the user, 2026-11-05: switching
+                // palettes showed the same roads and ground at the top).
+                ForEach(Palette.defaults.sorted { ($0.group == "Landmarks" ? 0 : 1) < ($1.group == "Landmarks" ? 0 : 1) }, id: \.group) { group in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(group.group == "Landmarks" ? "Landmarks (\(session.palette.active))" : group.group).font(.title3.bold()).help(Self.about[group.group] ?? "")
                         // The landmark colours the palette in use adds come after the defaults.

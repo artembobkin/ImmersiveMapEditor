@@ -224,7 +224,7 @@ final class Session {
         workspace.tile = tile
         var steps: [[String]] = []
         if !workspace.fetched.contains(tile) { steps.append(["fetch", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
-        if workspace.document(holding: tile) == nil { steps.append(["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
+        if Features.roads, workspace.document(holding: tile) == nil { steps.append(["seed", "\(tile.z)", "\(tile.x)", "\(tile.y)"]) }
         guard !steps.isEmpty else { return startWork() }
         phase = .preparing
         run(steps, on: .tile(tile), title: "Prepare \(tile.name)") { ok in
@@ -240,12 +240,15 @@ final class Session {
     /// Back to choosing a tile, the road document open saved.
     func chooseAnotherTile() {
         closeRoads()
+        palette.show(tile: nil)
         candidate = workspace.tile
         phase = .choosing
     }
 
     private func startWork() {
         phase = .working
+        if !ViewMode.shown.contains(workspace.viewMode) { workspace.viewMode = .buildings }
+        if let t = workspace.tile { palette.show(tile: (t.z, t.x, t.y)) }
         follow(workspace.viewMode)
     }
 
@@ -652,17 +655,25 @@ final class Session {
     /// map as the engine will show it, every tile built). The camera is
     /// handed over both ways: the engine starts where the map looked, the
     /// map moves to where the engine was left.
-    var mapEngine = false
-    func showMapEngine(_ on: Bool) {
-        guard on != mapEngine else { return }
-        if on {
+    /// What the window shows while a tile is chosen: the tiles' map, the
+    /// engine's map, or the palettes (the user, 2026-11-05: the palettes are
+    /// edited here, at the level of every tile, and a tile only picks one).
+    enum Choosing: String, CaseIterable, Identifiable {
+        case tiles = "Tiles", engine = "Engine", style = "Palettes"
+        var id: String { rawValue }
+    }
+    var choosing: Choosing = .tiles
+    var mapEngine: Bool { choosing == .engine }
+    func show(choosing view: Choosing) {
+        guard view != choosing else { return }
+        if view == .engine {
             engineCamera = nil
             // The engine's map gets its first archive by itself.
             if engineArchive == nil, can(.engine) { perform(.engine) }
-        } else if let p = engineCamera {
+        } else if choosing == .engine, let p = engineCamera {
             camera.set(lon: p.longitudeDegrees, lat: p.latitudeDegrees, zoom: p.zoom)
         }
-        mapEngine = on
+        choosing = view
     }
 
     /// Every built tile into a new archive in engine/, the older ones gone
@@ -780,7 +791,8 @@ final class Session {
     }
 
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light", "--parts", buildParts.sorted().joined(separator: ",")]
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light", "--parts", buildParts.subtracting(Features.roads ? [] : ["roads"]).sorted().joined(separator: ",")]
+            + (Features.roads ? [] : ["--no-roads"])
     }
 
     /// Every built tile into the engine's model archive, where the user

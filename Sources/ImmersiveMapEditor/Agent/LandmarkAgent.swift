@@ -125,22 +125,36 @@ final class LandmarkAgent {
 
 
     /// The first request: the brief with the plan. Every landmark is
-    /// modelled in full detail (the user, 2026-10-28: no levels).
-    static func firstRequest(_ name: String) -> String {
+    /// modelled in full detail (the user, 2026-10-28: no levels), and
+    /// `fine` asks for the ornament too, with five fix builds (the user,
+    /// 2026-11-05: the Painted Ladies as plain gabled boxes).
+    static func firstRequest(_ name: String, monument: Bool = false, fine: Bool = false) -> String {
+        if monument { return monumentRequest(name) }
         let level = """
             DETAIL: everything that reads from across the street: every mass of the building with its own roof, \
             the windows with the real storeys and rhythm of each facade (arched where they are arched), every entrance with \
             its portal, the plinth, string courses, the cornice with its depth, pilasters and columns where the facade has \
             them, balustrades and parapets, the sculpture, chimneys and roof lanterns, the attic and its windows. Model from \
             shapes what the words do not cover (a balustrade of cylinders in a row, a rusticated base as thin boxes, a \
-            moulding as a loft). Up to 60 000 triangles (set_recipe tells the count).
-            """
+            moulding as a loft). Up to \(fine ? "150 000" : "60 000") triangles (set_recipe tells the count).
+            """ + (fine ? """
+
+            FINE DETAIL, asked for this landmark: the ornament too, everything a person sees from the pavement, modelled \
+            from shapes at its real size and placed from the walls' corners: every bay window as a prism (or a cylinder, \
+            or a corner turret with its cone) standing proud of the wall with its own windows, base and cornice; the \
+            porch with its columns, its arch or pediment, its balustrade and the stairs with their rails; the brackets \
+            under the cornice and under the bays as rows of small boxes; the window surrounds with their pediments and \
+            hoods; the gable's trim along its edges and its finial; the balustrades as rows of cylinders between posts; \
+            the string courses between the storeys; the base's rustication; the chimneys. Count the ornament of each \
+            facade in its photo and give the model the same count.
+            """ : "")
+        let fixes = fine ? "five" : "three"
         return """
         Make the stylized low-poly model of the landmark "\(name)" (its folder is the working directory).
         \(level)
         The plan, and the budget: one build of the whole from the references, then builds of the fixes while the \
-        comparisons still show something to fix, three of them at most, each with everything that differed, and a \
-        summary. A plain building takes two builds, a rich facade four; never a build for a detail alone, and stop as \
+        comparisons still show something to fix, \(fixes) of them at most, each with everything that differed, and a \
+        summary. A plain building takes two builds, a rich facade \(fine ? "all of them" : "four"); never a build for a detail alone, and stop as \
         soon as a build changes little. Work from what each call returns; do not ask for more pictures than it gives.
         1. get_landmark (the building, its walls' corners in metres, the recipe format), then list_references. The references are gathered for you before you start, and this shows \
         them: the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
@@ -166,7 +180,7 @@ final class LandmarkAgent {
         arches, entrances, the cornice, the relief, the roof, the colours).
         3. The fixes: a set_recipe with everything that differed, all of it in one build, never one thing at a time. It \
         comes back beside the best photo of every facade it changed: count again, and build again only while a photo \
-        still shows something the model lacks (a bay, a balcony stack, a storey, a roof of another shape), three fix \
+        still shows something the model lacks (a bay, a balcony stack, a storey, a roof of another shape), \(fixes) fix \
         builds at most. When a build changes little, that is the end.
         \(ClaudeSettings.emphasis != "off" ? """
         4. What makes it recognisable: the one or two things a person points at from afar (a sculpture, a star, a cross, a ball finial: what stands free on the building), \\
@@ -188,10 +202,44 @@ final class LandmarkAgent {
         """
     }
 
+    /// The first request for a monument (the user, 2026-11-05: a statue, a
+    /// helicopter on a pedestal, a point in OSM with no outline): no walls,
+    /// no facades, the thing itself from the photos around it.
+    static func monumentRequest(_ name: String) -> String {
+        """
+        Make the stylized low-poly model of the monument "\(name)" (its folder is the working directory).
+        It is a monument, not a building: a statue, a sculpture, a vehicle or a stone on a pedestal, a point in OSM \
+        with no outline. DETAIL: what a person sees from the pavement: the pedestal with its steps and mouldings, and \
+        the figure or the object on it with its real silhouette (a rider and a horse, a standing person, a helicopter \
+        with its rotor, tail boom and skids, an obelisk with its tip), at its real size from the photos and OSM's height. \
+        Up to 20 000 triangles (set_recipe tells the count).
+        The plan, and the budget: one build from the references, then a build of the fixes while the comparisons still \
+        show something to fix, two of them at most, and a summary. Work from what each call returns.
+        1. get_landmark (the plot, the recipe format: the ring it gives is the plot round the point, not a wall, and \
+        nothing of it is built), then list_references: the street photos round it from Mapillary, each the monument \
+        framed in red, kept by the side of the plot they look at (north-facade/best/photo-03.jpg, the path to give \
+        show_reference, compare_with_photo and drop_reference), the satellite view (its shadow and its base tell its \
+        footprint and heading) and from Wikimedia Commons a view of the whole when it has one. If it shows nothing, \
+        gather_references. Nothing else to search for.
+        2. The build: set_recipe with no masses. The pedestal a box, a cylinder, a prism or a loft shape standing on \
+        the ground at (0, 0), its real size; the figure on it a statue feature where one fits (figure, equestrian, \
+        obelisk, cross, star, flame), marked "emphasis": true, since it is what stands free; otherwise the object \
+        assembled from shapes at its real size (a loft or a sweep for a body, cylinders for booms and barrels, thin boxes \
+        for blades, wings and plates, spheres), facing the heading the photos and the satellite view show. Colours in \
+        the palette's words: bronze lm_dark, stone lm_stone, gilt lm_gold, a painted machine its own colours. The build \
+        comes back rendered beside the best photo from each side, from that photo's own camera, and beside the \
+        satellite view: that is your review. Count the parts and compare the proportions.
+        3. The fixes: one set_recipe with everything that differed; build again only while a photo still shows \
+        something the model lacks, two fix builds at most. End with a short summary: what the photos show, what the \
+        model has, and what you were not sure of.
+        """
+    }
+
     /// The MCP server of the modelling tools: the editor itself, for this folder.
-    static func mcpConfig(_ folder: URL) -> String {
+    static func mcpConfig(_ folder: URL, fine: Bool = false) -> String {
         var server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": ["landmark-mcp", folder.path]]
         var env: [String: String] = [:]
+        if fine { env["LANDMARK_DETAIL"] = "fine" }
         let token = ClaudeSettings.mapillaryToken
         if !token.isEmpty { env["MAPILLARY_TOKEN"] = token }
         env.merge(ClaudeSettings.generatorEnvironment) { _, new in new }

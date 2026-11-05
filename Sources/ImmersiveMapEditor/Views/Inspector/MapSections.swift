@@ -29,7 +29,7 @@ struct MapSections: View {
                     if let t = session.candidate { session.open(tile: t) }
                 }
                 .disabled(session.candidate.map { session.jobs.isActive(.tile($0)) } ?? true)
-                .help("Fetches its OSM and seeds its roads when they are missing, then its views are there. Double-click a tile, or ↩.")
+                .help("Fetches its OSM" + (Features.roads ? " and seeds its roads" : "") + " when they are missing, then its views are there. Double-click a tile, or ↩.")
                 // Built from here too, without opening it (the user, 2026-11-04).
                 PanelButton("Build the Tile…", systemImage: "cube") { session.buildAsked = true }
                     .disabled(!session.canBuildTarget)
@@ -43,6 +43,9 @@ struct MapSections: View {
             HStack {
                 TextField("Tile or lat, lon", text: $destination, prompt: Text("15/19808/10243 or 55.7539, 37.6208"))
                     .textFieldStyle(.roundedBorder)
+                    // The label is the prompt: in a grouped form a labelled field sat under
+                    // its label, right-aligned, its button off its line (the user, 2026-11-05).
+                    .labelsHidden().multilineTextAlignment(.leading)
                     .onSubmit { go() }
                     .help("A tile's number z/x/y, or a latitude and longitude: ↩ moves the map there and picks the tile.")
                 Button("Go", systemImage: "location") { go() }
@@ -53,6 +56,9 @@ struct MapSections: View {
             HStack {
                 TextField("Name", text: $placeName, prompt: Text(session.candidate?.name ?? "A name for this place"))
                     .textFieldStyle(.roundedBorder)
+                    // The label is the prompt: in a grouped form a labelled field sat under
+                    // its label, right-aligned, its button off its line (the user, 2026-11-05).
+                    .labelsHidden().multilineTextAlignment(.leading)
                     .onSubmit { keep() }
                 Button("Save", systemImage: "bookmark") { keep() }
                     .labelStyle(.iconOnly)
@@ -160,7 +166,7 @@ struct MapSections: View {
             }
         }
         Section("Workspace") {
-            Text("\(workspace.built.count) built, \(workspace.fetched.count) fetched, \(workspace.documents.count) road documents")
+            Text("\(workspace.built.count) built, \(workspace.fetched.count) fetched" + (Features.roads ? ", \(workspace.documents.count) road documents" : ""))
                 .foregroundStyle(.secondary)
             PanelButton("Export Archive…", systemImage: "shippingbox") { session.exportArchive() }
                 .disabled(workspace.built.isEmpty || session.jobs.isActive(.workspace))

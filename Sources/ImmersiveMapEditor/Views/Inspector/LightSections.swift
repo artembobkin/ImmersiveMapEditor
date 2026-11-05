@@ -9,6 +9,12 @@ import TileKit
 /// landmark's is baked here as soon as a setting changes.
 struct LightSections: View {
     @Environment(Session.self) private var session
+    /// Whether the lighting is in the panel: the shading, the modifiers,
+    /// the engine's sun, the quality and the light map, and Bake among the
+    /// tile's actions. Off for the first version (the user, 2026-11-05: the
+    /// tiles exported and archived, the light left for later); the build
+    /// still bakes the tile's light with the standard settings.
+    static let lightingShown = Features.lighting
 
     var body: some View {
         @Bindable var light = session.lightSettings
@@ -24,6 +30,7 @@ struct LightSections: View {
                 .disabled(session.landmarksWithRecipes == 0 || session.workspace.tile.map { session.jobs.isActive(.tile($0)) } ?? true)
                 .help("Every landmark of the tile with a recipe built again from it (\(session.landmarksWithRecipes) of them): after a change of the palette, or of a recipe by hand. The tile itself is not built: see them together as All the landmarks.")
             if workspace.previewSubject == "tile" {
+                if Self.lightingShown {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Shading")
                     Picker("Shading", selection: $workspace.lightShading) {
@@ -33,11 +40,13 @@ struct LightSections: View {
                     .labelsHidden()
                     .frame(maxWidth: .infinity)
                 }
+                }
             } else {
                 slider("Lens", $light.lens, 20...90, "%.0f°")
                     .help("The camera's lens, its vertical field of view: the engine's is 45°. Narrow, like a telephoto, flattens the building and keeps its walls parallel; wide makes what is near loom and the far shrink. The model keeps its size in the frame.")
             }
         }
+        if Self.lightingShown {
         Section("Modifiers") {
             ForEach(light.modifiers.indices, id: \.self) { i in
                 let m = light.modifiers[i]
@@ -85,6 +94,8 @@ struct LightSections: View {
                 Text("None: the tile is not built.").foregroundStyle(.secondary)
             }
         }
+        }
+        Section {}
         .task(id: "\(workspace.tile?.name ?? "") \(workspace.tilesRevision)") {
             if let t = workspace.tile { session.lights.load([t], from: workspace) }
         }

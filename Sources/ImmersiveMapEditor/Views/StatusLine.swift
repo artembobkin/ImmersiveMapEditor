@@ -6,7 +6,9 @@ struct StatusLine: View {
     var body: some View {
         HStack {
             if session.phase != .working {
-                Text(session.mapEngine
+                Text(session.choosing == .style
+                    ? "The data folder's palettes, edited here: pick a colour or type its hex; a change is saved at once and shows when a tile is built again. A tile open picks one of them."
+                    : session.mapEngine
                     ? "The engine's map, the archive's models over it. Drag to move, right-drag (or option-drag) to turn and tilt, scroll to zoom. Tiles are picked on the Tiles map."
                     : "Drag to move, scroll to zoom. Click picks a tile, double-click or ↩ opens it. F shows the tile picked.")
                     .lineLimit(1)

@@ -17,7 +17,7 @@ struct EditorCommands: Commands {
         }
         CommandGroup(before: .toolbar) {
             // The views over the open tile, there once one is open.
-            ForEach(Array(ViewMode.allCases.enumerated()), id: \.element) { i, mode in
+            ForEach(Array(ViewMode.shown.enumerated()), id: \.element) { i, mode in
                 Button(mode.rawValue) { session.workspace.viewMode = mode }
                     .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")))
                     .disabled(session.phase != .working)

@@ -52,13 +52,18 @@ final class LandmarkRun: Job {
     /// ended), for the pool to start the next.
     var stateChanged: () -> Void = {}
 
+    /// The detail asked of this run, taken as it was queued.
+    let fine: Bool
+
     init(tile: TileKey, id: String, name: String, folder: URL, request: String?) {
         self.id = id
         self.name = name
         self.folder = folder
         self.request = request
+        fine = ClaudeSettings.detail == "fine"
         subject = .landmark(tile: tile, id: id)
         console.begin(title, stage: "Queued")
+        if fine { console.append("Detail: fine (the ornament too, twice the turns, five fix builds).") }
         console.append("Waiting for a free slot: \(ClaudeSettings.atOnce) at once (Claude's settings).")
     }
 
@@ -179,17 +184,19 @@ final class LandmarkRun: Job {
     }
 
     private func launch(_ claude: URL) {
-        var args = ["-p", request ?? LandmarkAgent.firstRequest(name), "--output-format", "stream-json", "--verbose",
+        // A monument gets its own brief: no walls, no facades (the user, 2026-11-05).
+        let monument = (try? LandmarkSource(folder.appendingPathComponent("landmark.json")))?.isMonument ?? false
+        var args = ["-p", request ?? LandmarkAgent.firstRequest(name, monument: monument, fine: fine), "--output-format", "stream-json", "--verbose",
                     "--tools", "WebSearch,WebFetch",
                     "--allowedTools", "WebSearch,WebFetch,mcp__landmark",
                     "--permission-mode", "dontAsk",
-                    "--strict-mcp-config", "--mcp-config", LandmarkAgent.mcpConfig(folder),
+                    "--strict-mcp-config", "--mcp-config", LandmarkAgent.mcpConfig(folder, fine: fine),
                     "--append-system-prompt", LandmarkAgent.system]
         if let model = UserDefaults.standard.string(forKey: ClaudeSettings.modelKey), !model.isEmpty {
             args += ["--model", model]
         }
         // The safety stop on the turns: the plan fits in well under it.
-        let turns = ClaudeSettings.maxTurns(facades: LandmarkMCP.Server.facadeCount(folder))
+        let turns = ClaudeSettings.maxTurns(facades: LandmarkMCP.Server.facadeCount(folder), fine: fine)
         if turns > 0 { args += ["--max-turns", "\(turns)"] }
         if let effort = UserDefaults.standard.string(forKey: ClaudeSettings.effortKey), !effort.isEmpty {
             args += ["--effort", effort]

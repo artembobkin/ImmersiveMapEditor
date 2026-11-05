@@ -11,7 +11,7 @@ import TileKit
 enum BuildingsCache {
     static let name = "buildings.bin"
     static let magic = "BLDG"
-    static let version: UInt32 = 1
+    static let version: UInt32 = 2
 
     static func read(folder: URL, stamp: String) -> [OsmBuilding]? {
         guard var r = BinaryCache.read(folder.appendingPathComponent(name), magic: magic, version: version, stamp: stamp) else { return nil }
@@ -22,6 +22,7 @@ enum BuildingsCache {
             for _ in 0..<(try r.count()) {
                 let id = try r.string()
                 let part = try r.uint8() != 0
+                let monument = try r.uint8() != 0, point = try r.uint8() != 0
                 var tags: Tags = [:]
                 for _ in 0..<(try r.count()) {
                     let k = Int(try r.uint32()), v = Int(try r.uint32())
@@ -38,7 +39,7 @@ enum BuildingsCache {
                     }
                     polygons.append(rings)
                 }
-                out.append(OsmBuilding(id: id, tags: tags, polygons: polygons, isPart: part))
+                out.append(OsmBuilding(id: id, tags: tags, polygons: polygons, isPart: part, monument: monument, point: point))
             }
             return out
         } catch {
@@ -61,6 +62,8 @@ enum BuildingsCache {
         for b in buildings {
             body.string(b.id)
             body.uint8(b.isPart ? 1 : 0)
+            body.uint8(b.monument ? 1 : 0)
+            body.uint8(b.point ? 1 : 0)
             body.count(b.tags.count)
             for (k, v) in b.tags.sorted(by: { $0.key < $1.key }) {
                 body.uint32(intern(k))

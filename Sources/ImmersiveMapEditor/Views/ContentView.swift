@@ -56,36 +56,19 @@ struct ContentView: View {
                 // The views exist once a tile is open.
                 if working {
                     Picker("View", selection: $workspace.viewMode) {
-                        ForEach(ViewMode.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(ViewMode.shown) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 } else {
-                    // The map to choose on, the tiles' or the engine's: tabs
-                    // at the top as the views' are (the user, 2026-11-04).
-                    Picker("Map", selection: Binding(get: { session.mapEngine }, set: { session.showMapEngine($0) })) {
-                        Text("Tiles").tag(false)
-                        Text("Engine").tag(true)
+                    // The map to choose on, the tiles' or the engine's, or the
+                    // palettes: tabs at the top as the views' are (the user,
+                    // 2026-11-04 and 2026-11-05).
+                    Picker("Map", selection: Binding(get: { session.choosing }, set: { session.show(choosing: $0) })) {
+                        ForEach(Session.Choosing.allCases) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .help("Tiles: OpenStreetMap under the grid of tiles, each coloured by what the data folder has of it, to pick one. Engine: the engine's own map with the whole model archive over it. The camera is handed over both ways.")
+                    .help("Tiles: OpenStreetMap under the grid of tiles, each coloured by what the data folder has of it, to pick one. Palettes: the data folder's palettes, their colours edited here. Engine: the engine's own map with the whole model archive over it. The camera is handed over both ways.")
                 }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                // The palette in use, in sight everywhere and changed here:
-                // every build and run of Claude paints with it (the user,
-                // 2026-11-04).
-                let _ = session.palette.revision
-                Menu {
-                    Picker("Palette", selection: Binding(get: { session.palette.active }, set: { session.palette.select($0) })) {
-                        ForEach(session.palette.names, id: \.self) { Text($0).tag($0) }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                } label: {
-                    Label("Palette: \(session.palette.active)", systemImage: "paintpalette")
-                        .labelStyle(.titleAndIcon)
-                }
-                .help("The palette every build, every run of Claude and every preview paints with. Edited in Style.")
             }
             ToolbarItem(placement: .navigation) {
                 if working, let tile = workspace.tile {
@@ -108,10 +91,12 @@ struct ContentView: View {
     @ViewBuilder private var main: some View {
         if session.phase == .working {
             mode
-        } else if session.mapEngine {
-            EngineView()
         } else {
-            MapPicker()
+            switch session.choosing {
+            case .tiles: MapPicker()
+            case .engine: EngineView()
+            case .style: StyleView()
+            }
         }
     }
 

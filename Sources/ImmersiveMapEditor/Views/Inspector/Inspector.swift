@@ -19,7 +19,7 @@ struct Inspector: View {
             Form {
                 WorkingTile()
                 if !working {
-                    MapSections()
+                    if session.choosing == .style { StyleSections() } else { MapSections() }
                 } else {
                     if !mode.actions.isEmpty { ActionSection(actions: mode.actions) }
                     modeSections(mode)
@@ -88,13 +88,23 @@ struct WorkingTile: View {
         Section("Tile") {
             if let t = session.shownTile {
                 Text(verbatim: t.name).font(.body.monospaced())
-                Text([workspace.fetched.contains(t) ? "OSM fetched" : "not fetched",
-                      workspace.built.contains(t) ? "built" : "not built",
-                      workspace.document(holding: t) != nil ? "has roads" : "no road document"].joined(separator: ", "))
+                Text(([workspace.fetched.contains(t) ? "OSM fetched" : "not fetched",
+                       workspace.built.contains(t) ? "built" : "not built"]
+                      + (Features.roads ? [workspace.document(holding: t) != nil ? "has roads" : "no road document"] : [])).joined(separator: ", "))
                     .foregroundStyle(.secondary)
             } else {
                 Text("None: pick a tile on the Map.").foregroundStyle(.secondary)
             }
+            // The palette, in the panel of every view (the user, 2026-11-05: the
+            // toolbar's corner was out of sight): the tile's while one is open,
+            // remembered by it, the data folder's while choosing.
+            let _ = session.palette.revision
+            Picker("Palette", selection: Binding(get: { session.palette.active }, set: { session.palette.select($0) })) {
+                ForEach(session.palette.names, id: \.self) { Text($0).tag($0) }
+            }
+            .help(session.palette.tile == nil
+                  ? "The data folder's palette: every tile that remembers none of its own is built and modelled with it. Edited in Style."
+                  : "The palette this tile is built and modelled with, remembered by the tile" + (session.palette.remembered ? "" : " once one is picked here (the data folder's \(session.palette.defaultName) until then)") + ". Edited in Style.")
         }
     }
 }
@@ -133,7 +143,7 @@ struct BuildSheet: View {
             Text("Build \(session.buildTarget?.name ?? "the tile")").font(.headline)
                 .help("What the tile's model holds. The light is not baked here: Bake does that after.")
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Self.parts, id: \.key) { part in
+                ForEach(Self.parts.filter { $0.key != "roads" || Features.roads }, id: \.key) { part in
                     Toggle(part.name, isOn: Binding(get: { session.buildParts.contains(part.key) }, set: { session.toggle(part: part.key, on: $0) }))
                         .toggleStyle(.checkbox)
                         .help(part.help)

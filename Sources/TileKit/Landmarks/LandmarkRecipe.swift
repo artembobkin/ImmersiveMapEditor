@@ -312,7 +312,12 @@ public struct LandmarkRecipe: Codable {
     `heading` (a compass bearing: 0 north, 90 east, 180 south), stands at `at` on `base` (the top of the mass or pediment \
     under it) with an optional `pedestal`, `height` tall and about `width` wide. Use it for the sculpture that makes the \
     building recognisable, nothing else. Figures, horses and chariots are drawn as round solids with real silhouettes, a star faceted with a ridge along each ray, a cross with flared ends and the ball at its foot, \
-    and a statue with `"emphasis": true` is drawn larger than life and finer, with more sides to its round solids.
+    and a statue with `"emphasis": true` is drawn larger than life and finer, with more sides to its round solids. \
+    A monument (get_landmark says so: a landmark of a point, its ring the plot round it, not a wall) has no masses: its \
+    pedestal is a box, a cylinder, a prism or a loft shape standing on the ground, the figure on it a statue feature where \
+    one fits (figure, equestrian, obelisk, cross, star, flame) and otherwise shapes assembled (a loft or a sweep for a body, \
+    cylinders for booms and barrels, thin boxes for blades, wings and plates, spheres), at its real size from the photos \
+    and OSM's height, facing the heading the photos and the satellite view show.
     - Where these words do not describe the building, model it yourself from shapes, as many as it takes:
       "shapes": [
        {"kind": "box", "at": [x, y], "base": 0, "size": [along, across, up], "heading": 0, "pitch": 0, "colour": "lm_stone"},
@@ -395,9 +400,18 @@ public struct LandmarkSource {
         public let polygons: [[[P2]]]
         public let base: Double
         public let height: Double?
+        /// A monument, not a building: a statue, a sculpture, a vehicle on a
+        /// pedestal (the user, 2026-11-05).
+        public let monument: Bool
+        /// Mapped as a node: its polygon is the plot round it, `plotRadius`
+        /// metres, not a wall.
+        public let point: Bool
+        public let plotRadius: Double?
     }
 
     public let name: String
+    /// Whether the landmark is a monument (every building of it one).
+    public var isMonument: Bool { !buildings.isEmpty && buildings.allSatisfy(\.monument) }
     /// Longitude and latitude.
     public let centre: (Double, Double)
     public let buildings: [Building]
@@ -415,7 +429,9 @@ public struct LandmarkSource {
                             tags: b["tags"] as? [String: String] ?? [:],
                             polygons: outline.map { $0.map { ring in Array(ring.dropLast()).filter { $0.count >= 2 }.map(metres) } },
                             base: (b["min_height_m"] as? NSNumber)?.doubleValue ?? 0,
-                            height: (b["height_m"] as? NSNumber)?.doubleValue)
+                            height: (b["height_m"] as? NSNumber)?.doubleValue,
+                            monument: b["monument"] as? Bool ?? false, point: b["point"] as? Bool ?? false,
+                            plotRadius: (b["plot_radius_m"] as? NSNumber)?.doubleValue)
         }
     }
 
@@ -482,6 +498,15 @@ public struct LandmarkSource {
     public func starterRecipe() -> LandmarkRecipe {
         let parts = buildings.filter(\.part)
         var r = LandmarkRecipe()
+        // A monument: a figure on a pedestal at the point, its height from
+        // OSM, nothing of the plot (the user, 2026-11-05).
+        if isMonument {
+            let h = buildings.compactMap(\.height).max() ?? 6
+            let json = """
+            {"features": [{"kind": "statue", "shape": "figure", "at": [0, 0], "heading": 180, "base": 0, "pedestal": \(String(format: "%.1f", min(3, h * 0.4))), "height": \(String(format: "%.1f", max(1, h * 0.6))), "colour": "lm_dark", "emphasis": true}]}
+            """
+            return (try? JSONDecoder().decode(LandmarkRecipe.self, from: Data(json.utf8))) ?? r
+        }
         // The largest `starterMasses` parts at most: St Basil's 514 made a
         // starter the agent's tool could not pass on (the user, 2026-11-04).
         let taken = (parts.isEmpty ? buildings : parts)

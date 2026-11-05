@@ -15,14 +15,15 @@ struct StyleSections: View {
     var body: some View {
         let _ = session.palette.revision
         let palette = session.palette
+        // The palette edited is the one the Tile section's picker shows, above:
+        // one picker for one thing (the user, 2026-11-05).
         Section("Palettes") {
-            Picker("In use", selection: Binding(get: { palette.active }, set: { palette.select($0) })) {
-                ForEach(palette.names, id: \.self) { Text($0).tag($0) }
-            }
-            .help("The palette every build, every run of Claude and every preview paints with, from now on. Also in the toolbar.")
             HStack {
                 TextField("New palette", text: $newName, prompt: Text("A name: a city, a style"))
                     .textFieldStyle(.roundedBorder)
+                    // The label is the prompt: in a grouped form a labelled field sat under
+                    // its label, right-aligned, its button off its line (the user, 2026-11-05).
+                    .labelsHidden().multilineTextAlignment(.leading)
                     .onSubmit { palette.create(named: newName); newName = "" }
                 Button("Add", systemImage: "plus") { palette.create(named: newName); newName = "" }
                     .labelStyle(.iconOnly)
@@ -54,8 +55,14 @@ struct StyleSections: View {
             HStack {
                 TextField("Name", text: $extraName, prompt: Text("terracotta"))
                     .textFieldStyle(.roundedBorder)
+                    // The label is the prompt: in a grouped form a labelled field sat under
+                    // its label, right-aligned, its button off its line (the user, 2026-11-05).
+                    .labelsHidden().multilineTextAlignment(.leading)
                 TextField("Hex", text: $extraHex, prompt: Text("#B5653F"))
                     .textFieldStyle(.roundedBorder)
+                    // The label is the prompt: in a grouped form a labelled field sat under
+                    // its label, right-aligned, its button off its line (the user, 2026-11-05).
+                    .labelsHidden().multilineTextAlignment(.leading)
                     .frame(width: 90)
                     .onSubmit { addExtra() }
                 Button("Add", systemImage: "plus") { addExtra() }

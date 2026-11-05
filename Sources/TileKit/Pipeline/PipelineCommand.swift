@@ -144,6 +144,7 @@ public enum PipelineCommand {
                 // OSM first when it has none, or when asked).
                 guard let f = args.list.first else { usage() }
                 let folder = path(f)
+                Palette.load(paths, in: folder)
                 let recipe = folder.appendingPathComponent("recipe.json")
                 if args.flag("--starter") || !FileManager.default.fileExists(atPath: recipe.path) {
                     try LandmarkSource(folder.appendingPathComponent("landmark.json")).starterRecipe().write(recipe)

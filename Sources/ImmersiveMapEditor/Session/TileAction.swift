@@ -53,7 +53,8 @@ extension ViewMode {
     var actions: [TileAction] {
         switch self {
         case .roads: [.roads]
-        case .preview: [.tile, .light]
+        // Bake is left out while the lighting is hidden (LightSections.lightingShown).
+        case .preview: LightSections.lightingShown ? [.tile, .light] : [.tile]
         case .engine: [.engine]
         case .buildings, .style: []
         }

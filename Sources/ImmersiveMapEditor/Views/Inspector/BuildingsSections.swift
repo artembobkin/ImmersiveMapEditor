@@ -57,6 +57,7 @@ struct BuildingsSections: View {
                     }
                 let without = session.candidates.filter { $0.model == nil && !session.agent.isActive($0.id) }.count
                 let idle = session.candidates.filter { !session.agent.isActive($0.id) }.count
+                DetailPicker()
                 PanelButton("Model the Landmarks with Claude…", systemImage: "sparkles") { modellingNotable = true }
                     .disabled(idle == 0)
                     .help("The tile's landmarks queued on Claude, \(ClaudeSettings.atOnce) at once: the \(without) without a model, or all \(idle) anew. The list of landmarks shows each one's state and stops any.")
@@ -82,6 +83,7 @@ struct BuildingsSections: View {
                             .help("Stops Claude on this landmark alone, killed when it does not go in 3 s" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
                     } else {
                         let busy = session.isBusy(landmark: holder.id)
+                        DetailPicker().disabled(busy)
                         PanelButton(busy ? "Building It" : "Model It with Claude Again", systemImage: "sparkles") { session.modelLandmark(id: holder.id) }
                             .disabled(busy)
                             .help("A new attempt from OSM: the photos kept are used again, the recipe, model and conversation of the last one go. The run is queued, the view stays here.")
@@ -113,6 +115,7 @@ struct BuildingsSections: View {
                 }
                 .disabled(picked.count == heldCount)
                 .help("Its folder with landmark.json and footprint.geojson, in the list below; nothing is modelled yet, and the view stays here.")
+                DetailPicker().disabled(picked.count == heldCount)
                 PanelButton("Make It and Model with Claude", systemImage: "sparkles") {
                     session.makeLandmarkAndModel(named: title)
                     name = ""

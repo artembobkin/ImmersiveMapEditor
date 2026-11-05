@@ -28,6 +28,9 @@ struct BuildingsView: View {
     /// size frames the tile again (the user, 2026-11-03: the first frame
     /// was fitted to a size the view did not have yet).
     @State private var framedByItself = false
+    /// Where the pointer is, for the tooltip beside it (the user, 2026-11-05:
+    /// the status line was too far from the building to read along a row).
+    @State private var pointer: CGPoint?
 
     var body: some View {
         let catalog = session.buildings
@@ -104,8 +107,12 @@ struct BuildingsView: View {
             switch phase {
             // Not while dragging: the building under the pointer is looked
             // up among two thousand, and the status line drawn, at every move.
-            case .active(let p): if dragFrom == nil { catalog.hovered = catalog.building(at: world(p))?.id }
-            case .ended: catalog.hovered = nil
+            case .active(let p):
+                pointer = p
+                if dragFrom == nil { catalog.hovered = catalog.building(at: world(p))?.id }
+            case .ended:
+                pointer = nil
+                catalog.hovered = nil
             }
         }
         .focusable()
@@ -129,6 +136,22 @@ struct BuildingsView: View {
                 ProgressView("Reading the tile's OSM…")
                     .padding(16)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        // The building under the pointer named beside it: its name, address,
+        // kind, height and why it is notable, as the status line says, kept
+        // inside the view at its edges.
+        .overlay(alignment: .topLeading) {
+            if let pointer, catalog.hovered != nil, dragFrom == nil {
+                let text = catalog.hoverStatus
+                Text(text)
+                    .font(.callout)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    .fixedSize()
+                    .offset(x: min(pointer.x + 14, max(0, size.width - 20 - CGFloat(text.count) * 7)),
+                            y: pointer.y + 18 > size.height - 36 ? pointer.y - 32 : pointer.y + 18)
+                    .allowsHitTesting(false)
             }
         }
         .onChange(of: centre) { give() }
@@ -227,6 +250,7 @@ final class DrawCache {
         let bounds: CGRect
         let note: BuildingNote
         let isPart: Bool
+        let monument: Bool
         let label: (String, Vec2)?
     }
 
@@ -266,7 +290,7 @@ final class DrawCache {
             let note = b.note
             var label: (String, Vec2)?
             if !b.isPart, note != .plain, let name = b.name, case let c = b.centroid, b.contains(c) { label = (name, c) }
-            built[b.id] = Drawn(path: p, bounds: p.boundingRect, note: note, isPart: b.isPart, label: label)
+            built[b.id] = Drawn(path: p, bounds: p.boundingRect, note: note, isPart: b.isPart, monument: b.monument, label: label)
         }
         tiles[key] = built
         order.append(key)
@@ -282,11 +306,11 @@ final class DrawCache {
         let drawn = drawn(of: catalog)
         let key = "\(catalog.tile?.name ?? "")/\(catalog.all.count)/\(picked.count):\(picked.hashValue)/\(marked.count):\(marked.hashValue)"
         if key == batchKey { return batchesKept }
-        enum Look: Int, CaseIterable { case plain, named, notable, marked, picked }
+        enum Look: Int, CaseIterable { case plain, named, notable, monument, marked, picked }
         var paths: [Bool: [Look: Path]] = [false: [:], true: [:]]
         for b in catalog.all {
             guard let d = drawn[b.id] else { continue }
-            let look: Look = picked.contains(b.id) ? .picked : marked.contains(b.id) ? .marked
+            let look: Look = picked.contains(b.id) ? .picked : marked.contains(b.id) ? .marked : d.monument ? .monument
                 : d.note == .notable ? .notable : d.note == .named ? .named : .plain
             paths[d.isPart]![look, default: Path()].addPath(d.path)
         }
@@ -297,6 +321,8 @@ final class DrawCache {
                 let fill: Color = switch look {
                 case .picked: .accentColor.opacity(0.55)
                 case .marked: .orange.opacity(0.45)
+                // A monument amber: not a building, a thing on a pedestal.
+                case .monument: Color(red: 0.85, green: 0.62, blue: 0.2).opacity(0.7)
                 case .notable: BuildingsView.tint(.notable, part: part)
                 case .named: BuildingsView.tint(.named, part: part)
                 case .plain: BuildingsView.tint(.plain, part: part)

@@ -35,6 +35,19 @@ enum ClaudeSettings {
         let v = UserDefaults.standard.string(forKey: effortKey) ?? ""
         return efforts.contains { $0.id == v } ? v : ""
     }
+
+    /// How much of a landmark the agent models (the user, 2026-11-05: the
+    /// Painted Ladies came out as plain gabled boxes, and the ornament is
+    /// the building): "normal", everything that reads from across the
+    /// street, or "fine", the ornament too, with twice the turns and five
+    /// fix builds. Taken when a run is queued, so each landmark keeps the
+    /// level it was queued with.
+    static let detailKey = "landmark.detail"
+    static let details: [(id: String, title: String)] = [("normal", "Normal"), ("fine", "Fine")]
+    static var detail: String {
+        let v = UserDefaults.standard.string(forKey: detailKey) ?? "normal"
+        return details.contains { $0.id == v } ? v : "normal"
+    }
     /// How the agent finds the one or two things that make the building
     /// recognisable, for the generator to draw a size up (the user,
     /// 2026-10-28): "known" from what it knows of the place alone (a
@@ -66,8 +79,8 @@ enum ClaudeSettings {
     }
     /// The turns allowed for a landmark of `facades` facades: 3 a facade
     /// and 8 besides, so four facades get 20 (the plan takes four calls).
-    static func maxTurns(facades: Int) -> Int {
-        let per = turnsPerFacade
+    static func maxTurns(facades: Int, fine: Bool = false) -> Int {
+        let per = turnsPerFacade * (fine ? 2 : 1)
         return per <= 0 ? 0 : per * max(1, facades) + 8
     }
 

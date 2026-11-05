@@ -1,13 +1,13 @@
 {
-  "originHash" : "b0cc5a5faece55451670208d0212e2b440172a13de35b3c214004b6a701d93b3",
+  "originHash" : "5f7e3bdb394611768c1fe335a3bc2c5a4e78df2b61abc657e23820494db2aed7",
   "pins" : [
     {
       "identity" : "immersivemap",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/artembobkin/ImmersiveMap.git",
       "state" : {
-        "revision" : "74c040df5091b960b10b8dcd23698742510d2d67",
-        "version" : "0.11.1"
+        "branch" : "main",
+        "revision" : "992da6ac553b645ab7754d6684c050cafa54e030"
       }
     },
     {

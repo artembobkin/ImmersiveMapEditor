@@ -15,8 +15,7 @@ import Foundation
 ///         "14": ["way/31560418"],
 ///         "15": ["relation/3330565", "way/246692841", "way/246692843"]
 ///       },
-///       "altitude_m": 0,
-///       "cuts_into_ground": false
+///       "altitude_m": 0
 ///     }
 ///
 /// `model` is a path relative to the file. `replaces` lists the features of
@@ -29,9 +28,10 @@ import Foundation
 /// listed for that tile's zoom, so a part left out stays standing inside
 /// the model. `Scripts/resolve_replaces.py` works the lists out from the
 /// map's tiles. The key is empty or absent for a model that replaces
-/// nothing. The last two keys are
-/// optional. A model that cuts into the ground is kept out of the tile's
-/// merged mesh and drawn on its own.
+/// nothing. `altitude_m` is optional. A `cuts_into_ground` key of an older
+/// file is ignored: no model cuts into the ground, and every model of a
+/// tile is merged into its one mesh (the user, 2026-11-05: dropped from
+/// the format).
 struct Placement: Decodable {
     struct Origin: Decodable {
         let latitude: Double
@@ -43,7 +43,6 @@ struct Placement: Decodable {
     let origin: Origin
     let replaces: [String: [String]]?
     let altitudeMeters: Double?
-    let cutsIntoGround: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -51,7 +50,6 @@ struct Placement: Decodable {
         case origin
         case replaces
         case altitudeMeters = "altitude_m"
-        case cutsIntoGround = "cuts_into_ground"
     }
 
     /// The replaced features, the shallowest zoom first.

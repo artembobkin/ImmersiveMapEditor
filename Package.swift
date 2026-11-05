@@ -18,7 +18,7 @@ let package = Package(
         // The engine itself, read and never changed from here, at its last
         // release: the Engine view shows the model archive on its map (the
         // user, 2026-11-02). A new release is a new exact version here.
-        .package(url: "https://github.com/artembobkin/ImmersiveMap.git", exact: "0.11.1"),
+        .package(url: "https://github.com/artembobkin/ImmersiveMap.git", branch: "main"),
     ],
     targets: [
         // What the build does with polygons and lines, shapely's names on Topology.

@@ -122,6 +122,8 @@ public enum LandmarkGenerator {
     /// From this area a glazed opening is a shop front or a glazed arch,
     /// not a window, and shows the map's glass (`lm_glass`) at its back.
     static let glazedArea = 10.0
+    /// LANDMARK_WINDOWS_DEBUG prints every wall with the windows laid on it.
+    static let windowsDebug = ProcessInfo.processInfo.environment["LANDMARK_WINDOWS_DEBUG"] != nil
 
     /// What is wrong with a recipe, one line each: nothing when it builds.
     public static func check(_ r: LandmarkRecipe, _ source: LandmarkSource) -> [String] {
@@ -692,6 +694,13 @@ public enum LandmarkGenerator {
             var cuts: [Cut] = []
             // The rows' windows of every wall, laid along the facades.
             let facade = windows.map { facadeWindows(ring, foot, z1, $0) } ?? [:]
+            if LandmarkGenerator.windowsDebug, windows != nil {
+                for i in ring.indices {
+                    let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
+                    let bearing = (atan2(b.x - a.x, b.y - a.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+                    print(String(format: "[windows] wall %d: %.1f m at %.0f°, %d windows, from (%.1f, %.1f)", i, len, bearing, facade[i]?.count ?? 0, a.x, a.y))
+                }
+            }
             for i in ring.indices {
                 let a = ring[i], b = ring[(i + 1) % ring.count], len = simd_length(b - a)
                 guard len > 1e-6 else { continue }
@@ -877,11 +886,22 @@ public enum LandmarkGenerator {
         func openings(_ len: Double, _ lo: Double, _ hi: Double, _ w: LandmarkRecipe.Windows) -> [[P2]] {
             guard w.storeys >= 1, hi - lo > 1, w.spacing > 0 else { return [] }
             let storey = (hi - lo) / Double(w.storeys)
-            // The bays merged until the windows stand `windowStep` apart at
-            // least, each window drawn wider in its wider bay.
-            let step = w.spacing * max(1, (max(Caricature.windowStep, len / Caricature.windowsAlong) / w.spacing).rounded(.up))
-            let height = min(w.height * Caricature.windowRise, storey * 0.7), width = min(w.width * Caricature.windowScale * (step / w.spacing).squareRoot(), step * 0.72)
-            let n = Int((len - 1) / step)
+            // The bays merged until the windows stand about `windowStep` apart,
+            // each window drawn wider in its wider bay: the next whole count
+            // of bays up, unless the count is within a tenth of a whole one
+            // (the user, 2026-11-05: at 2.2 m spacing, 2.05 bays, the windows
+            // stood 6.6 m apart, and a Victorian house 11 m long got one; now
+            // 4.4 m and two, while a 4 m spacing still merges to 8), and a wall that
+            // fits one window with its margins gets one at least, in its
+            // middle (a bay's angled 3 m walls had none).
+            let bays = max(1, Int((max(Caricature.windowStep, len / Caricature.windowsAlong) / w.spacing - 0.1).rounded(.up)))
+            let step = w.spacing * Double(bays)
+            // A wall too short for the window at its size gets a narrower one,
+            // 0.3 m in from its ends, 0.8 m wide at least: the corners are
+            // chamfered, and a bay's 3.3 m wall is 2.3 m by then.
+            let height = min(w.height * Caricature.windowRise, storey * 0.7)
+            let width = min(w.width * Caricature.windowScale * Double(bays).squareRoot(), step * 0.72, max(0, len - 0.6))
+            let n = max(Int((len - 1) / step), width >= 0.8 ? 1 : 0)
             guard n >= 1, height > 0.3 else { return [] }
             var out: [[P2]] = []
             for k in 0..<n {
@@ -958,7 +978,7 @@ public enum LandmarkGenerator {
                     let i = run[k], e = edges[i]
                     var local = t - spans[k].lo
                     if local - width / 2 < 0.3 || local + width / 2 > e.len - 0.3 {
-                        guard e.len >= width + 0.8 else { continue }
+                        guard e.len >= width + 0.6 else { continue }
                         local = e.len / 2
                     }
                     if placed[i, default: []].contains(where: { abs($0 - local) < width + 0.4 }) { continue }

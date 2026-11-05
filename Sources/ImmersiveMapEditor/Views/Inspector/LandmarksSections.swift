@@ -16,6 +16,7 @@ struct LandmarksSections: View {
     @Environment(Session.self) private var session
     @AppStorage(ClaudeSettings.modelKey) private var model = ""
     @AppStorage(ClaudeSettings.effortKey) private var effort = ""
+    @AppStorage(ClaudeSettings.detailKey) private var detail = "normal"
     @AppStorage(ClaudeSettings.emphasisKey) private var emphasis = "photos"
     @AppStorage(ClaudeSettings.exaggerationKey) private var exaggeration = 3.0
     @AppStorage(ClaudeSettings.turnsPerFacadeKey) private var turnsPerFacade = 3
@@ -130,6 +131,7 @@ struct LandmarksSections: View {
                 PanelButton("Stop Claude", systemImage: "stop.circle") { session.agent.stop(landmark.id) }
                     .help("Stops Claude on this landmark alone, killed when it does not go in 3 s" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
             } else {
+                DetailPicker()
                 PanelButton("Model with Claude", systemImage: "sparkles") { session.modelLandmark() }
                     .help("A new attempt from OSM: Claude Code gathers freely licensed photos (the ones kept are used again), writes the recipe, renders and corrects it. Through the proxy of Settings > Claude.")
             }
@@ -152,6 +154,11 @@ struct LandmarksSections: View {
                 }
                 .pickerStyle(.menu).disabled(session.agent.running)
                 .help("How hard Claude thinks before each step: more is slower and dearer, and steadier on the geometry.")
+                Picker("Detail", selection: Binding(get: { ClaudeSettings.detail }, set: { detail = $0 })) {
+                    ForEach(ClaudeSettings.details, id: \.id) { Text($0.title).tag($0.id) }
+                }
+                .pickerStyle(.menu)
+                .help("How much of the landmark Claude models. Normal: everything that reads from across the street. Fine: the ornament too, bays, porches, brackets, balustrades and trim from shapes, with twice the turns and five fix builds, slower and dearer. Each landmark keeps the level it is queued with.")
                 Picker("Distinctive details", selection: $emphasis) {
                     Text("Off").tag("off")
                     Text("From what Claude knows").tag("known")

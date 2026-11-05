@@ -9,8 +9,17 @@ import SwiftUI
 /// where it was left while another view is shown; over a tile open it is
 /// held to the tile's neighbourhood.
 struct EngineView: View {
+    /// The engine's camera settings with the zoom allowed to `maximumZoom`.
+    static let maximumZoom = 20.0
+    static var closeCamera: ImmersiveMapSettings.CameraSettings {
+        var camera = ImmersiveMapSettings.default.camera
+        camera.maximumZoom = maximumZoom
+        return camera
+    }
+    /// The setting of the engine's labels, place names, points of interest, house numbers and road names alike.
+    static let labelsKey = "engine.labels"
     /// The engine's release this editor links: keep it with Package.swift.
-    static let engineVersion = "0.11.1"
+    static let engineVersion = "main"
 
     @Environment(Session.self) private var session
     @State private var controller = ImmersiveMapCameraController()
@@ -19,17 +28,27 @@ struct EngineView: View {
     /// gesture is answered with a jump back (the user, 2026-11-02: the tilt
     /// stuttered).
     @State private var start: ImmersiveMapCameraPosition?
+    /// Whether the engine draws its labels, the app's setting (the user,
+    /// 2026-11-05: the house numbers and shop names in the way of the models).
+    @AppStorage(EngineView.labelsKey) private var labels = true
 
     var body: some View {
         if let archive = session.engineArchive {
             ImmersiveMapView(cameraPosition: start ?? session.engineCamera ?? session.engineStart, cameraController: controller)
                 .modelArchive(archive)
+                // Closer than the engine's own cap of 18, two levels past its
+                // deepest tile: this view is for the models, looked at from
+                // the street (the user, 2026-11-05: the camera stopped short
+                // of the houses). Before cameraBounds, which copies the
+                // camera's settings.
+                .cameraSettings(Self.closeCamera)
                 .cameraBounds(session.engineBounds)
                 // The engine's ground relief is off: this view is for looking
                 // at the models, which the pipeline builds on a flat ground,
                 // and the relief (collapsed at zoom 13.7 anyway) only gets in
                 // the way zoomed out (the user, 2026-11-03).
                 .groundRelief(isEnabled: false)
+                .labels(isEnabled: labels)
                 // A new archive is a new file: the view is made again over it.
                 .id(archive)
                 .onAppear {

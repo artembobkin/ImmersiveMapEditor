@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage(ClaudeSettings.executableKey) private var claudePath = ""
     @AppStorage(ClaudeSettings.modelKey) private var claudeModel = ""
     @AppStorage(ClaudeSettings.effortKey) private var claudeEffort = ""
+    @AppStorage(ClaudeSettings.detailKey) private var claudeDetail = "normal"
     /// The proxy, edited here and kept in the keychain (never shown in full).
     @State private var proxy = ClaudeSettings.proxy
     @State private var noProxy = ClaudeSettings.noProxy
@@ -45,6 +46,10 @@ struct SettingsView: View {
                     ForEach(ClaudeSettings.efforts, id: \.id) { Text($0.title).tag($0.id) }
                 }
                 .help("How hard it thinks: Claude Code's default, or a level.")
+                Picker("Detail", selection: Binding(get: { ClaudeSettings.detail }, set: { claudeDetail = $0 })) {
+                    ForEach(ClaudeSettings.details, id: \.id) { Text($0.title).tag($0.id) }
+                }
+                .help("How much of a landmark Claude models: everything that reads from across the street, or the ornament too (slower and dearer). Each landmark keeps the level it is queued with.")
                 SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
                     .onSubmit { ClaudeSettings.proxy = proxy }
                     .onChange(of: proxy) { ClaudeSettings.proxy = proxy }

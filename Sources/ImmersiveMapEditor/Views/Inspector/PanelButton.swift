@@ -39,3 +39,18 @@ struct PanelButton: View {
         .buttonStyle(.bordered)
     }
 }
+
+/// The detail asked of the next run of Claude, beside every button that
+/// queues one (the user, 2026-11-05: to be set right where the modelling is
+/// started, not in a settings group): Normal, or Fine with the ornament.
+struct DetailPicker: View {
+    @AppStorage(ClaudeSettings.detailKey) private var detail = "normal"
+
+    var body: some View {
+        Picker("Detail", selection: Binding(get: { ClaudeSettings.detail }, set: { detail = $0 })) {
+            ForEach(ClaudeSettings.details, id: \.id) { Text($0.title).tag($0.id) }
+        }
+        .pickerStyle(.segmented)
+        .help("How much of the landmark Claude models in the run queued next. Normal: everything that reads from across the street. Fine: the ornament too, bays, porches, brackets, balustrades and trim from shapes, with twice the turns and five fix builds, slower and dearer. Each run keeps the level it is queued with.")
+    }
+}

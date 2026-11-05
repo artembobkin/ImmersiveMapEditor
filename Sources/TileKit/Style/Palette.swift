@@ -148,6 +148,53 @@ public enum Palette {
         apply(file.colours, extra: file.extra, name: file.name)
     }
 
+    /// The file a tile remembers its palette in, `tiles/z/x/y/palette.json`,
+    /// `{"name"}`: a palette per tile, since one is a city's (the user,
+    /// 2026-11-05: with one palette for the data folder, a Jakarta tile
+    /// would not build while Moscow's was chosen). A tile with none takes
+    /// the data folder's one in use.
+    public static func tileFile(_ paths: WorkspacePaths, z: Int, x: Int, y: Int) -> URL {
+        paths.tile(z: z, x: x, y: y).appendingPathComponent("palette.json")
+    }
+
+    /// The palette a tile remembers, by name, if any.
+    public static func tileName(_ paths: WorkspacePaths, z: Int, x: Int, y: Int) -> String? {
+        guard let data = try? Data(contentsOf: tileFile(paths, z: z, x: x, y: y)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["name"] as? String
+    }
+
+    /// A tile told to remember a palette (nil: the data folder's one in use).
+    public static func remember(_ name: String?, _ paths: WorkspacePaths, z: Int, x: Int, y: Int) throws {
+        let url = tileFile(paths, z: z, x: x, y: y)
+        guard let name else { try? FileManager.default.removeItem(at: url); return }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let json: [String: Any] = ["name": name, "note": "The palette this tile is built and modelled with, of config/palettes."]
+        try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]).write(to: url, options: .atomic)
+    }
+
+    /// The palette a tile is built with: the one it remembers when that is
+    /// kept in `palettesFolder`, else the data folder's one in use.
+    public static func load(_ paths: WorkspacePaths, z: Int, x: Int, y: Int) {
+        if let name = tileName(paths, z: z, x: x, y: y),
+           let file = File.read(palettesFolder(paths).appendingPathComponent(name + ".json")) {
+            return apply(file.colours, extra: file.extra, name: file.name)
+        }
+        load(paths)
+    }
+
+    /// The palette of the tile a folder is in (a landmark's folder, a
+    /// build): the z, x and y after `tiles` in its path; the data folder's
+    /// for a folder outside the tiles.
+    public static func load(_ paths: WorkspacePaths, in folder: URL) {
+        let parts = folder.standardizedFileURL.pathComponents
+        if let i = parts.lastIndex(of: "tiles"), i + 3 < parts.count,
+           let z = Int(parts[i + 1]), let x = Int(parts[i + 2]), let y = Int(parts[i + 3]) {
+            return load(paths, z: z, x: x, y: y)
+        }
+        load(paths)
+    }
+
     /// Writes a palette as the one in use and applies it.
     public static func save(_ palette: File, _ paths: WorkspacePaths) throws {
         apply(palette.colours, extra: palette.extra, name: palette.name)

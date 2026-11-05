@@ -13,10 +13,10 @@ import TileKit
 /// the proxy from the environment Claude Code runs in.
 enum LandmarkMCP {
     static func run(folder: URL) -> Never {
-        // The data folder's palette: tiles/z/x/y/landmarks/<id> is six below the root.
+        // The tile's palette: tiles/z/x/y/landmarks/<id> is six below the root.
         var root = folder.standardizedFileURL
         for _ in 0..<6 { root = root.deletingLastPathComponent() }
-        Palette.load(WorkspacePaths(root: root))
+        Palette.load(WorkspacePaths(root: root), in: folder)
         let server = Server(folder: folder.standardizedFileURL)
         while let line = readLine(strippingNewline: true) {
             guard let data = line.data(using: .utf8),
@@ -33,6 +33,9 @@ enum LandmarkMCP {
         /// How many of a landmark's OSM buildings get_landmark lists, the
         /// largest first: the answer must come through Claude Code whole.
         static let listedBuildings = 120
+        /// Whether the run asked for fine detail (LANDMARK_DETAIL in the
+        /// server's environment): more comparisons a build.
+        static let fine = ProcessInfo.processInfo.environment["LANDMARK_DETAIL"] == "fine"
         let folder: URL
         var references: URL { folder.appendingPathComponent("references") }
         /// The data folder, for the caches every landmark shares.
@@ -207,8 +210,13 @@ enum LandmarkMCP {
                         compared.append(scene.facades[f].name)
                         let best = bestPhotos(Self.facadeFolder(scene.facades[f].name))
                         if !best.isEmpty {
-                            let file = best[round % best.count]
-                            if !picked.contains(file) { picked.append(file) }
+                            // Fine detail: two of its best each round, from two
+                            // stations, so the ornament is checked from two angles
+                            // (the user, 2026-11-05).
+                            for k in 0..<min(best.count, Self.fine ? 2 : 1) {
+                                let file = best[(round + k) % best.count]
+                                if !picked.contains(file) { picked.append(file) }
+                            }
                             continue
                         }
                         guard let look = kept.filter({ $0.view.seen[f] >= StreetView.enough && $0.view.looks[f] > 0 })
@@ -216,7 +224,7 @@ enum LandmarkMCP {
                         picked.append(look.file)
                     }
                 }
-                for file in picked.prefix(6) {
+                for file in picked.prefix(Self.fine ? 10 : 6) {
                     if let shown = try? compare(["file": file]) { content += shown }
                 }
                 if picked.isEmpty && compared.isEmpty && lastTouched == nil { content.append(text("No street photo with a camera pose is kept yet: find_street_photos keeps them, and every build will come back beside them.")) }
@@ -259,14 +267,28 @@ enum LandmarkMCP {
             var axis = ""
             let all = source.buildings.flatMap { $0.polygons.flatMap { $0.first ?? [] } }
             let rect = Geometry.collection(all.map { Geometry.point($0) }).convexHull.minimumRotatedRectangle.exterior
-            if rect.count >= 4 {
+            if rect.count >= 4, !source.isMonument {
                 let u = rect[1] - rect[0], v = rect[2] - rect[1]
                 let long = simd_length(u) >= simd_length(v) ? u : v
                 let bearing = (atan2(long.x, long.y) * 180 / .pi + 360).truncatingRemainder(dividingBy: 180)
                 axis = String(format: " Its long axis runs at a bearing of %.0f° (so its walls face %.0f°, %.0f°, %.0f° and %.0f°): give boxes, colonnades and pediments these headings and lines, parallel to the walls, never to north when the building is not.",
                               bearing, bearing, (bearing + 90).truncatingRemainder(dividingBy: 360), (bearing + 180).truncatingRemainder(dividingBy: 360), (bearing + 270).truncatingRemainder(dividingBy: 360))
             }
-            var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1)." + axis,
+            var lines = ["Landmark: \(source.name), centre lon/lat \(source.centre.0), \(source.centre.1)." + axis]
+            // A monument, not a building (the user, 2026-11-05): a point in OSM
+            // with a plot round it, which is no wall.
+            if source.isMonument {
+                let plot = source.buildings.compactMap(\.plotRadius).first
+                let h = source.buildings.compactMap(\.height).max()
+                lines.append("THIS LANDMARK IS A MONUMENT, not a building: a statue, a sculpture, a vehicle or a stone on a pedestal, "
+                             + (plot.map { "mapped in OSM as a point. The ring below is the plot of \(Int($0)) m round it, not a wall: build nothing of it. " }
+                                ?? "mapped in OSM as a small area, its outline the plot, not a wall: build nothing of it. ")
+                             + "Model the monument itself at its real size, standing at (0, 0) on the ground: no masses; the pedestal a box, a cylinder, "
+                             + "a prism or a loft shape; the figure on it a statue feature where one fits, else shapes assembled (the guide says how). "
+                             + (h.map { "OSM gives its height as \(Int($0)) m. " } ?? "")
+                             + "Its heading and footprint from the satellite view (its shadow) and the street photos; its colours in the palette's words (bronze lm_dark, stone lm_stone, gilt lm_gold).")
+            }
+            lines += [
                          "Its OSM buildings (\(source.buildings.count)): id, part or outline, base..height m, plan size and middle (x east, y north, m), area, the tags that shape it.",
                          "The outlines of the largest come below, the rest by get_outlines (ids)."]
             // The largest first, and only so many: St Basil's 514 parts made
