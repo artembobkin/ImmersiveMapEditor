@@ -15,6 +15,27 @@ cp .build/release/ImmersiveMapEditor "$APP/Contents/MacOS/ImmersiveMapEditor"
 # The resource bundles of the packages linked (the engine's shaders and its
 # overview archive): Bundle.module finds them in Contents/Resources.
 for b in .build/release/*.bundle; do [ -d "$b" ] && cp -R "$b" "$APP/Contents/Resources/"; done
+# The engine's shaders compiled into the default.metallib of its bundle:
+# Xcode compiles a package's .metal resources, `swift build` only copies
+# them, flattened, so the engine found no library and stopped as its map
+# opened (the user, 2026-11-05: the release crashed in the Engine view).
+# They are compiled from the engine's source tree, where their relative
+# includes resolve, from the folders its Package.swift processes.
+ENGINE=$(swift package show-dependencies --format json | grep -o '"path" *: *"[^"]*ImmersiveMap"' | head -1 | sed 's/.*: *"//; s/"$//')
+SHADERS="$ENGINE/Sources/ImmersiveMap"
+AIR=build/air
+rm -rf "$AIR" && mkdir -p "$AIR"
+n=0
+for f in $(find "$SHADERS/Avatars/Shaders" "$SHADERS/Globe/Shaders" "$SHADERS/Horizon/Shaders" "$SHADERS/Labels/Shaders" \
+             "$SHADERS/Layers/Shaders" "$SHADERS/Render/Debug/Shaders" "$SHADERS/Render/PostProcessing/Shaders" \
+             "$SHADERS/SceneModels/Shaders" "$SHADERS/Shadows/Shaders" "$SHADERS/Starfield/Shaders" "$SHADERS/Text/Shaders" \
+             "$SHADERS/Tile/Shaders" -name '*.metal' 2>/dev/null) "$SHADERS/Render/Shaders/Shared/GeoMath.metal"; do
+    n=$((n + 1))
+    xcrun -sdk macosx metal -O3 -c -o "$AIR/$n.air" "$f"
+done
+xcrun -sdk macosx metallib -o "$APP/Contents/Resources/ImmersiveMap_ImmersiveMap.bundle/default.metallib" "$AIR"/*.air
+rm -rf "$AIR"
+echo "the engine's $n shaders compiled into its default.metallib"
 # The icon: Icon/AppIcon.png (drawn by Icon/MakeIcon.swift) at every size macOS asks for.
 SET=build/AppIcon.iconset
 rm -rf "$SET" && mkdir -p "$SET"
