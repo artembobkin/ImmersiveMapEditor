@@ -13,6 +13,9 @@ public enum Validate {
         public let name: String
         public let ok: Bool
         public let detail: String
+        /// A check that warns and does not fail the tile: what it found is
+        /// said, and the tile is built and archived all the same.
+        public var warning = false
     }
 
     public struct Result {
@@ -20,12 +23,14 @@ public enum Validate {
         public let triangles: Int
         public let bytes: Int
         public let checks: [Check]
-        public var ok: Bool { checks.allSatisfy(\.ok) }
+        public var ok: Bool { checks.allSatisfy { $0.ok || $0.warning } }
     }
 
     public static func tile(_ folder: URL) throws -> Result {
         var checks: [Check] = []
-        func check(_ name: String, _ ok: Bool, _ detail: String = "") { checks.append(Check(name: name, ok: ok, detail: detail)) }
+        func check(_ name: String, _ ok: Bool, _ detail: String = "", warning: Bool = false) {
+            checks.append(Check(name: name, ok: ok, detail: detail, warning: warning))
+        }
         func json(_ name: String) throws -> [String: Any] {
             try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(name))) as? [String: Any] ?? [:]
         }
@@ -82,7 +87,10 @@ public enum Validate {
         check("inside the tile and its margin", lo[0] >= -half - eps && hi[0] <= half + eps && lo[2] >= -half - eps
               && hi[2] <= half + eps,
               String(format: "x %.2f..%.2f, z %.2f..%.2f, half %.2f", lo[0], hi[0], lo[2], hi[2], half))
-        check("nothing below the ground", lo[1] >= -0.01, String(format: "lowest %.3f m", lo[1]))
+        // A warning, not a failure (the user, 2026-11-05: one landmark's part
+        // below the ground left the whole tile unbuilt): the engine draws
+        // what is below the surface hidden under its ground.
+        check("nothing below the ground", lo[1] >= -0.01, String(format: "lowest %.3f m", lo[1]), warning: true)
         let views = list("bufferViews")
         for key in ["TEXCOORD_0", "TEXCOORD_1"] {
             let acc = accessors[attrs[key] ?? 0]

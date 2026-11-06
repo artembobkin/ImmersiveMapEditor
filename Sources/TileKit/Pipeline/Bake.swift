@@ -146,7 +146,7 @@ public enum Bake {
                 try light(scene, settings, tile: tile, out: out, export: true, started: started, log: "bake")
                 Progress.report("Validating")
                 let result = try Validate.tile(out)
-                for c in result.checks where !c.ok { print("[bake]   FAIL \(c.name) \(c.detail)") }
+                for c in result.checks where !c.ok { print("[bake]   \(c.warning ? "WARN" : "FAIL") \(c.name) \(c.detail)") }
                 print(String(format: "[bake] %@ %@ in %.1f s", name, result.ok ? "ok" : "FAILED at validate",
                              Date().timeIntervalSince(started)))
                 if !result.ok { failed += 1 }

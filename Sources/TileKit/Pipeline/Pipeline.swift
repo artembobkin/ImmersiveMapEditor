@@ -99,7 +99,7 @@ public enum Pipeline {
                 Progress.report("Validating")
                 let result = try Validate.tile(folder)
                 print("  validate  \(result.ok ? "ok" : "FAILED")")
-                for c in result.checks where !c.ok { print("    FAIL \(c.name) \(c.detail)") }
+                for c in result.checks where !c.ok { print("    \(c.warning ? "WARN" : "FAIL") \(c.name) \(c.detail)") }
                 // A build of parts the tile has none of is not a build: no
                 // placement, so the tile is not counted as built nor put
                 // in the archive (the user, 2026-11-04: landmarks alone asked

@@ -118,7 +118,7 @@ public enum PipelineCommand {
             case "validate":
                 guard let f = args.list.first else { usage() }
                 let r = try Validate.tile(path(f))
-                for c in r.checks { print((c.ok ? "ok    " : "FAIL  ") + c.name + (c.detail.isEmpty ? "" : "  (\(c.detail))")) }
+                for c in r.checks { print((c.ok ? "ok    " : c.warning ? "WARN  " : "FAIL  ") + c.name + (c.detail.isEmpty ? "" : "  (\(c.detail))")) }
                 print(String(format: "%@: %d triangles, %.1f MB, %@", r.model, r.triangles, Double(r.bytes) / 1e6, r.ok ? "valid" : "INVALID"))
                 exit(r.ok ? 0 : 1)
             case "fit":

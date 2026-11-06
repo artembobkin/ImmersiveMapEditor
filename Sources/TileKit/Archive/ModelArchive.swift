@@ -50,7 +50,12 @@ public enum ModelArchive {
         }
         for key in byTile.keys.sorted(by: { ($0[0], $0[1]) < ($1[0], $1[1]) }) {
             let (x, y, files) = (key[0], key[1], byTile[key]!)
-            progress("\(archiveZoom)/\(x)/\(y)")
+            // The built tiles of zoom z into the engine's tile of zoom 14 over
+            // them, named both ways (the user, 2026-11-06: "Archiving
+            // 14/..." read as if the build were of zoom 14).
+            let built = files.map { $0.deletingLastPathComponent().deletingLastPathComponent() }
+                .map { "\(z)/\($0.deletingLastPathComponent().lastPathComponent)/\($0.lastPathComponent)" }.sorted()
+            progress("\(built.joined(separator: ", ")) to \(archiveZoom)/\(x)/\(y)")
             // A tile that cannot be read is left out and named, the rest
             // archived (the user, 2026-11-04: one unreadable GLB, a build
             // of parts a tile had none of, failed the whole archive).
