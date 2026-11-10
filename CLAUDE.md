@@ -95,7 +95,7 @@ Keep the code clean as it grows (the user asked for it, 2026-10-24):
 ## Commands
 
 ```sh
-swift build -c release            # or open the folder (Package.swift) in Xcode: there is no .xcodeproj
+swift build -c release            # or open ImmersiveMapEditor.xcworkspace in Xcode (the package alone, with its shared schemes): there is no .xcodeproj
 # The editor signs itself at launch (App/CodeSigning) with the user's Apple Development certificate under one identifier, then runs again: the keychain (proxy, tokens) and the folder permissions trust it once and for good. Scripts/sign.sh signs a binary by hand
 ./make_app.sh 0.1.0               # build/Immersive Map Editor.app, version 0.1.0 (else the last tag), the engine's shaders compiled into its bundle's default.metallib (swift build only copies them), signed as a whole under com.artembobkin.ImmersiveMapEditor; installed by copying it to /Applications
 tp() { .build/release/ImmersiveMapEditor pipeline "$@"; }   # the pipeline's commands: tp COMMAND, in the data folder or with --root

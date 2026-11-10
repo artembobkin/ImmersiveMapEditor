@@ -34,7 +34,11 @@ struct EngineView: View {
 
     var body: some View {
         if let archive = session.engineArchive {
-            ImmersiveMapView(cameraPosition: start ?? session.engineCamera ?? session.engineStart, cameraController: controller)
+            ImmersiveMapView()
+                // The camera is given by modifiers: the engine's view itself
+                // takes its settings alone.
+                .cameraPosition(start ?? session.engineCamera ?? session.engineStart)
+                .cameraController(controller)
                 .modelArchive(archive)
                 // Closer than the engine's own cap of 18, two levels past its
                 // deepest tile: this view is for the models, looked at from
