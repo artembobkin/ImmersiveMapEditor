@@ -3,18 +3,17 @@ import TileKit
 import MetalKit
 
 /// A built tile (its folder's build/) on the GPU: its one mesh, its
-/// palette and light map, read from its GLB as the engine's tooling reads it
+/// normals and its palette, read from its GLB as the engine's tooling reads it
 /// (CLAUDE.md, "The model file: GLB"), and where it lies among the others.
 struct TileModel {
     let x, y: Int
     let positions: MTLBuffer
     let uv0: MTLBuffer
-    let uv1: MTLBuffer
+    let normals: MTLBuffer
     let indices: MTLBuffer
     let indexCount: Int
     let indexType: MTLIndexType
     let palette: MTLTexture
-    let light: MTLTexture
     /// The tile's centre in the document's metres (east, north), and the
     /// scale from its own metres to the document's: the Mercator scale
     /// changes a little from row to row.
@@ -45,8 +44,8 @@ struct TileModel {
         let accessors = array("accessors"), views = array("bufferViews")
         guard let prim = (array("meshes").first?["primitives"] as? [[String: Any]])?.first,
               let attrs = prim["attributes"] as? [String: Int],
-              let pos = attrs["POSITION"], let t0 = attrs["TEXCOORD_0"], let t1 = attrs["TEXCOORD_1"],
-              let ind = prim["indices"] as? Int else { throw Failure.glb("not one indexed primitive with two UVs") }
+              let pos = attrs["POSITION"], let t0 = attrs["TEXCOORD_0"], let nor = attrs["NORMAL"],
+              let ind = prim["indices"] as? Int else { throw Failure.glb("not one indexed primitive with normals and a UV") }
 
         /// The bytes of an accessor, tightly packed.
         func bytes(_ index: Int, width: Int) throws -> (Data, Int, Int) {
@@ -71,15 +70,14 @@ struct TileModel {
         }
         let (p, _, _) = try bytes(pos, width: 3)
         let (u0, _, _) = try bytes(t0, width: 2)
-        let (u1, _, _) = try bytes(t1, width: 2)
+        let (n, _, _) = try bytes(nor, width: 3)
         let (ix, count, kind) = try bytes(ind, width: 1)
         guard kind == 5125 || kind == 5123 else { throw Failure.glb("indices are not u16 or u32") }
 
-        // The material: the palette its base colour, the light map its occlusion.
+        // The material: the palette its base colour.
         guard let material = array("materials").first,
-              let base = ((material["pbrMetallicRoughness"] as? [String: Any])?["baseColorTexture"] as? [String: Any])?["index"] as? Int,
-              let occlusion = (material["occlusionTexture"] as? [String: Any])?["index"] as? Int
-        else { throw Failure.glb("no palette and light map in the material") }
+              let base = ((material["pbrMetallicRoughness"] as? [String: Any])?["baseColorTexture"] as? [String: Any])?["index"] as? Int
+        else { throw Failure.glb("no palette in the material") }
         let loader = MTKTextureLoader(device: device)
         func texture(_ textureIndex: Int) throws -> MTLTexture {
             guard let source = array("textures")[textureIndex]["source"] as? Int,
@@ -94,10 +92,10 @@ struct TileModel {
 
         let own = Region(z: z, x0: x, y0: y, x1: x, y1: y)
         let centre = Vec2((own.gx - region.gx) / region.unitsPerMetre, (region.gy - own.gy) / region.unitsPerMetre)
-        guard let pb = buffer(p), let b0 = buffer(u0), let b1 = buffer(u1), let bi = buffer(ix) else { throw Failure.glb("no GPU memory") }
+        guard let pb = buffer(p), let b0 = buffer(u0), let bn = buffer(n), let bi = buffer(ix) else { throw Failure.glb("no GPU memory") }
         let built = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        return TileModel(x: x, y: y, positions: pb, uv0: b0, uv1: b1, indices: bi, indexCount: count,
-                         indexType: kind == 5125 ? .uint32 : .uint16, palette: try texture(base), light: try texture(occlusion),
+        return TileModel(x: x, y: y, positions: pb, uv0: b0, normals: bn, indices: bi, indexCount: count,
+                         indexType: kind == 5125 ? .uint32 : .uint16, palette: try texture(base),
                          centre: centre, scale: own.unitsPerMetre / region.unitsPerMetre, triangles: count / 3, built: built)
     }
 

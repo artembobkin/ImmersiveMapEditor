@@ -100,8 +100,7 @@ final class Session {
     /// The camera the views over the open tile share.
     let viewCamera = SharedCamera()
     let panels = PanelLayout()
-    let lights = LightMaps()
-    let lightSettings = LightSettings()
+    let preview = PreviewSettings()
     /// The open tile's buildings of OSM, for the Buildings view.
     let buildings = OsmBuildings()
     /// Claude modelling landmarks: the pool's runs by landmark.
@@ -349,8 +348,7 @@ final class Session {
     private let idle = Console()
     private var pickedRun: LandmarkRun? { pickedLandmark.flatMap { agent.run(of: $0) } }
 
-    /// The Preview's landmark lit: its light baked with the Preview's
-    /// settings, off the main thread, the model shown as it was meanwhile.
+    /// The Preview's landmark, or all of them, under the preview's light.
     func showPreview() {
         guard workspace.previewSubject != "tile" else { return }
         if previewView == nil {
@@ -359,8 +357,7 @@ final class Session {
             previewView?.camera = { [weak self] in self?.previewCamera = $0 }
             previewView?.labels = { [weak self] in self?.previewLabels = $0 }
         }
-        previewView?.shadowStrength = lightSettings.previewShadow
-        previewView?.lens = lightSettings.lens
+        previewView?.lens = preview.lens
         if workspace.previewSubject == "landmarks" {
             previewView?.show(.models(placedModels))
             return
@@ -369,7 +366,7 @@ final class Session {
             previewView?.show(nil)
             return
         }
-        previewView?.show(.lit(glb, lightSettings.settings))
+        previewView?.show(.lit(glb))
     }
 
     /// Every model of the tile's landmarks where the build places it: its
@@ -395,23 +392,6 @@ final class Session {
             self?.readCandidates()
             self?.showLandmark(again: true)
             self?.showPreview()
-        }
-    }
-
-    /// The tile's light baked again a moment after a modifier changes in
-    /// Preview, as a landmark's is (the user, 2026-11-02: the modifiers
-    /// seemed dead on the tile, whose light the pipeline bakes only when
-    /// asked). A change while a bake runs bakes once more after it.
-    private var bakeTask: Task<Void, Never>?
-    private var bakeAgain = false
-    func lightSettingsChanged() {
-        guard phase == .working, workspace.viewMode == .preview, workspace.previewSubject == "tile",
-              let tile = workspace.tile, workspace.built.contains(tile) else { return }
-        bakeTask?.cancel()
-        bakeTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.5))
-            guard !Task.isCancelled else { return }
-            if jobs.isActive(.tile(tile)) { bakeAgain = true } else { perform(.light) }
         }
     }
 
@@ -705,7 +685,6 @@ final class Session {
         switch action {
         case .roads: return true
         case .tile: return workspace.fetched.contains(tile)
-        case .light: return workspace.built.contains(tile)
         case .engine: return false
         }
     }
@@ -723,15 +702,6 @@ final class Session {
             // The parts are chosen first (the user, 2026-10-30: the choice
             // belongs to the button, in a sheet).
             buildAsked = true
-        case .light:
-            // A tile built before builds kept what a bake needs builds once first.
-            let ready = FileManager.default.fileExists(atPath: workspace.build(tile).appendingPathComponent("bake/scene.bin").path)
-            run((ready ? [] : [buildStep(tile)])
-                + [["bake", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)"] + lightSettings.arguments], on: .tile(tile), title: "Bake \(tile.name)") { [weak self] _ in
-                guard let self, self.bakeAgain else { return }
-                self.bakeAgain = false
-                self.lightSettingsChanged()
-            }
         case .roads:
             if workspace.document(holding: tile) != nil { reseedAsked = true } else { seedRoads(force: false) }
         case .engine:
@@ -751,8 +721,8 @@ final class Session {
         }
     }
 
-    /// The pipeline's command building one tile, its models all, its light
-    /// not baked (the Light view bakes it): fetching what is missing,
+    /// The pipeline's command building one tile, its models all: fetching
+    /// what is missing,
     /// seeding its roads when no document holds it.
     /// The parts a build holds (Build.allParts; the user, 2026-10-29: each
     /// chosen apart), kept between runs. A stored property, so the sheet
@@ -791,7 +761,7 @@ final class Session {
     }
 
     private func buildStep(_ tile: TileKey) -> [String] {
-        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--no-light", "--parts", buildParts.subtracting(Features.roads ? [] : ["roads"]).sorted().joined(separator: ",")]
+        ["build", "\(tile.z)", "--tiles", "\(tile.x)/\(tile.y)", "--parts", buildParts.subtracting(Features.roads ? [] : ["roads"]).sorted().joined(separator: ",")]
             + (Features.roads ? [] : ["--no-roads"])
     }
 

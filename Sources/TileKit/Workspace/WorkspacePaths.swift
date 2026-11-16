@@ -11,7 +11,7 @@ import Foundation
 ///   tiles/<z>/<x>/<y>/osm/          its sources (Fetch): osm.bin (the OSM, Overpass's JSON parsed once and kept as this, OsmCache), tile.json
 ///   tiles/<z>/<x>/<y>/roads/        its road document, roads.json, hand-edited,
 ///                                   and seed/, what it was seeded from (Seed)
-///   tiles/<z>/<x>/<y>/build/        its built model (Build, Bake)
+///   tiles/<z>/<x>/<y>/build/        its built model (Build)
 ///   tiles/<z>/<x>/<y>/landmarks/    its buildings marked to become landmarks, a
 ///                                   folder each (the editor's Buildings view)
 ///   registry.sqlite                 the last build of every tile, every landmark and its buildings (Registry)

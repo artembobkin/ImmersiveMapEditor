@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import Foundation
+import ModelTileFormat
 
 /// `placement.json`, the file next to a model that says where it stands on
 /// the map and which building it replaces. The baker bakes every model that
@@ -53,8 +54,8 @@ struct Placement: Decodable {
     }
 
     /// The replaced features, the shallowest zoom first.
-    func replacedBuildings() throws -> [ReplacedBuilding] {
-        let kinds: [Substring: OSMElement.Kind] = ["node": .node, "way": .way, "relation": .relation]
+    func replacedBuildings() throws -> [ModelTileContents.ReplacedBuilding] {
+        let kinds: [Substring: UInt64] = ["node": 1, "way": 2, "relation": 3]
         var lists: [(zoom: Int, names: [String])] = []
         for (key, names) in replaces ?? [:] {
             guard let zoom = Int(key), (0...24).contains(zoom) else {
@@ -62,16 +63,16 @@ struct Placement: Decodable {
             }
             lists.append((zoom, names))
         }
-        var entries: [ReplacedBuilding] = []
+        var entries: [ModelTileContents.ReplacedBuilding] = []
         for (zoom, names) in lists.sorted(by: { $0.zoom < $1.zoom }) {
             var seen = Set<String>()
             for name in names where seen.insert(name).inserted {
                 let parts = name.split(separator: "/")
                 guard parts.count == 2, let kind = kinds[parts[0]], let id = UInt64(parts[1]),
-                      id < 1 << ModelTileFormat.replacedBuildingKindShift else {
+                      id < ModelTileElement.idLimit, let element = ModelTileElement(kind: kind, id: id) else {
                     throw BakeError("\(self.id): an entry of \"replaces\" must be node/<id>, way/<id> or relation/<id>, not \"\(name)\"")
                 }
-                entries.append(ReplacedBuilding(element: OSMElement(kind: kind, id: id), mapTileZoom: zoom))
+                entries.append(ModelTileContents.ReplacedBuilding(element: element, mapTileZoom: zoom))
             }
         }
         return entries
@@ -85,16 +86,4 @@ func tileCoordinate(latitude: Double, longitude: Double, zoom: Int) -> (x: Int, 
     let radians = latitude * .pi / 180
     let y = (1 - asinh(tan(radians)) / .pi) / 2 * side
     return (Int(x.rounded(.down)), Int(y.rounded(.down)))
-}
-
-/// The west, south, east and north edges of a tile, in degrees.
-func tileBounds(zoom: Int, x: Int, y: Int) -> (west: Double, south: Double, east: Double, north: Double) {
-    let side = Double(1 << zoom)
-    func longitude(_ column: Int) -> Double {
-        Double(column) / side * 360 - 180
-    }
-    func latitude(_ row: Int) -> Double {
-        atan(sinh(.pi * (1 - 2 * Double(row) / side))) * 180 / .pi
-    }
-    return (longitude(x), latitude(y + 1), longitude(x + 1), latitude(y))
 }

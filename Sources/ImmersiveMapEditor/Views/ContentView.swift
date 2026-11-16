@@ -126,9 +126,8 @@ struct ContentView: View {
         case .engine:
             EngineView()
         case .preview:
-            // What the engine will show: the tile built and lit by its light
-            // map (or the light alone), or one landmark alone, its light
-            // baked here with the same settings and the engine's sun.
+            // The tile as built, or its landmarks' models without a build, in
+            // their palette's colours under the preview's own light.
             let workspace = session.workspace
             if workspace.previewSubject != "tile" {
                 // Something fills the region before the view exists: on an
@@ -140,21 +139,20 @@ struct ContentView: View {
                             .overlay { AxisLabels(labels: session.previewLabels) }
                             .overlay(alignment: .topLeading) { CameraBadge(line: session.previewCamera) }
                     } else {
-                        ContentUnavailableView("Baking the light", systemImage: "sun.max",
-                                               description: Text("The landmark alone, lit as the engine will light it, comes in a moment."))
+                        ContentUnavailableView("Reading the model", systemImage: "cube",
+                                               description: Text("The landmark alone comes in a moment."))
                     }
                 }
-                .task(id: "\(workspace.previewSubject) \(session.lightSettings.previewKey) \(workspace.tilesRevision) \(session.candidates.map { $0.modelStamp })") {
-                    // A moment after the last change, so a slider's drag bakes once.
+                .task(id: "\(workspace.previewSubject) \(workspace.tilesRevision) \(session.candidates.map { $0.modelStamp })") {
+                    // A moment after the last change, so a burst of them reads the model once.
                     try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled else { return }
                     session.showPreview()
                 }
-                .onChange(of: session.lightSettings.previewShadow, initial: true) { session.previewView?.shadowStrength = session.lightSettings.previewShadow }
-                .onChange(of: session.lightSettings.lens, initial: true) { session.previewView?.lens = session.lightSettings.lens }
+                .onChange(of: session.preview.lens, initial: true) { session.previewView?.lens = session.preview.lens }
             } else if workspace.shown.isEmpty {
-                ContentUnavailableView("The tile is not built", systemImage: "sun.max",
-                                       description: Text("Build the Tile makes its model, Bake its light. A landmark alone needs no build: pick it on the right."))
+                ContentUnavailableView("The tile is not built", systemImage: "cube",
+                                       description: Text("Build the Tile makes its model. A landmark alone needs no build: pick it on the right."))
             } else if let tiles = session.tiles {
                 MetalHost(view: tiles)
             }

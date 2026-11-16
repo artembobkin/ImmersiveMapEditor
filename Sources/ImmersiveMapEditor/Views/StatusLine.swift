@@ -75,7 +75,7 @@ struct StatusLine: View {
                 Spacer()
                 Text(session.previewStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
             } else {
-                Text("The landmark alone, its light baked here. Drag to move, right-drag to turn and tilt, scroll to zoom. F frames.")
+                Text("The landmark alone. Drag to move, right-drag to turn and tilt, scroll to zoom. F frames.")
                     .lineLimit(1)
                 Spacer()
                 Text(session.previewStatus).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)

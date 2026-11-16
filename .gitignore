@@ -7,3 +7,5 @@ build/
 .swiftpm/configuration/
 xcuserdata/
 /.worktrees/
+# SwiftPM's edit mode (swift package edit): a link to a local checkout of a dependency.
+/Packages/

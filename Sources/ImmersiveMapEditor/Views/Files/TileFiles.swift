@@ -3,8 +3,8 @@ import TileKit
 
 /// What a tile's folder holds (WorkspacePaths: tiles/<z>/<x>/<y>/), in the
 /// groups the pipeline writes it: its OSM (osm/), its roads (roads/: the
-/// document and what it was seeded from, seed/) and its build (build/, with
-/// bake/). Read from disk each time it is asked: a few folders.
+/// document and what it was seeded from, seed/) and its build (build/).
+/// Read from disk each time it is asked: a few folders.
 struct TileFiles {
     struct File: Identifiable, Hashable {
         let url: URL

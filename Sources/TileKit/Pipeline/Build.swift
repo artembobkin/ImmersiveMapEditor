@@ -3,18 +3,16 @@ import Geometry
 
 /// The build of one tile, or of a square of it (a lab, to judge the look
 /// before a whole tile is built): its landmarks, buildings, roads,
-/// construction sites and shelters as one mesh, the light baked from above,
-/// cut to the region.
+/// construction sites and shelters as one mesh, in its palette's plain
+/// colours, cut to the region.
 ///
-/// The region is in local metres around the tile's centre. The light map's
-/// size follows the region's share of the tile, so its density per metre is
-/// the one a whole tile has (`light.size` for the whole tile, 1024).
+/// The region is in local metres around the tile's centre.
 ///
-/// Writes into the output folder: palette.png, lightmap.png and stats.json,
-/// and with `export` the GLB, placement.json, metadata.json and bake/ (the
-/// scene and settings of the light, so Bake can bake it again).
+/// Writes into the output folder: palette.png and stats.json, and with
+/// `export` the GLB, placement.json and metadata.json (`finish`).
 public enum Build {
-    /// Metres built around the region for the light map.
+    /// Metres built around the region and cut away again: what a building
+    /// at the region's edge is made with.
     static let margin = 40.0
     /// What a build can hold, each chosen apart: the landmarks' models, the
     /// typical houses (the procedure's, with windows), the other buildings
@@ -22,7 +20,7 @@ public enum Build {
     public static let allParts: Set<String> = ["landmarks", "houses", "boxes", "sites", "roads"]
 
     public static func run(_ paths: WorkspacePaths, tile: Tile, out: URL, region square: (Double, Double, Double)? = nil, whole: Bool = false,
-                           export: Bool = false, light: Lighting.Settings = Lighting.Settings(), bakeLight: Bool = true,
+                           export: Bool = false,
                            roads: URL? = nil, parts: Set<String> = Build.allParts) throws {
         guard whole || !export else { throw PipelineError("export needs the whole tile: a model covers its whole tile") }
         let started = Date()
@@ -36,10 +34,10 @@ public enum Build {
         // The landmark models first: their colours join the palette.
         // A whole tile takes the landmark models standing in it alone.
         // Every landmark within the margin: a build sorts them into its own
-        // (their origin in the tile) and the neighbours' (the light alone).
+        // (their origin in the tile) and the neighbours' (left out of the model).
         let (models, replaced, covered) = Imported.load(tile, work, paths)
         // The base palette: every colour's cell. The tile's own palette, of
-        // the names it uses with their face shade, is written by Bake.
+        // the names it uses, is written by `finish`.
         let palette = PaletteTexture()
 
         let b = Builder(palette: palette)
@@ -77,8 +75,8 @@ public enum Build {
             } else {
                 // A typical house or a box, each only when asked.
                 guard parts.contains(bd.tags["_plain"] == "1" ? "boxes" : "houses") else { continue }
-                // Whole in the tile its anchor stands in, the light map's only
-                // in a neighbour's.
+                // Whole in the tile its anchor stands in, left out of a
+                // neighbour's.
                 b.whole = region.contains(bd.anchor) ? .whole : .foreign
                 ordinary(b, bd.id, bd.tags, bd.poly)
                 standsFor.insert(bd.id)
@@ -105,9 +103,8 @@ public enum Build {
         Progress.report("Cleaning the mesh")
         let m = clean(b.tris)
 
-        // The light map covers the work area and every building this tile owns
-        // whole, however far it reaches over the edge, as a square around the
-        // tile's centre (lightUVs maps both axes by one width).
+        // How far the model reaches from the tile's centre: the work area and
+        // every building this tile owns whole, however far over the edge.
         var reach = half + margin
         for t in 0..<m.count where m.owner[t] == .whole {
             for i in 0..<3 {
@@ -115,10 +112,9 @@ public enum Build {
                 reach = max(reach, abs(c.x - cx), abs(c.y - cy))
             }
         }
-        let lit = (cx - reach, cy - reach, cx + reach, cy + reach)
         let overhang = (max(0, reach - half) * 100).rounded() / 100
         let ordinaryCount = buildings.filter { $0.landmark == nil }.count
-        // The statistics that do not depend on the light: Bake adds the rest.
+        // The statistics of the mesh: `finish` adds those of its cut.
         var stats: [String: Any] = [
             "region": ["centre": [cx, cy], "half": half],
             "triangles_by_kind": b.counts,
@@ -128,11 +124,8 @@ public enum Build {
             "replaced_buildings": standsFor.sorted(),
         ]
         for (k, v) in furniture { stats[k] = v }
-        let scene = BakeScene(tile: [tile.z, tile.x, tile.y], models: models.map { $0.id }, stats: stats,
-                              region: region.bounds, lit: lit, reach: reach, mesh: m)
-        // An exported tile keeps its scene, so its light can be baked again.
-        if export { try Bake.store(scene, out: out) }
-        try Bake.light(scene, light, tile: tile, out: out, export: export, started: started, log: "lab", bake: bakeLight) { count in
+        try finish(m, region: region.bounds, stats: stats, models: models.map { $0.id }, tile: tile, out: out,
+                   export: export, started: started, log: "lab") { count in
             print("[lab] \(ordinaryCount) ordinary buildings and parts, landmarks \(pending), \(count) triangles")
         }
     }

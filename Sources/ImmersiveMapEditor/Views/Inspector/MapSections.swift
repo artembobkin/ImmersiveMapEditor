@@ -34,7 +34,7 @@ struct MapSections: View {
                 PanelButton("Build the Tile…", systemImage: "cube") { session.buildAsked = true }
                     .disabled(!session.canBuildTarget)
                     .help(session.candidate.map { session.workspace.fetched.contains($0) } ?? false
-                          ? "Builds the tile picked with the parts you choose, its light not baked; the console shows how far."
+                          ? "Builds the tile picked with the parts you choose; the console shows how far."
                           : "Fetch the tile's OSM first: Open the Tile, or mark it and Fetch OSM.")
             }
         }

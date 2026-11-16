@@ -104,8 +104,8 @@ enum Headless {
                 source = .boxes(id: landmark.id, landmark.boxes)
             } else {
                 guard let model = landmark.model else { return fail("no model in \(folder.path)") }
-                // --lit: as the engine will show it, its light baked here.
-                source = arguments.contains("--lit") ? .lit(model, Lighting.Settings()) : .model(model)
+                // --lit: under the Preview's light, with its shadow.
+                source = arguments.contains("--lit") ? .lit(model) : .model(model)
             }
             do {
                 for url in try view.views(source, to: URL(fileURLWithPath: arguments[i + 2])) { print(url.path) }
@@ -113,27 +113,6 @@ enum Headless {
             } catch {
                 return fail(error.localizedDescription)
             }
-        }
-        /// The light settings for --lit from the options --light-mode sky|ao, --light-size N (the light map in pixels),
-        /// --light-samples N, --ao-radius M, --depth D, --gamma G.
-        func litSettings() -> Lighting.Settings {
-            var s = Lighting.Settings()
-            func value(_ name: String) -> String? { arguments.firstIndex(of: name).flatMap { arguments.count > $0 + 1 ? arguments[$0 + 1] : nil } }
-            if let v = value("--light-mode") { s.mode = v }
-            if let v = value("--light-size").flatMap(Int.init) { s.size = v }
-            if let v = value("--light-samples").flatMap(Int.init) { s.samples = v }
-            if let v = value("--ao-radius").flatMap(Double.init) { s.aoRadius = v }
-            if let v = value("--depth").flatMap(Double.init) { s.depth = v }
-            if let v = value("--gamma").flatMap(Double.init) { s.gamma = v }
-            if let v = value("--face-radius").flatMap(Double.init) { s.faceRadius = v }
-            if let v = value("--face-step").flatMap(Double.init) { s.faceStep = v }
-            if let v = value("--crease-radius").flatMap(Double.init) { s.creaseRadius = v }
-            if let v = value("--crease-depth").flatMap(Double.init) { s.creaseDepth = v }
-            if let v = value("--modifiers"), let data = v.data(using: .utf8),
-               let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
-                s.modifiers = list.compactMap { Lighting.Modifier(json: $0) }
-            }
-            return s
         }
         if let i = arguments.firstIndex(of: "--landmark-look"), arguments.count > i + 10 {
             // A landmark's model (its OSM boxes with --boxes) as a photo's
@@ -146,7 +125,7 @@ enum Headless {
             if arguments.contains("--boxes") || landmark.model == nil {
                 source = .boxes(id: landmark.id, landmark.boxes)
             } else {
-                source = arguments.contains("--lit") ? .lit(landmark.model!, litSettings()) : .model(landmark.model!)
+                source = arguments.contains("--lit") ? .lit(landmark.model!) : .model(landmark.model!)
             }
             do {
                 try view.look(source, to: URL(fileURLWithPath: arguments[i + 2]), eye: SIMD3(n[0], n[1], n[2]), heading: n[3], pitch: n[4],

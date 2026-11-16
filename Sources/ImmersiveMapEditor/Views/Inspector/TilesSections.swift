@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The 3D view's sections: the camera and the light map. The tiles are those
+/// The 3D view's sections: the camera. The tiles are those
 /// picked on the map that are built.
 struct TilesSections: View {
     @Environment(Session.self) private var session

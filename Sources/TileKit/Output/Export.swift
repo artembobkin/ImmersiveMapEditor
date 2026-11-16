@@ -7,10 +7,10 @@ import GLTF
 /// statistics.
 ///
 /// The GLB holds the one mesh, triangles only, indexed, with POSITION,
-/// NORMAL (each face's own), TEXCOORD_0 (the palette) and TEXCOORD_1 (the
-/// light map), and one material: the palette as its base colour texture,
-/// the light map as its occlusion texture on the second UV, both embedded as
-/// PNG. Nothing else. +Z up turns into +Y up, north into -Z, and the UVs' V
+/// NORMAL (each face's own) and TEXCOORD_0 (the palette), and one material:
+/// the palette as its base colour texture, embedded as PNG. Nothing else:
+/// no light map and no second UV (the user, 2026-11-16: the tiles carry no
+/// light, their palette's colours plain). +Z up turns into +Y up, north into -Z, and the UVs' V
 /// turns to run down, as glTF has it.
 public enum Export {
     static let attribution = "© OpenStreetMap contributors, ODbL"
@@ -20,14 +20,13 @@ public enum Export {
     public static let replacedZoom = 15
 
     /// Writes <name>.glb, placement.json and metadata.json into `out` from
-    /// the cut triangles and their light UVs. Returns the GLB's URL.
+    /// the cut triangles. Returns the GLB's URL.
     @discardableResult
-    public static func tile(_ m: Triangles, uv0: [Double], uv1: [Double], palette: PaletteTexture, light: [UInt8], lightSize: Int,
-                            tile: Tile, out: URL, stats: [String: Any], models: [String]) throws -> URL {
+    public static func tile(_ m: Triangles, uv0: [Double], palette: PaletteTexture, tile: Tile, out: URL, stats: [String: Any], models: [String]) throws -> URL {
         let name = "tile_\(tile.z)_\(tile.x)_\(tile.y)"
         let url = out.appendingPathComponent("\(name).glb")
         // Corners alike in every attribute are one vertex.
-        var positions: [Float] = [], normals: [Float] = [], uv0s: [Float] = [], uv1s: [Float] = [], indices: [UInt32] = []
+        var positions: [Float] = [], normals: [Float] = [], uv0s: [Float] = [], indices: [UInt32] = []
         var seen: [[Float]: UInt32] = [:]
         func key(_ v: Double) -> Float { Float((v * 1e5).rounded() / 1e5) }
         for t in 0..<m.count {
@@ -37,10 +36,9 @@ public enum Export {
                 // (x, y, z) to (x, z, -y), V down.
                 let j = t * 6 + i * 2
                 let u0: Float = key(uv0[j]), v0: Float = key(1.0 - uv0[j + 1])
-                let u1: Float = key(uv1[j]), v1: Float = key(1.0 - uv1[j + 1])
                 var row: [Float] = [key(c.x), key(c.z), key(-c.y)]
                 row += [key(n.x), key(n.z), key(-n.y)]
-                row += [u0, v0, u1, v1]
+                row += [u0, v0]
                 if let k = seen[row] {
                     indices.append(k)
                     continue
@@ -51,12 +49,10 @@ public enum Export {
                 positions += row[0..<3]
                 normals += row[3..<6]
                 uv0s += row[6..<8]
-                uv1s += row[8..<10]
             }
         }
-        try GLTF.write(url, positions: positions, normals: normals, uv0: uv0s, uv1: uv1s, indices: indices,
-                       basePNG: PNG.encode(palette.pixels, width: palette.size, height: palette.size, channels: 3),
-                       occlusionPNG: PNG.encode(light, width: lightSize, height: lightSize, channels: 3), name: "tile")
+        try GLTF.write(url, positions: positions, normals: normals, uv0: uv0s, indices: indices,
+                       basePNG: PNG.encode(palette.pixels, width: palette.size, height: palette.size, channels: 3), name: "tile")
         var placement: [String: Any] = [
             "id": name.replacingOccurrences(of: "_", with: "-"), "model": "\(name).glb",
             "origin": ["latitude": tile.centreLatitude, "longitude": tile.centreLongitude], "altitude_m": 0,

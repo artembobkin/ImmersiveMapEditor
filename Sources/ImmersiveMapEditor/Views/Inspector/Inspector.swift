@@ -38,7 +38,7 @@ struct Inspector: View {
                         Section { Text("No road document holds the tile.").foregroundStyle(.secondary) }
                     }
                 case .preview:
-                    LightSections()
+                    PreviewSections()
                     if session.workspace.previewSubject == "tile" { TilesSections() }
                 case .buildings:
                     // A landmark open is all the panel is about: the picked
@@ -141,7 +141,7 @@ struct BuildSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Build \(session.buildTarget?.name ?? "the tile")").font(.headline)
-                .help("What the tile's model holds. The light is not baked here: Bake does that after.")
+                .help("What the tile's model holds.")
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Self.parts.filter { $0.key != "roads" || Features.roads }, id: \.key) { part in
                     Toggle(part.name, isOn: Binding(get: { session.buildParts.contains(part.key) }, set: { session.toggle(part: part.key, on: $0) }))
@@ -168,7 +168,7 @@ extension ViewMode {
     var systemImage: String {
         switch self {
         case .roads: "road.lanes"
-        case .preview: "sun.max"
+        case .preview: "eye"
         case .buildings: "building.2"
         case .style: "paintpalette"
         case .engine: "globe"

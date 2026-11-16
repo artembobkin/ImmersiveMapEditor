@@ -6,11 +6,10 @@ import Foundation
 ///
 /// - Roads: the road document, seeded from osm2streets and OSM (again, over
 ///   the hand edits, only when confirmed).
-/// - Tiles 3D: the tile built from its sources, its road document and its
-///   landmark models, its light left white.
-/// - Light: the tile's light baked again, its geometry as built.
+/// - Preview: the tile built from its sources, its road document and its
+///   landmark models.
 enum TileAction {
-    case roads, tile, light
+    case roads, tile
     /// Engine: every built tile into the model archive the Engine view reads.
     case engine
 
@@ -18,7 +17,6 @@ enum TileAction {
         switch self {
         case .roads: "Seed the Roads"
         case .tile: "Build the Tile…"
-        case .light: "Bake"
         case .engine: "Update the Archive"
         }
     }
@@ -27,7 +25,6 @@ enum TileAction {
         switch self {
         case .roads: "road.lanes"
         case .tile: "cube"
-        case .light: "sun.max"
         case .engine: "shippingbox"
         }
     }
@@ -37,9 +34,7 @@ enum TileAction {
         case .roads:
             "Seed the road document holding the tile from osm2streets and OSM: a new one, or again over the hand edits once confirmed (⌘B)"
         case .tile:
-            "The tile's model from OSM and the road document, the parts you choose, exported; its light left for Bake (⌘B)"
-        case .light:
-            "The light and the faces' shade into the tile's textures with the modifiers below, its geometry as built"
+            "The tile's model from OSM and the road document, the parts you choose, exported (⌘B)"
         case .engine:
             "Every built tile into the engine's model archive in the data folder (engine/), which the map on this view reads (⌘B)"
         }
@@ -48,13 +43,12 @@ enum TileAction {
 
 extension ViewMode {
     /// The view's actions on the working tile, if it has any: Preview
-    /// builds the tile and bakes its light (the user, 2026-10-29: one view
-    /// of the tile in 3D, Tiles 3D and Preview made one).
+    /// builds the tile (the user, 2026-10-29: one view of the tile in 3D,
+    /// Tiles 3D and Preview made one).
     var actions: [TileAction] {
         switch self {
         case .roads: [.roads]
-        // Bake is left out while the lighting is hidden (LightSections.lightingShown).
-        case .preview: LightSections.lightingShown ? [.tile, .light] : [.tile]
+        case .preview: [.tile]
         case .engine: [.engine]
         case .buildings, .style: []
         }

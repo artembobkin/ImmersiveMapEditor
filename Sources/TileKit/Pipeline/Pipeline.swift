@@ -9,9 +9,8 @@ import Foundation
 ///    and OSM (Seed). A seeded document is never seeded again here: it holds
 ///    the hand edits of the editor;
 /// 3. build: the whole tile (Build): the roads of the document, buildings,
-///    landmarks, construction sites, bus shelters, the light map, cut to the
-///    tile's edges, written as GLB, placement.json and metadata.json, and the
-///    scene of its light in bake/, so `pipeline bake` can bake it again;
+///    landmarks, construction sites, bus shelters, cut to the tile's
+///    edges, written as GLB, placement.json and metadata.json;
 /// 4. validate: Validate, against the rules of TilePipeline's CLAUDE.md.
 ///
 /// Writes out/tiles/<z>/<x>/<y>/ per tile and records each in the registry, the list
@@ -20,10 +19,6 @@ import Foundation
 public enum Pipeline {
     public struct Options {
         public var refetch = false
-        public var samples = 256
-        /// Whether the light is baked with the build: without it the light
-        /// map is white, until `pipeline bake`.
-        public var bakeLight = true
         /// The parts built (Build.allParts): without the roads no road
         /// document is seeded.
         public var parts: Set<String> = Build.allParts
@@ -82,18 +77,16 @@ public enum Pipeline {
             let started = Date()
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                // A stale GLB would pass validation after a failed build, and a
-                // stale bake/ would bake the old geometry.
-                for stale in ["placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb", Bake.folder] {
+                // A stale GLB would pass validation after a failed build. The
+                // light map and the bake's folder are of builds from before
+                // the tiles stopped carrying a light map.
+                for stale in ["placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb", "lightmap.png", "bake"] {
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(stale))
                 }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
                 Palette.load(paths, z: z, x: x, y: y)
                 let t0 = Date()
-                var light = Lighting.Settings()
-                light.samples = options.samples
-                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, light: light, bakeLight: options.bakeLight,
-                              parts: options.parts)
+                try Build.run(paths, tile: tile, out: folder, whole: true, export: true, parts: options.parts)
                 state["build_s"] = round(Date().timeIntervalSince(t0) * 10) / 10
                 print(String(format: "  build     ok in %.1f s", state["build_s"] as! Double))
                 Progress.report("Validating")

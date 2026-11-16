@@ -2,8 +2,9 @@ import Foundation
 import Geometry
 
 /// How the tile's edge treats a face: cut along it; a building this tile
-/// owns, kept whole; a building a neighbour owns, there for the light map
-/// only.
+/// owns, kept whole; a building a neighbour owns, built with the margin and
+/// left out of the tile (it was there for the light map, when a tile had
+/// one).
 public enum Owner: Int8 { case cut = 0, whole = 1, foreign = 2 }
 
 /// Triangles: corners (9 doubles each), palette UVs (6 each, V up), how the

@@ -1,5 +1,5 @@
 {
-  "originHash" : "5f7e3bdb394611768c1fe335a3bc2c5a4e78df2b61abc657e23820494db2aed7",
+  "originHash" : "1ec6b2a672e3116c1c037ed8479f43cf488d19cec60878cbbe2e748e3465a515",
   "pins" : [
     {
       "identity" : "immersivemap",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/artembobkin/ImmersiveMap.git",
       "state" : {
         "branch" : "main",
-        "revision" : "463794a5d6cc13a94000b63b994855052d7da17e"
+        "revision" : "88b8b9f096bf92eff71987b44508d0b865466e05"
       }
     },
     {

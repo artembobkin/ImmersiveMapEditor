@@ -256,30 +256,6 @@ public enum Palette {
         return out
     }
 
-    /// The face shade: a colour's name with a step of shade, "name~2". A
-    /// face shut in by what is around it (a window's reveal, a ceiling
-    /// under a portico, the wall behind columns) takes its colour a step
-    /// or more darker, and a little cooler, flat over the face (the user,
-    /// 2026-10-28: depth from the building's own geometry, in the style's
-    /// flat colours). `step` is how much darker each step is.
-    public static let shadeSteps = 3
-    /// The quantum of a face's shade: a factor on its colour is rounded to
-    /// a multiple of this, and the cell named by the multiple, "name~7".
-    public static let shadeQuantum = 1.0 / 32
-    public static func shaded(_ name: String, factor: Double, coarse: Int = 1) -> String {
-        // `coarse` merges levels, 2 for every second one, when a tile would
-        // need more cells than the largest palette holds.
-        var level = Int(((1 - min(max(factor, 0), 1)) / shadeQuantum).rounded())
-        level = (level + coarse / 2) / max(1, coarse) * max(1, coarse)
-        return level > 0 ? "\(name)~\(level)" : name
-    }
-    public static func hexShaded(_ name: String) -> String? {
-        guard let tilde = name.lastIndex(of: "~") else { return hexAny(name) }
-        guard let level = Int(name[name.index(after: tilde)...]), let base = hexAny(String(name[..<tilde])) else { return nil }
-        let k = max(0, 1 - shadeQuantum * Double(level))
-        return tone(base, (k * 0.98, k, k * 1.04))
-    }
-
     /// A colour's hex by any name the build uses: a cell's, or a sided
     /// name without its side ("lm_cream.reveal": the plain reveal tone), for
     /// the faces painted flat when the side tones are off.
@@ -321,8 +297,7 @@ public final class PaletteTexture {
     /// Every palette is 512 px, 1024 cells, whatever the tile needs: the
     /// engine keeps the tiles' palettes as the layers of texture arrays,
     /// which share one size, and one size everywhere is simplest and
-    /// fastest there (the user, 2026-11-02). A tile that would need more
-    /// cells merges its shade levels until it fits (`Bake`).
+    /// fastest there (the user, 2026-11-02).
     public static let size = 512
     public static let cells = (size / cell) * (size / cell)
     public let size = PaletteTexture.size
@@ -335,8 +310,7 @@ public final class PaletteTexture {
     /// name's cell is the same in every build.
     public convenience init() { self.init(names: Palette.all.map(\.0)) }
 
-    /// A palette of just these names (shaded names "name~k" among them,
-    /// each k quanta darker), in the order given.
+    /// A palette of just these names, in the order given.
     public init(names: [String]) {
         let cell = PaletteTexture.cell, n = PaletteTexture.size
         precondition(names.count <= PaletteTexture.cells, "too many colours for the palette: \(names.count)")
@@ -345,7 +319,7 @@ public final class PaletteTexture {
         let perRow = n / cell
         for (i, name) in names.enumerated() {
             let (r, c) = (i / perRow, i % perRow)
-            let (cr, cg, cb) = Palette.rgb(Palette.hexShaded(name) ?? "#FF00FF")
+            let (cr, cg, cb) = Palette.rgb(Palette.hexAny(name) ?? "#FF00FF")
             for y in (r * cell)..<((r + 1) * cell) {
                 for x in (c * cell)..<((c + 1) * cell) {
                     let k = (y * n + x) * 3

@@ -1,18 +1,26 @@
 import Foundation
+import GLTF
+import ModelTileFormat
+import PMTiles
 import simd
 
 /// The model archive the engine reads: a PMTiles file with one tile of
-/// models per map tile, each in the engine's own form (ModelTileFormat,
-/// version 4: one mesh, one texture array, one set of UVs, ready for the
-/// GPU). Every built tile of the data folder goes in, its GLB placed at
-/// its placement.json's origin and scaled by the Mercator scale there, as
-/// the engine's baker in Modeling did for its landmark models (its code,
+/// models per map tile, each in the engine's own form (the engine's
+/// `ModelTileFormat` module, which reads and writes it, so the layout is
+/// written down once for both: the user, 2026-11-16. One mesh, one texture
+/// array, one set of UVs, ready for the GPU). Every
+/// built tile of the data folder goes in, its GLB placed at its
+/// placement.json's origin and scaled by the Mercator scale there, as the
+/// engine's baker in Modeling did for its landmark models (its code,
 /// brought in here so the editor is one program; the user, 2026-10-29).
 ///
-/// What version 4 carries: the palette on TEXCOORD_0, with everything the
-/// bake put into it (the face shade, the Lambert lights, the side tones).
-/// The light map on TEXCOORD_1 waits for the format's next version in the
-/// engine and here together.
+/// What a tile carries: the palette on TEXCOORD_0, with everything the bake
+/// put into it (the face shade, the Lambert lights, the side tones). The
+/// light map on TEXCOORD_1 waits for a later version of the format in the
+/// engine and here together. A tile is kept small, since the engine reads
+/// none past 64 MB: a vertex that comes twice is written once, and a
+/// position is two bytes an axis across the tile's bounding box (the user,
+/// 2026-11-16: Red Square's tile was 73 MB and never shown).
 public enum ModelArchive {
     public struct Summary {
         public var tiles = 0
@@ -21,12 +29,18 @@ public enum ModelArchive {
         public var lines: [String] = []
     }
 
-    /// The zoom of the archive's tiles: the engine asks for model tiles of
-    /// this zoom alone (its `ModelTileStore.tileZoom`), whatever zoom the map
-    /// is at, so a built tile of a deeper zoom goes into the archive tile
-    /// over it, the four of one zoom 15 tile baked as one (the user,
-    /// 2026-11-02: an archive of zoom 15 tiles showed nothing on the map).
-    public static let archiveZoom = 14
+    /// The zoom of the archive's tiles, the engine's own constant: it asks
+    /// for model tiles of this zoom alone, whatever zoom the map is at, so
+    /// a built tile of a deeper zoom goes into the archive tile over it,
+    /// the four of one zoom 15 tile baked as one (the user, 2026-11-02: an
+    /// archive of zoom 15 tiles showed nothing on the map).
+    public static let archiveZoom = ModelTileContents.tileZoom
+
+    /// The length of the Web Mercator world, the equator, in meters: what
+    /// the map's projection takes it to be.
+    static let earthCircumferenceMeters: Double = 40_075_016.686
+    /// The units of tile space along a tile's edge, the map's own extent.
+    static let tileExtent = Double(ModelTileContents.tileExtent)
 
     /// Bakes every built tile of zoom `z` into `out`, by the archive's
     /// tiles of `archiveZoom`. ASTC blocks of `blockEdge` (8, or 4 for a
@@ -70,6 +84,18 @@ public enum ModelArchive {
             }
             guard let tile = baked else { continue }
             let data = tile.serialized()
+            // A tile past what the engine reads is left out and named, as
+            // one that cannot be read is: the engine takes a larger one for
+            // a corrupt file and shows none of its models, saying so only
+            // in its log (the user, 2026-11-16: Red Square's tile, 73 MB,
+            // was archived and never shown, and nothing said why).
+            guard data.count <= PMTilesWriter.maximumTileByteCount else {
+                let note = "\(archiveZoom)/\(x)/\(y) left out, it is \(megabytes(data.count)) and the engine reads a tile up to "
+                    + "\(megabytes(PMTilesWriter.maximumTileByteCount)): its landmarks need fewer triangles (\(tile.indices.count / 3) now)"
+                print("[archive] \(note)")
+                summary.lines.append(note)
+                continue
+            }
             archive.tiles.append(PMTilesWriter.Tile(zoom: archiveZoom, x: x, y: y, data: data))
             summary.tiles += 1
             summary.models += tile.models.count
@@ -81,7 +107,7 @@ public enum ModelArchive {
         archive.metadata = [
             "name": "ImmersiveMap models",
             "format": "immersivemap-model-tile",
-            "version": Int(ModelTileFormat.version),
+            "version": Int(ModelTileContents.version),
             "astc_block": "\(blockEdge)x\(blockEdge)",
         ]
         let data = try archive.serialized()
@@ -121,9 +147,6 @@ public enum ModelArchive {
         // Every model is merged: the map draws the tile in one call (no
         // model cuts into the ground, the user, 2026-11-05).
 
-        var models: [ModelTileModel] = []
-        var vertices = ByteWriter()
-        var indices: [UInt32] = []
         var layerDigests: [String] = []
         var layers: [EncodedTexture] = []
         var tileMinimum = SIMD3<Float>(repeating: .infinity)
@@ -135,11 +158,16 @@ public enum ModelArchive {
         var layerSize: (width: Int, height: Int)?
         for (placement, file) in placements {
             let modelURL = file.deletingLastPathComponent().appendingPathComponent(placement.model)
-            for primitive in try GLBReader.read(modelURL) {
+            for primitive in try GLTF.indexedPrimitives(modelURL) {
                 guard let size = TextureEncoder.pngSize(primitive.image) else { continue }
                 if layerSize.map({ size.width > $0.width || size.height > $0.height }) ?? true { layerSize = size }
             }
         }
+
+        // The models as read, in tile space: a vertex's place in the tile
+        // is a share of the tile's bounding box, known only once every
+        // model is in.
+        var sources: [SourceModel] = []
         for (placement, file) in placements {
             let origin = placement.origin
             let tile = tileCoordinate(latitude: origin.latitude, longitude: origin.longitude, zoom: zoom)
@@ -147,22 +175,20 @@ public enum ModelArchive {
                 throw BakeError("\(placement.id): its origin lies in tile \(zoom)/\(tile.x)/\(tile.y), and the model is in the folder of \(zoom)/\(x)/\(y)")
             }
             let modelURL = file.deletingLastPathComponent().appendingPathComponent(placement.model)
-            let primitives = try GLBReader.read(modelURL)
+            let primitives = try GLTF.indexedPrimitives(modelURL)
 
             // The origin in tile space, and the tile units a meter at its
             // latitude takes: the Mercator scale there, the same on every axis.
             let latitude = origin.latitude * .pi / 180
-            let originX = ((origin.longitude + 180) / 360 * tilesAcross - Double(x)) * ModelTileFormat.tileExtent
-            let originRow = ((1 - asinh(tan(latitude)) / .pi) / 2 * tilesAcross - Double(y)) * ModelTileFormat.tileExtent
-            let originY = ModelTileFormat.tileExtent - originRow
-            let unitsPerMeter = tilesAcross * ModelTileFormat.tileExtent
-                / (ModelTileFormat.earthCircumferenceMeters * cos(latitude))
+            let originX = ((origin.longitude + 180) / 360 * tilesAcross - Double(x)) * tileExtent
+            let originRow = ((1 - asinh(tan(latitude)) / .pi) / 2 * tilesAcross - Double(y)) * tileExtent
+            let originY = tileExtent - originRow
+            let unitsPerMeter = tilesAcross * tileExtent
+                / (earthCircumferenceMeters * cos(latitude))
             let altitude = placement.altitudeMeters ?? 0
 
-            let firstVertex = vertices.count / ModelTileFormat.vertexStride
-            let firstIndex = indices.count
-            var minimum = SIMD3<Float>(repeating: .infinity)
-            var maximum = SIMD3<Float>(repeating: -.infinity)
+            var source = SourceModel(id: placement.id, latitude: origin.latitude, longitude: origin.longitude,
+                                     altitudeMeters: Float(altitude), replacedBuildings: try placement.replacedBuildings())
             for primitive in primitives {
                 let digest = TextureEncoder.digest(of: primitive.image).map { String(format: "%02x", $0) }.joined()
                     + (layerSize.map { "-\($0.width)x\($0.height)" } ?? "")
@@ -178,10 +204,10 @@ public enum ModelArchive {
                     throw BakeError("tile \(zoom)/\(x)/\(y): more than 256 different textures")
                 }
 
-                let baseVertex = UInt32(vertices.count / ModelTileFormat.vertexStride)
+                let baseVertex = UInt32(source.positions.count)
                 for vertex in 0..<primitive.positions.count {
-                    let source = primitive.positions[vertex]
-                    let sourceNormal = primitive.normals[vertex]
+                    let position = primitive.positions[vertex]
+                    let normal = primitive.normals[vertex]
                     let coordinate = primitive.textureCoordinates[vertex]
                     // The array texture has no repeat: a coordinate outside the
                     // unit square would sample the edge, not the next copy.
@@ -189,44 +215,67 @@ public enum ModelArchive {
                           coordinate.y >= -1e-4, coordinate.y <= 1 + 1e-4 else {
                         throw BakeError("\(placement.id): a texture coordinate lies outside 0...1")
                     }
-                    guard source.x.isFinite, source.y.isFinite, source.z.isFinite else {
+                    guard position.x.isFinite, position.y.isFinite, position.z.isFinite else {
                         throw BakeError("\(placement.id): a position is not finite")
                     }
                     // The model's X east, Y up, -Z north into the tile's X
                     // east, Y north, Z up: a rotation, so the winding holds.
-                    let position = SIMD3<Float>(Float(originX + Double(source.x) * unitsPerMeter),
-                                                Float(originY - Double(source.z) * unitsPerMeter),
-                                                Float((Double(source.y) + altitude) * unitsPerMeter))
-                    let normal = SIMD3<Float>(sourceNormal.x, -sourceNormal.z, sourceNormal.y)
-                    minimum = simd_min(minimum, position)
-                    maximum = simd_max(maximum, position)
-                    vertices.append(position.x)
-                    vertices.append(position.y)
-                    vertices.append(position.z)
-                    for component in [normal.x, normal.y, normal.z] {
-                        vertices.append(Int8(max(-127, min(127, (component * 127).rounded()))))
-                    }
-                    vertices.append(UInt8(layer))
-                    for component in [coordinate.x, coordinate.y] {
-                        vertices.append(UInt16((max(0, min(1, component)) * 65_535).rounded()))
-                    }
+                    source.positions.append(SIMD3<Float>(Float(originX + Double(position.x) * unitsPerMeter),
+                                                         Float(originY - Double(position.z) * unitsPerMeter),
+                                                         Float((Double(position.y) + altitude) * unitsPerMeter)))
+                    source.surfaces.append(ModelTileVertex(normal: SIMD3<Float>(normal.x, -normal.z, normal.y),
+                                                           layer: UInt8(layer), coordinate: coordinate))
                 }
-                indices.append(contentsOf: primitive.indices.map { $0 + baseVertex })
+                source.indices.append(contentsOf: primitive.indices.map { $0 + baseVertex })
             }
+            for position in source.positions {
+                source.minimum = simd_min(source.minimum, position)
+                source.maximum = simd_max(source.maximum, position)
+            }
+            tileMinimum = simd_min(tileMinimum, source.minimum)
+            tileMaximum = simd_max(tileMaximum, source.maximum)
+            sources.append(source)
+        }
 
-            tileMinimum = simd_min(tileMinimum, minimum)
-            tileMaximum = simd_max(tileMaximum, maximum)
-            models.append(ModelTileModel(id: placement.id,
-                                         latitude: origin.latitude,
-                                         longitude: origin.longitude,
-                                         altitudeMeters: Float(altitude),
-                                         replacedBuildings: try placement.replacedBuildings(),
+        var models: [ModelTile.Model] = []
+        var vertices = Data()
+        var indices: [UInt32] = []
+        for source in sources {
+            let firstVertex = vertices.count / ModelTileContents.vertexStride
+            let firstIndex = indices.count
+            // The model's vertices already written, by their bytes: one that
+            // comes again is written once and named again by its index. The
+            // build splits a corner wherever its light map coordinates
+            // differ, and the archive carries none, so two fifths of a
+            // tile's vertices were copies (the user, 2026-11-16: Red
+            // Square's tile, 73 MB, was past the 64 MB the engine reads).
+            var written: [ModelTileVertex: UInt32] = [:]
+            // Where each of the model's vertices went in the tile.
+            var placed = [UInt32](repeating: 0, count: source.positions.count)
+            for vertex in 0..<source.positions.count {
+                var record = source.surfaces[vertex]
+                record.place(source.positions[vertex], minimum: tileMinimum, maximum: tileMaximum)
+                if let index = written[record] {
+                    placed[vertex] = index
+                    continue
+                }
+                let index = UInt32(vertices.count / ModelTileContents.vertexStride)
+                written[record] = index
+                placed[vertex] = index
+                record.append(to: &vertices)
+            }
+            indices.append(contentsOf: source.indices.map { placed[Int($0)] })
+            models.append(ModelTile.Model(id: source.id,
+                                         latitude: source.latitude,
+                                         longitude: source.longitude,
+                                         altitudeMeters: source.altitudeMeters,
+                                         replacedBuildings: source.replacedBuildings,
                                          firstIndex: UInt32(firstIndex),
                                          indexCount: UInt32(indices.count - firstIndex),
                                          firstVertex: UInt32(firstVertex),
-                                         vertexCount: UInt32(vertices.count / ModelTileFormat.vertexStride - firstVertex),
-                                         boundsMinimum: minimum,
-                                         boundsMaximum: maximum))
+                                         vertexCount: UInt32(vertices.count / ModelTileContents.vertexStride - firstVertex),
+                                         boundsMinimum: source.minimum,
+                                         boundsMaximum: source.maximum))
         }
 
         let first = layers[0]
@@ -239,9 +288,27 @@ public enum ModelArchive {
         return ModelTile(zoom: zoom, x: x, y: y, models: models,
                          boundsMinimum: tileMinimum,
                          boundsMaximum: tileMaximum,
-                         vertices: vertices.data, indices: indices,
-                         texture: ModelTileTexture(width: first.width, height: first.height,
+                         vertices: vertices, indices: indices,
+                         texture: ModelTile.Texture(width: first.width, height: first.height,
                                                    blockEdge: blockEdge, layerCount: layers.count,
                                                    levels: levels))
+    }
+
+    /// A model as its build gave it, placed in tile space, before its
+    /// vertices are written: a position and a surface a vertex, the
+    /// triangles by indices into them.
+    struct SourceModel {
+        var id: String
+        var latitude: Double
+        var longitude: Double
+        var altitudeMeters: Float
+        var replacedBuildings: [ModelTileContents.ReplacedBuilding]
+        var positions: [SIMD3<Float>] = []
+        /// Each vertex's surface, its place set once the tile's bounding
+        /// box is known.
+        var surfaces: [ModelTileVertex] = []
+        var indices: [UInt32] = []
+        var minimum = SIMD3<Float>(repeating: .infinity)
+        var maximum = SIMD3<Float>(repeating: -.infinity)
     }
 }

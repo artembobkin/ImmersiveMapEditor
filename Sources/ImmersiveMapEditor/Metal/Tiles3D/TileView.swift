@@ -10,7 +10,7 @@ import simd
 /// The mouse as in the engine: drag to move over the ground, right-drag (or
 /// option-drag) to turn and tilt, scroll or pinch to zoom toward the cursor.
 /// Tab flies (W A S D, Q down, E up, shift faster, right-drag to look,
-/// scroll for speed). F frames the tiles. The Light view shows them lit.
+/// scroll for speed). F frames the tiles.
 final class TileView: MTKView {
     let model: Workspace
     private let renderer: TileRenderer
@@ -92,7 +92,7 @@ final class TileView: MTKView {
     func snapshot(to url: URL, width: Int, height: Int) throws {
         refresh()
         try renderer.snapshot(library, viewProjection: controller.camera.viewProjection(aspect: Double(width) / Double(height)),
-                              shading: .lit, to: url, width: width, height: height)
+                              to: url, width: width, height: height)
     }
 
     // MARK: Input
@@ -181,8 +181,7 @@ extension TileView: MTKViewDelegate {
               let buffer = renderer.queue.makeCommandBuffer(),
               let enc = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let aspect = max(Double(bounds.width), 1) / max(Double(bounds.height), 1)
-        renderer.encode(enc, tiles: library, viewProjection: controller.camera.viewProjection(aspect: aspect),
-                        shading: model.viewMode == .preview ? model.lightShading : .palette)
+        renderer.encode(enc, tiles: library, viewProjection: controller.camera.viewProjection(aspect: aspect))
         enc.endEncoding()
         buffer.present(drawable)
         buffer.commit()

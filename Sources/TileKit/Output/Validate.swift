@@ -59,7 +59,7 @@ public enum Validate {
         check("one mesh, one primitive", meshes.count == 1 && prims.count == 1)
         let prim = prims.first ?? [:]
         let attrs = prim["attributes"] as? [String: Int] ?? [:]
-        check("attributes", Set(attrs.keys) == ["POSITION", "NORMAL", "TEXCOORD_0", "TEXCOORD_1"], attrs.keys.sorted().description)
+        check("attributes", Set(attrs.keys) == ["POSITION", "NORMAL", "TEXCOORD_0"], attrs.keys.sorted().description)
         check("triangles, indexed", (prim["mode"] as? Int ?? 4) == 4 && prim["indices"] != nil)
         let accessors = list("accessors")
         let indices = accessors[prim["indices"] as? Int ?? 0]
@@ -69,14 +69,14 @@ public enum Validate {
         check("one material", mats.count == 1)
         let m = mats.first ?? [:]
         let pbr = m["pbrMetallicRoughness"] as? [String: Any] ?? [:]
-        let base = pbr["baseColorTexture"] as? [String: Any], occ = m["occlusionTexture"] as? [String: Any]
+        let base = pbr["baseColorTexture"] as? [String: Any]
         check("palette on TEXCOORD_0", base != nil && (base?["texCoord"] as? Int ?? 0) == 0)
-        check("light map on TEXCOORD_1", occ != nil && (occ?["texCoord"] as? Int ?? 0) == 1)
+        check("no light map", m["occlusionTexture"] == nil)
         check("base colour factor white", (pbr["baseColorFactor"] as? [Double] ?? [1, 1, 1, 1]) == [1, 1, 1, 1])
         check("nothing else in the material", m["normalTexture"] == nil && m["emissiveTexture"] == nil
               && (m["alphaMode"] as? String ?? "OPAQUE") == "OPAQUE" && pbr["metallicRoughnessTexture"] == nil)
         let images = list("images")
-        check("two embedded PNG", images.count == 2 && images.allSatisfy { $0["mimeType"] as? String == "image/png" && $0["bufferView"] != nil })
+        check("one embedded PNG", images.count == 1 && images.allSatisfy { $0["mimeType"] as? String == "image/png" && $0["bufferView"] != nil })
         check("no cameras, lights, skins, animations", gltf["cameras"] == nil && gltf["skins"] == nil
               && gltf["animations"] == nil && (gltf["extensionsUsed"] as? [Any] ?? []).isEmpty)
         let pos = accessors[attrs["POSITION"] ?? 0]
@@ -92,7 +92,7 @@ public enum Validate {
         // what is below the surface hidden under its ground.
         check("nothing below the ground", lo[1] >= -0.01, String(format: "lowest %.3f m", lo[1]), warning: true)
         let views = list("bufferViews")
-        for key in ["TEXCOORD_0", "TEXCOORD_1"] {
+        for key in ["TEXCOORD_0"] {
             let acc = accessors[attrs[key] ?? 0]
             let view = views[acc["bufferView"] as? Int ?? 0]
             let start = (view["byteOffset"] as? Int ?? 0) + (acc["byteOffset"] as? Int ?? 0)

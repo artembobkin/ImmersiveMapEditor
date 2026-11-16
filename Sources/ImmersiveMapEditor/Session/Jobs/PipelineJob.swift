@@ -6,8 +6,8 @@ import Observation
 /// folder as a job: its commands one after another, stopping at the first
 /// that fails, their output into its console as it comes, their progress
 /// lines into the console's stage. Two commands never run on one subject
-/// at once (a bake waits for its tile's build), and at most `atOnce`
-/// pipelines run together: a build takes every core and the GPU.
+/// at once, and at most `atOnce` pipelines run together: a build takes
+/// every core.
 @Observable
 @MainActor
 final class PipelineJob: Job {

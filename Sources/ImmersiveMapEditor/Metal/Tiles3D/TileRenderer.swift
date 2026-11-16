@@ -3,20 +3,11 @@ import ImageIO
 import Metal
 import simd
 
-/// Draws tiles as the engine draws a model tile: the palette times the light
-/// map, raw values, no lighting of its own, back faces culled, each tile
-/// placed and scaled as the engine places it, over a plain plane where the
-/// vector tile's ground would be. Metal only: no camera, no input.
-/// How the 3D view colours a tile: its palette alone (Tiles 3D), the palette
-/// times its light map as the engine draws it, or its light map alone on a
-/// white model, to judge the light (the Light view).
-enum TileShading: String, CaseIterable, Identifiable {
-    case palette = "Palette"
-    case lit = "Palette and light"
-    case light = "Light alone"
-    var id: String { rawValue }
-}
-
+/// Draws the tiles shown: each in its palette's colours under the previews'
+/// one light (`PreviewLight`: a sun with its shadow over an ambient light),
+/// back faces culled, placed and scaled as the engine places it, over a
+/// plain plane where the vector tile's ground would be. Metal only: no
+/// camera, no input.
 final class TileRenderer {
     let device: MTLDevice
     let queue: MTLCommandQueue
@@ -26,37 +17,52 @@ final class TileRenderer {
     static let sky = MTLClearColor(red: 0.80, green: 0.85, blue: 0.90, alpha: 1)
 
     private let pipeline: MTLRenderPipelineState
+    private let shadowPipeline: MTLRenderPipelineState
     private let depth: MTLDepthStencilState
     private let sampler: MTLSamplerState
-    private let white: MTLTexture
+    private let shadowSampler: MTLSamplerState
+    private let shadowMap: MTLTexture
     private let groundColour: MTLTexture
 
     private static let source = """
     #include <metal_stdlib>
     using namespace metal;
-    struct U { float4x4 viewProjection; float4 place; };
-    struct Out { float4 position [[position]]; float2 uv0; float2 uv1; };
+    \(PreviewLight.shader)
+    // The frame's view and projection, the sun's look for the shadow map,
+    // where the tile goes (xyz) at what scale (w), toward the sun, and the
+    // shadow's strength (x) with one texel of its map (y).
+    struct U { float4x4 viewProjection; float4x4 sun; float4 place; float4 sunDirection; float4 shadow; };
+    struct Out { float4 position [[position]]; float2 uv; float3 normal; float4 inSun; };
     vertex Out vs(uint vid [[vertex_id]], const device packed_float3* p [[buffer(0)]],
-                  const device float2* uv0 [[buffer(1)]], const device float2* uv1 [[buffer(2)]],
+                  const device float2* uv [[buffer(1)]], const device packed_float3* n [[buffer(2)]],
                   constant U& u [[buffer(3)]]) {
         float3 world = u.place.xyz + float3(p[vid]) * u.place.w;
         Out o;
         o.position = u.viewProjection * float4(world, 1);
-        o.uv0 = uv0[vid];
-        o.uv1 = uv1[vid];
+        o.uv = uv[vid];
+        o.normal = float3(n[vid]);
+        // Pulled along the normal a little, against acne on the faces facing the sun.
+        o.inSun = u.sun * float4(world + o.normal * 0.08, 1);
         return o;
     }
-    fragment float4 fs(Out i [[stage_in]], texture2d<float> palette [[texture(0)]],
-                       texture2d<float> light [[texture(1)]], sampler s [[sampler(0)]]) {
-        return float4(palette.sample(s, i.uv0).rgb * light.sample(s, i.uv1).rgb, 1);
+    // The sun's depth alone, for the shadow map.
+    vertex float4 svs(uint vid [[vertex_id]], const device packed_float3* p [[buffer(0)]], constant U& u [[buffer(3)]]) {
+        return u.sun * float4(u.place.xyz + float3(p[vid]) * u.place.w, 1);
+    }
+    fragment float4 fs(Out i [[stage_in]], texture2d<float> palette [[texture(0)]], depth2d<float> shadow [[texture(1)]],
+                       sampler s [[sampler(0)]], sampler compare [[sampler(1)]], constant U& u [[buffer(3)]]) {
+        float3 n = normalize(i.normal);
+        float sunlit = previewSunlit(shadow, compare, i.inSun, dot(n, u.sunDirection.xyz), u.shadow.y);
+        return float4(previewLit(palette.sample(s, i.uv).rgb, n, u.sunDirection.xyz, sunlit, u.shadow.x), 1);
     }
     """
 
-    /// What a draw takes per tile: the frame's view and projection, and where
-    /// the tile goes (xyz) at what scale (w).
     private struct Uniforms {
         var viewProjection: simd_float4x4
+        var sun: simd_float4x4
         var place: SIMD4<Float>
+        var sunDirection: SIMD4<Float>
+        var shadow: SIMD4<Float>
     }
 
     init?() {
@@ -72,7 +78,13 @@ final class TileRenderer {
             d.depthAttachmentPixelFormat = Self.depthFormat
             d.rasterSampleCount = Self.samples
             pipeline = try device.makeRenderPipelineState(descriptor: d)
+            let sd = MTLRenderPipelineDescriptor()
+            sd.vertexFunction = library.makeFunction(name: "svs")
+            sd.fragmentFunction = nil
+            sd.depthAttachmentPixelFormat = .depth32Float
+            shadowPipeline = try device.makeRenderPipelineState(descriptor: sd)
         } catch {
+            NSLog("ImmersiveMapEditor: tile shaders: \(error)")
             return nil
         }
         let ds = MTLDepthStencilDescriptor()
@@ -88,57 +100,94 @@ final class TileRenderer {
         sd.sAddressMode = .clampToEdge
         sd.tAddressMode = .clampToEdge
         sampler = device.makeSamplerState(descriptor: sd)!
-        func solid(_ c: SIMD4<Float>) -> MTLTexture {
-            let t = device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1,
-                                                                        mipmapped: false))!
-            var px = SIMD4<UInt8>(UInt8(c.x * 255), UInt8(c.y * 255), UInt8(c.z * 255), 255)
-            t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &px, bytesPerRow: 4)
-            return t
-        }
-        white = solid(SIMD4(1, 1, 1, 1))
-        groundColour = solid(Colours.ground)
+        guard let shadowMap = PreviewLight.makeShadowMap(device), let shadowSampler = PreviewLight.makeShadowSampler(device) else { return nil }
+        self.shadowMap = shadowMap
+        self.shadowSampler = shadowSampler
+        let t = device.makeTexture(descriptor: .texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false))!
+        let c = Colours.ground
+        var px = SIMD4<UInt8>(UInt8(c.x * 255), UInt8(c.y * 255), UInt8(c.z * 255), 255)
+        t.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: &px, bytesPerRow: 4)
+        groundColour = t
     }
 
-    /// Draws the ground and the tiles, coloured by `shading`.
-    func encode(_ enc: MTLRenderCommandEncoder, tiles library: TileLibrary, viewProjection vp: simd_float4x4,
-                shading: TileShading) {
+    /// What a z15 tile reaches from its centre, its corner and its
+    /// overhang: the scene the sun's shadow map has to hold around the
+    /// tiles' centres.
+    private static let tileReach = 560.0
+
+    /// Draws the ground and the tiles under the light: first the sun's
+    /// depth into the shadow map, on a command buffer of its own (the
+    /// view's pass is already begun), then the frame.
+    func encode(_ enc: MTLRenderCommandEncoder, tiles library: TileLibrary, viewProjection vp: simd_float4x4) {
+        guard let (c, reach) = library.extent else { return }
+        let radius = Float(reach + Self.tileReach)
+        let sun = PreviewLight.sunMatrix(centre: SIMD3(Float(c.x), 0, Float(-c.y)), radius: radius, room: 1.15)
+        func uniforms(_ place: SIMD4<Float>) -> Uniforms {
+            Uniforms(viewProjection: vp, sun: sun, place: place, sunDirection: SIMD4(PreviewLight.sun, 0),
+                     shadow: SIMD4(PreviewLight.shadowStrength, 1 / Float(PreviewLight.shadowSize), 0, 0))
+        }
+        func place(_ t: TileModel) -> SIMD4<Float> { SIMD4(Float(t.centre.x), 0, Float(-t.centre.y), Float(t.scale)) }
+
+        let pass = MTLRenderPassDescriptor()
+        pass.depthAttachment.texture = shadowMap
+        pass.depthAttachment.loadAction = .clear
+        pass.depthAttachment.clearDepth = 1
+        pass.depthAttachment.storeAction = .store
+        if let own = queue.makeCommandBuffer(), let s = own.makeRenderCommandEncoder(descriptor: pass) {
+            s.setRenderPipelineState(shadowPipeline)
+            s.setDepthStencilState(depth)
+            s.setCullMode(.none)
+            s.setDepthBias(2, slopeScale: 2, clamp: 0.01)
+            for t in library.tiles {
+                var u = uniforms(place(t))
+                s.setVertexBuffer(t.positions, offset: 0, index: 0)
+                s.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 3)
+                s.drawIndexedPrimitives(type: .triangle, indexCount: t.indexCount, indexType: t.indexType,
+                                        indexBuffer: t.indices, indexBufferOffset: 0)
+            }
+            s.endEncoding()
+            own.commit()
+            own.waitUntilCompleted()
+        }
+
         enc.setRenderPipelineState(pipeline)
         enc.setDepthStencilState(depth)
         enc.setFrontFacing(.counterClockwise)
         enc.setCullMode(.back)
         enc.setFragmentSamplerState(sampler, index: 0)
-        // The vector tile's ground, a plain plane just under the models.
-        if let (c, reach) = library.extent {
-            let r = Float(reach + 400)
-            let quad: [Float] = [-r, -0.05, r, r, -0.05, r, r, -0.05, -r, -r, -0.05, r, r, -0.05, -r, -r, -0.05, -r]
-            let zeros = [Float](repeating: 0, count: 12)
-            var u = Uniforms(viewProjection: vp, place: SIMD4(Float(c.x), 0, Float(-c.y), 1))
-            enc.setVertexBuffer(device.makeBuffer(bytes: quad, length: quad.count * 4), offset: 0, index: 0)
-            enc.setVertexBuffer(device.makeBuffer(bytes: zeros, length: zeros.count * 4), offset: 0, index: 1)
-            enc.setVertexBuffer(device.makeBuffer(bytes: zeros, length: zeros.count * 4), offset: 0, index: 2)
-            enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 3)
-            enc.setFragmentTexture(groundColour, index: 0)
-            enc.setFragmentTexture(white, index: 1)
-            enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
-        }
+        enc.setFragmentSamplerState(shadowSampler, index: 1)
+        enc.setFragmentTexture(shadowMap, index: 1)
+        // The vector tile's ground, a plain plane just under the models,
+        // with their shadows on it.
+        let r = Float(reach + 400)
+        let quad: [Float] = [-r, -0.05, r, r, -0.05, r, r, -0.05, -r, -r, -0.05, r, r, -0.05, -r, -r, -0.05, -r]
+        let zeros = [Float](repeating: 0, count: 12)
+        let ups: [Float] = [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]
+        var ground = uniforms(SIMD4(Float(c.x), 0, Float(-c.y), 1))
+        enc.setVertexBuffer(device.makeBuffer(bytes: quad, length: quad.count * 4), offset: 0, index: 0)
+        enc.setVertexBuffer(device.makeBuffer(bytes: zeros, length: zeros.count * 4), offset: 0, index: 1)
+        enc.setVertexBuffer(device.makeBuffer(bytes: ups, length: ups.count * 4), offset: 0, index: 2)
+        enc.setVertexBytes(&ground, length: MemoryLayout<Uniforms>.stride, index: 3)
+        enc.setFragmentBytes(&ground, length: MemoryLayout<Uniforms>.stride, index: 3)
+        enc.setFragmentTexture(groundColour, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
         for t in library.tiles {
-            var u = Uniforms(viewProjection: vp, place: SIMD4(Float(t.centre.x), 0, Float(-t.centre.y), Float(t.scale)))
+            var u = uniforms(place(t))
             enc.setVertexBuffer(t.positions, offset: 0, index: 0)
             enc.setVertexBuffer(t.uv0, offset: 0, index: 1)
-            enc.setVertexBuffer(t.uv1, offset: 0, index: 2)
+            enc.setVertexBuffer(t.normals, offset: 0, index: 2)
             enc.setVertexBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 3)
-            enc.setFragmentTexture(shading == .light ? white : t.palette, index: 0)
-            enc.setFragmentTexture(shading == .palette ? white : t.light, index: 1)
+            enc.setFragmentBytes(&u, length: MemoryLayout<Uniforms>.stride, index: 3)
+            enc.setFragmentTexture(t.palette, index: 0)
             enc.drawIndexedPrimitives(type: .triangle, indexCount: t.indexCount, indexType: t.indexType,
                                       indexBuffer: t.indices, indexBufferOffset: 0)
         }
     }
 
     /// The tiles drawn offscreen to a PNG, `width` by `height`.
-    func snapshot(_ library: TileLibrary, viewProjection: simd_float4x4, shading: TileShading, to url: URL,
-                  width: Int, height: Int) throws {
+    func snapshot(_ library: TileLibrary, viewProjection: simd_float4x4, to url: URL, width: Int, height: Int) throws {
         try Self.renderPNG(device: device, queue: queue, to: url, width: width, height: height) { enc in
-            encode(enc, tiles: library, viewProjection: viewProjection, shading: shading)
+            encode(enc, tiles: library, viewProjection: viewProjection)
         }
     }
 

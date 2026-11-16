@@ -9,8 +9,8 @@ import simd
 /// fan if it is convex, ear clipping if not).
 public final class Builder {
     public var tris = Triangles()
-    /// The height a wall face shades over in the light map: the whole wall it
-    /// is part of, not the face alone (see Lighting.lightUVs).
+    /// The height of the whole wall a face is part of, not of the face
+    /// alone (what a wall shaded over in the light map, when a tile had one).
     public var span: (Double, Double)?
     /// How the tile's edge treats the faces made now.
     public var whole: Owner = .cut

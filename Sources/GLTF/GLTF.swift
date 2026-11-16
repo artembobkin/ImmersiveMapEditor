@@ -13,8 +13,8 @@ import simd
 ///   written against Blender's importer reads them alike.
 /// - `primitives` and `writeModel`: a model's parts with their materials and
 ///   textures as they came, for fitting a downloaded landmark.
-/// - `write`: one indexed mesh, one material with two embedded PNG
-///   textures, the layout of a tile (TilePipeline's CLAUDE.md, "The model
+/// - `write`: one indexed mesh, one material with its base colour an
+///   embedded PNG, the layout of a tile (TilePipeline's CLAUDE.md, "The model
 ///   file: GLB").
 public enum GLTF {
     public enum Failure: LocalizedError {
@@ -489,39 +489,31 @@ public enum GLTF {
     }
 
     /// One mesh, one material: `basePNG` its base colour texture on
-    /// TEXCOORD_0, `occlusionPNG` its occlusion texture on TEXCOORD_1, both
-    /// embedded. Arrays already in glTF's frame: 3 floats a position or
-    /// normal, 2 a UV.
-    public static func write(_ url: URL, positions: [Float], normals: [Float], uv0: [Float], uv1: [Float],
-                             indices: [UInt32], basePNG: Data, occlusionPNG: Data, name: String = "tile") throws {
+    /// TEXCOORD_0, embedded. Arrays already in glTF's frame: 3 floats a
+    /// position or normal, 2 a UV.
+    public static func write(_ url: URL, positions: [Float], normals: [Float], uv0: [Float],
+                             indices: [UInt32], basePNG: Data, name: String = "tile") throws {
         let blob = Blob()
         let pos = blob.attribute(positions, width: 3, bounds: true)
         let nor = blob.attribute(normals, width: 3)
         let t0 = blob.attribute(uv0, width: 2)
-        let t1 = blob.attribute(uv1, width: 2)
         let ind = blob.indices(indices)
-        let occlusionView = blob.add(occlusionPNG)
         let baseView = blob.add(basePNG)
         let doc: [(String, JSON)] = [
             ("asset", .object([("version", .string("2.0")), ("generator", .string("TilePipeline"))])),
             ("scene", .int(0)), ("scenes", .array([.object([("nodes", .array([.int(0)]))])])),
             ("nodes", .array([.object([("mesh", .int(0)), ("name", .string(name))])])),
             ("meshes", .array([.object([("name", .string(name)), ("primitives", .array([.object([
-                ("attributes", .object([("POSITION", .int(pos)), ("NORMAL", .int(nor)), ("TEXCOORD_0", .int(t0)),
-                                        ("TEXCOORD_1", .int(t1))])),
+                ("attributes", .object([("POSITION", .int(pos)), ("NORMAL", .int(nor)), ("TEXCOORD_0", .int(t0))])),
                 ("indices", .int(ind)), ("material", .int(0)),
             ])]))])])),
             ("materials", .array([.object([
                 ("name", .string(name)),
-                ("pbrMetallicRoughness", .object([("baseColorTexture", .object([("index", .int(1))])),
+                ("pbrMetallicRoughness", .object([("baseColorTexture", .object([("index", .int(0))])),
                                                   ("metallicFactor", .number(0)), ("roughnessFactor", .number(1))])),
-                ("occlusionTexture", .object([("index", .int(0)), ("texCoord", .int(1))])),
             ])])),
-            ("textures", .array([.object([("sampler", .int(0)), ("source", .int(0))]),
-                                 .object([("sampler", .int(0)), ("source", .int(1))])])),
-            ("images", .array([.object([("bufferView", .int(occlusionView)), ("mimeType", .string("image/png")),
-                                        ("name", .string("lightmap"))]),
-                               .object([("bufferView", .int(baseView)), ("mimeType", .string("image/png")),
+            ("textures", .array([.object([("sampler", .int(0)), ("source", .int(0))])])),
+            ("images", .array([.object([("bufferView", .int(baseView)), ("mimeType", .string("image/png")),
                                         ("name", .string("palette"))])])),
             ("samplers", .array([.object([("magFilter", .int(9729)), ("minFilter", .int(9987)), ("wrapS", .int(33071)),
                                           ("wrapT", .int(33071))])])),

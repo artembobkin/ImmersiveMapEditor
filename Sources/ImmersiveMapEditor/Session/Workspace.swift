@@ -54,8 +54,6 @@ final class Workspace {
         didSet { tilesRevision += 1 }
     }
     var flying = false
-    /// How the Preview colours the tile: lit, or its light alone.
-    var lightShading = TileShading.lit
     /// What the Preview shows lit: the tile ("tile"), or a landmark of it by
     /// its id, alone.
     var previewSubject = "tile"

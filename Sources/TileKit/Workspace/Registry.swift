@@ -7,7 +7,7 @@ import SQLite3
 /// with the OSM buildings it is made of, so a building modelled in one
 /// tile is never modelled again in a neighbour that holds it too. A tile
 /// builds the landmarks whose origin stands in it, and takes a neighbour's
-/// within its margin for the light alone.
+/// within its margin only to leave it out of its own model.
 public final class Registry {
     public struct TileRecord {
         public var z: Int, x: Int, y: Int

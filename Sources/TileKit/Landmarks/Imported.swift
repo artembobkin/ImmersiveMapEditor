@@ -204,11 +204,11 @@ public enum Imported {
         let landmarkNames = Set(Palette.landmark.map(\.0))
         if let region {
             // A model belongs to the tile its origin stands in; a neighbour's
-            // is in the scene for the light alone, left out of the model.
+            // is read with the tile's and left out of the model.
             let own = models.filter { region.contains($0.origin) }.map(\.id)
             let near = models.filter { !region.contains($0.origin) }.map(\.id)
             print("[landmarks] in the tile: " + (own.isEmpty ? "none" : own.joined(separator: ", ")))
-            if !near.isEmpty { print("[landmarks] the neighbours', for the light only: " + near.joined(separator: ", ")) }
+            if !near.isEmpty { print("[landmarks] the neighbours', left out of the model: " + near.joined(separator: ", ")) }
         } else {
             print("[landmarks] \(models.count) models: \(models.map(\.id).joined(separator: ", "))")
         }

@@ -9,15 +9,12 @@ import Foundation
 ///   pipeline build 15 19808 10243                 one tile
 ///   pipeline build 15 19808 10242 19809 10243     a range of tiles
 ///   pipeline build 15 --tiles 19810/10243 ...     any set of tiles
-///       [--refetch] [--samples 256] [--no-light]   (the light baked later: bake)
+///       [--refetch]
 ///   pipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
-///       [--samples 128] [--roads roads/....json]
+///       [--roads roads/....json]
 ///   pipeline fetch 15 19808 10243 [--force]
 ///   pipeline seed 15 19808 10243 [--force]           a tile's road document
 ///   pipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
-///   pipeline bake 15 --tiles 19808/10243 ...      the light of built tiles again
-///       [--size 1024] [--samples 256] [--bounces 3] [--gamma 1.6] [--lit R G B] [--shade R G B]
-///       [--mode sky|ao] [--ao-radius 8] [--sky 1] [--sun AZIMUTH ELEVATION STRENGTH | --no-sun]
 ///   pipeline validate tiles/15/19808/10243/build
 ///   pipeline fit detsky-mir
 ///
@@ -37,11 +34,9 @@ public enum PipelineCommand {
             case "build":
                 var options = Pipeline.Options()
                 options.refetch = args.flag("--refetch")
-                options.bakeLight = !args.flag("--no-light")
                 if let p = args.value("--parts") { options.parts = Set(p[0].split(separator: ",").map(String.init)).intersection(Build.allParts) }
                 if args.flag("--no-roads") { options.parts.remove("roads") }
                 if args.flag("--no-buildings") { options.parts.subtract(["houses", "boxes"]) }
-                if let s = args.value("--samples"), let n = Int(s[0]) { options.samples = n }
                 var tiles = args.tiles()
                 let n = args.list.compactMap { Int($0) }
                 guard let z = n.first else { usage() }
@@ -55,53 +50,13 @@ public enum PipelineCommand {
                     }
                 }
                 exit(try Pipeline.run(paths, z: z, tiles: tiles, options: options) ? 0 : 1)
-            case "bake":
-                func number(_ name: String) -> Double? { args.value(name).flatMap { Double($0[0]) } }
-                func colour(_ name: String) -> [Double]? {
-                    args.value(name, count: 3).map { $0.compactMap(Double.init) }.flatMap { $0.count == 3 ? $0 : nil }
-                }
-                let size = number("--size").map(Int.init), samples = number("--samples").map(Int.init)
-                let bounces = number("--bounces").map(Int.init), gamma = number("--gamma"), depth = number("--depth")
-                let faceRadius = number("--face-radius"), faceStep = number("--face-step")
-                let creaseRadius = number("--crease-radius"), creaseDepth = number("--crease-depth")
-                let modifiers = args.value("--modifiers")?[0]
-                let lit = colour("--lit"), shade = colour("--shade")
-                let mode = args.value("--mode")?[0], aoRadius = number("--ao-radius"), sky = number("--sky")
-                let noSun = args.flag("--no-sun")
-                let sun = args.value("--sun", count: 3).map { $0.compactMap(Double.init) }.flatMap { $0.count == 3 ? $0 : nil }
-                let tiles = args.tiles()
-                guard let z = args.list.first.flatMap({ Int($0) }), args.list.count == 1, !tiles.isEmpty else { usage() }
-                exit(Bake.run(paths, z: z, tiles: tiles) { s in
-                    if let modifiers, let data = modifiers.data(using: .utf8),
-                       let list = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
-                        s.modifiers = list.compactMap { Lighting.Modifier(json: $0) }
-                    }
-                    if let v = size { s.size = v }
-                    if let v = samples { s.samples = v }
-                    if let v = bounces { s.bounces = v }
-                    if let v = gamma { s.gamma = v }
-                    if let v = depth { s.depth = v }
-                    if let v = faceRadius { s.faceRadius = v }
-                    if let v = faceStep { s.faceStep = v }
-                    if let v = creaseRadius { s.creaseRadius = v }
-                    if let v = creaseDepth { s.creaseDepth = v }
-                    if let v = lit { s.lit = v }
-                    if let v = shade { s.shade = v }
-                    if let v = mode { s.mode = v }
-                    if let v = aoRadius { s.aoRadius = v }
-                    if let v = sky { s.skyStrength = v }
-                    if noSun { s.sun = false }
-                    if let v = sun { (s.sun, s.sunAzimuth, s.sunElevation, s.sunStrength) = (true, v[0], v[1], v[2]) }
-                } ? 0 : 1)
             case "lab":
                 let whole = args.flag("--whole"), export = args.flag("--export")
-                var light = Lighting.Settings()
-                light.samples = args.value("--samples").flatMap { Int($0[0]) } ?? 128
                 let region = args.value("--region", count: 3).map { v in (Double(v[0])!, Double(v[1])!, Double(v[2])!) }
                 let roads = args.value("--roads").map { path($0[0]) }
                 guard args.list.count == 2 else { usage() }
                 try Build.run(paths, tile: Tile(folder: path(args.list[0])), out: path(args.list[1]), region: region, whole: whole, export: export,
-                              light: light, roads: roads)
+                              roads: roads)
             case "fetch":
                 let force = args.flag("--force")
                 let n = args.list.compactMap { Int($0) }
@@ -166,14 +121,12 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--samples N] [--no-light] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
                ImmersiveMapEditor pipeline archive OUT.pmtiles [--z 15] [--astc-block 8|4]
-               ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--samples N] [--roads FILE]
+               ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--roads FILE]
                ImmersiveMapEditor pipeline fetch Z X Y [--force]
                ImmersiveMapEditor pipeline seed Z X Y [--force]
                ImmersiveMapEditor pipeline migrate OLD_WORKSPACE
-               ImmersiveMapEditor pipeline bake Z --tiles X/Y... [--size N] [--samples N] [--bounces N] [--gamma G] [--lit R G B] [--shade R G B]
-                   [--mode sky|ao] [--ao-radius M] [--sky S] [--sun AZ EL S | --no-sun]
                ImmersiveMapEditor pipeline validate FOLDER
                ImmersiveMapEditor pipeline landmark LANDMARK_FOLDER [--starter]
                ImmersiveMapEditor pipeline fit ID
