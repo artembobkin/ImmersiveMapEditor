@@ -57,6 +57,30 @@ enum Platform {
         NSWorkspace.shared.open(url)
     }
 
+    /// Text put on the clipboard (SwiftUI has no API to write it on the
+    /// Mac): the landmark's prompt, for the agent in a terminal.
+    @MainActor
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// Where to save a file, asked in the system's save panel, starting from
+    /// `suggested` (its folder and name); nil when the user cancels.
+    /// SwiftUI's fileExporter wants a document in hand, and the archive is
+    /// written afterwards by the pipeline.
+    @MainActor
+    static func chooseSaveLocation(suggested: URL, title: String, message: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.directoryURL = suggested.deletingLastPathComponent()
+        panel.nameFieldStringValue = suggested.lastPathComponent
+        panel.allowedContentTypes = [.data]
+        panel.canCreateDirectories = true
+        panel.title = title
+        panel.message = message
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
     /// A file shown selected in its folder in Finder.
     @MainActor
     static func reveal(_ url: URL) {

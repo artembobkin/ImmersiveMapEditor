@@ -5,12 +5,13 @@ import simd
 import TileKit
 
 /// The landmarks' agent's modelling tools: an MCP server on standard input
-/// and output (JSON-RPC, a message a line), run by Claude Code as
+/// and output (JSON-RPC, a message a line), run by the agent the
+/// user starts in the folder (Claude Code or Codex, `AgentSetup`) as
 /// `ImmersiveMapEditor landmark-mcp FOLDER` for one landmark's folder. Its
 /// tools read the landmark's OSM, write and build its recipe, render the
 /// model from around, and keep reference photos with their credits. They
 /// touch nothing outside the folder. Downloads go through curl, which takes
-/// the proxy from the environment Claude Code runs in.
+/// the proxy from the environment the agent runs in.
 enum LandmarkMCP {
     static func run(folder: URL) -> Never {
         // The tile's palette: tiles/z/x/y/landmarks/<id> is six below the root.
@@ -173,10 +174,10 @@ enum LandmarkMCP {
              "description": "A picture the user attached to a request (a screenshot of the model or of the building, to show what to change), by its file name.",
              "inputSchema": ["type": "object", "properties": ["file": ["type": "string"]], "required": ["file"]]],
             ["name": "list_references",
-             "description": "The reference photos kept, with their credits and what they show, and as pictures the best street photo of each facade, the satellite view and the Commons photos. The references are gathered for you before you start (gather_references); this is where you see them.",
+             "description": "The reference photos kept, with their credits and what they show, and as pictures the best street photo of each facade, the satellite view and the Commons photos. When none are kept yet, it gathers them first (gather_references, a few minutes), then shows them.",
              "inputSchema": ["type": "object", "properties": [:]]],
             ["name": "gather_references",
-             "description": "Gathers every reference at once, no choice to make: Mapillary's street photos facade by facade (find_street_photos), the satellite view, and from Wikimedia Commons the best classic view of the whole and the best view from above, each checked for a building in it. The editor runs it before you start; call it only when list_references shows nothing.",
+             "description": "Gathers every reference at once, no choice to make: Mapillary's street photos facade by facade (find_street_photos), the satellite view, and from Wikimedia Commons the best classic view of the whole and the best view from above, each checked for a building in it. list_references runs it by itself when nothing is kept; call it only to fill in what is missing.",
              "inputSchema": ["type": "object", "properties": [:]]],
             ["name": "show_reference",
              "description": "Returns one kept reference photo to look at again.",
@@ -514,7 +515,7 @@ enum LandmarkMCP {
         var mapillaryToken: String {
             get throws {
                 guard let t = ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"], !t.isEmpty else {
-                    throw Failure("no Mapillary token: the user sets it in Settings > Claude")
+                    throw Failure("no Mapillary token: the user sets it in the editor, Settings > Landmark references")
                 }
                 return t
             }
@@ -815,9 +816,18 @@ enum LandmarkMCP {
         /// from: the best street photo of each facade, the satellite view,
         /// the Commons photos.
         func listReferences() throws -> [[String: Any]] {
+            // Nothing kept yet: gathered first, here, so the agent the user
+            // started without Gather References never waits on a second
+            // step (the user, 2026-11-20).
+            var gathered = ""
+            if credited().isEmpty {
+                // Its report without the coverage, which follows the list anyway.
+                let said = (try gather()).compactMap { $0["text"] as? String }.joined(separator: "\n")
+                gathered = said.replacingOccurrences(of: coverage(), with: "").trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n"
+            }
             let list = credited()
             let json = (try? JSONSerialization.data(withJSONObject: list, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data("[]".utf8)
-            var content: [[String: Any]] = [text((String(data: json, encoding: .utf8) ?? "[]") + "\n" + coverage())]
+            var content: [[String: Any]] = [text(gathered + (String(data: json, encoding: .utf8) ?? "[]") + "\n" + coverage())]
             if let scene = try? StreetScene(folder: folder) {
                 for f in scene.facades.indices.sorted(by: { scene.facades[$0].length > scene.facades[$1].length }) {
                     guard let file = bestPhotos(Self.facadeFolder(scene.facades[f].name)).first, let found = reference(file), let img = image(found.url) else { continue }

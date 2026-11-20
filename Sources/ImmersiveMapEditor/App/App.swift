@@ -30,8 +30,14 @@ enum Entry {
         if arguments.count > 1, arguments[1] == "pipeline" {
             PipelineCommand.run(Array(arguments.dropFirst(2)))
         }
-        // The landmarks' agent's modelling tools, an MCP server for Claude Code.
+        // The landmarks' agent's modelling tools, an MCP server for the agent
+        // the user runs in a terminal (AgentSetup declares it in the folder).
+        // Mapillary's token from the editor's keychain, so no file holds it.
         if arguments.count > 2, arguments[1] == "landmark-mcp" {
+            if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
+                let token = AgentSettings.mapillaryToken
+                if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
+            }
             LandmarkMCP.run(folder: URL(fileURLWithPath: arguments[2]))
         }
         if Headless.asked(arguments) {

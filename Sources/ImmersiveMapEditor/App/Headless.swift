@@ -48,7 +48,7 @@ enum Headless {
             // before its agent starts: printed.
             let folder = URL(fileURLWithPath: arguments[i + 1]).standardizedFileURL
             if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
-                let token = ClaudeSettings.mapillaryToken
+                let token = AgentSettings.mapillaryToken
                 if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
             }
             let server = LandmarkMCP.Server(folder: folder)
@@ -66,7 +66,7 @@ enum Headless {
             let folder = URL(fileURLWithPath: arguments[i + 1]).standardizedFileURL
             // The token of Settings, as the agent's server gets it.
             if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
-                let token = ClaudeSettings.mapillaryToken
+                let token = AgentSettings.mapillaryToken
                 if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
             }
             let server = LandmarkMCP.Server(folder: folder)

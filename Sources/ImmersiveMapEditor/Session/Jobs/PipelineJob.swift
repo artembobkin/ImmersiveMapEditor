@@ -107,7 +107,7 @@ final class PipelineJob: Job {
         let p = Process()
         p.executableURL = tool
         p.arguments = ["pipeline", "--root", root.path] + arguments
-        p.environment = ProcessInfo.processInfo.environment.merging(ClaudeSettings.generatorEnvironment) { _, new in new }
+        p.environment = ProcessInfo.processInfo.environment.merging(AgentSettings.generatorEnvironment) { _, new in new }
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe

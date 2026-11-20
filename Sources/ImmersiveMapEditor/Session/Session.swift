@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import ImmersiveMap
 import TileKit
@@ -95,7 +94,7 @@ final class Session {
             title: "Fetch OSM for \(tiles.count) tile" + (tiles.count == 1 ? "" : "s"), goOn: true)
     }
     let raster = RasterTiles()
-    /// Every job of the session: the builds of tiles, Claude on landmarks.
+    /// Every job of the session: the builds of tiles, the landmarks' references gathered.
     let jobs = JobPool()
     /// The camera the views over the open tile share.
     let viewCamera = SharedCamera()
@@ -103,8 +102,6 @@ final class Session {
     let preview = PreviewSettings()
     /// The open tile's buildings of OSM, for the Buildings view.
     let buildings = OsmBuildings()
-    /// Claude modelling landmarks: the pool's runs by landmark.
-    let agent: LandmarkAgent
     /// The palette's colours set over the defaults, in the Style view.
     let palette = PaletteEdits()
     /// A picture of the files sidebar the pointer rests on: shown large
@@ -129,6 +126,11 @@ final class Session {
     private var registry: Registry?
     private var holders: [String: Registry.LandmarkRecord] = [:]
     private(set) var landmarkView: LandmarkView?
+    /// The models of the landmarks shown, by folder, as last seen on disk: the
+    /// agent the user runs in a terminal writes them, and the editor shows
+    /// each as it lands (`watchModels`).
+    @ObservationIgnored var seenModels: [String: ModelStamp] = [:]
+    @ObservationIgnored var modelWatch: Task<Void, Never>?
     /// When and how sharp the imagery over the working tile was taken, by its
     /// source's metadata (Esri says it, Mapbox does not).
     var imageryCapture: String?
@@ -153,25 +155,19 @@ final class Session {
 
     init(root: URL) {
         workspace = Workspace(root: root)
-        agent = LandmarkAgent(pool: jobs)
         candidate = workspace.tile
         tiles = TileView(model: workspace)
         tiles?.sharedCamera = viewCamera
         camera.frame(workspace)
         palette.load(workspace.paths)
         places.load(workspace.paths)
-        agent.modelChanged = { [weak self] id in
-            self?.refreshModel(of: id)
-            if self?.pickedLandmark == id { self?.showLandmark(again: true) }
-        }
-        // What a crashed or force-quit editor left running on this folder.
-        LandmarkRun.killOrphans(in: root)
         syncRegistry()
+        watchModels()
     }
 
     /// The editor on its way out: the road document saved, every job
-    /// stopped and its process ended (the user, 2026-11-03: Claude's runs
-    /// went on after a restart, working for no one).
+    /// stopped and its process ended (the user, 2026-11-03: the runs went on
+    /// after a restart, working for no one).
     func quit() {
         model?.saveIfNeeded()
         jobs.quit()
@@ -204,7 +200,7 @@ final class Session {
 
     /// Opens a tile to work on: its OSM fetched and its roads seeded first
     /// when they are missing, then its views.
-    /// A landmark to open once the tile is, from the list of Claude's runs
+    /// A landmark to open once the tile is, from a list on the map
     /// on the map (the user, 2026-11-04).
     private var pendingLandmark: String?
 
@@ -278,7 +274,7 @@ final class Session {
         }
     }
 
-    /// Whether a job on the landmark, Claude or a build from its recipe, is
+    /// Whether a job on the landmark, its references or a build from its recipe, is
     /// queued or going.
     func isBusy(landmark id: String) -> Bool {
         workspace.tile.map { jobs.isActive(.landmark(tile: $0, id: id)) } ?? false
@@ -286,7 +282,7 @@ final class Session {
 
     /// A landmark deleted whole: its folder, with everything in it.
     func deleteLandmark(_ landmark: TileLandmark) {
-        guard !agent.isActive(landmark.id) else { return }
+        guard !isBusy(landmark: landmark.id) else { return }
         try? FileManager.default.removeItem(at: landmark.folder)
         if let tile = workspace.tile { try? registry?.remove(landmark: landmark.id, z: tile.z, x: tile.x, y: tile.y) }
         if pickedLandmark == landmark.id { pickedLandmark = nil }
@@ -304,25 +300,13 @@ final class Session {
     }
 
     /// A landmark's model found again in its folder: the list keeps where
-    /// each model is (`TileLandmark.model`), and Claude's run or Forget
+    /// each model is (`TileLandmark.model`), and the agent or Forget
     /// may have written or deleted it since (the user, 2026-11-03: the view
     /// read a model.glb that was gone).
     func refreshModel(of id: String) {
         guard let i = candidates.firstIndex(where: { $0.id == id }) else { return }
         let found = TileLandmark.model(in: candidates[i].folder)
         if found != candidates[i].model { candidates[i].model = found }
-    }
-
-    /// Claude on the picked landmark: queued in the pool, which runs several
-    /// landmarks at once.
-    func modelLandmark(request: String? = nil) {
-        modelLandmark(id: pickedLandmark, request: request)
-    }
-
-    /// Claude on a landmark of the tile by its id.
-    func modelLandmark(id: String?, request: String? = nil) {
-        guard let tile = workspace.tile, let landmark = candidates.first(where: { $0.id == id }) else { return }
-        agent.start(tile: tile, id: landmark.id, folder: landmark.folder, name: landmark.name, request: request)
     }
 
     /// What the window is about now, for the console at its foot (the user,
@@ -346,7 +330,6 @@ final class Session {
     var consoleTitle: String { contextJob?.title ?? "Console" }
     /// The console shown when nothing is about what the window shows.
     private let idle = Console()
-    private var pickedRun: LandmarkRun? { pickedLandmark.flatMap { agent.run(of: $0) } }
 
     /// The Preview's landmark, or all of them, under the preview's light.
     func showPreview() {
@@ -400,11 +383,7 @@ final class Session {
             landmarkView = LandmarkView.make()
             landmarkView?.wireframe = landmarkWireframe
             landmarkView?.camera = { [weak self] in self?.landmarkCamera = $0 }
-            landmarkView?.status = { [weak self] in
-                self?.landmarkStatus = $0
-                // While Claude works on it, its console says what the view shows.
-                if let run = self?.pickedRun, run.state.running { run.console.append("  view: \($0)") }
-            }
+            landmarkView?.status = { [weak self] in self?.landmarkStatus = $0 }
         }
         // Its model, or its OSM buildings as boxes while it has none.
         guard let landmark = candidates.first(where: { $0.id == pickedLandmark }) else { return landmarkView?.show(nil) ?? () }
@@ -568,23 +547,6 @@ final class Session {
         return made
     }
 
-    /// The tile's landmarks without a model, or every one of them again,
-    /// queued on Claude (the user, 2026-11-04: a choice between the ones
-    /// not modelled yet and all of them anew). The ones Claude is on stay
-    /// as they are.
-    func modelLandmarks(onlyWithoutModel: Bool) {
-        for landmark in candidates where !agent.isActive(landmark.id) && (!onlyWithoutModel || landmark.model == nil) {
-            modelLandmark(id: landmark.id)
-        }
-    }
-
-    /// The picked buildings made a landmark and Claude set on it at once,
-    /// the view staying on the tile's buildings (the user, 2026-11-01: one
-    /// button from the building to the model, without watching the run).
-    func makeLandmarkAndModel(named name: String) {
-        if let id = makeLandmark(named: name, leavingHeld: true) { modelLandmark(id: id) }
-    }
-
     // MARK: The engine
 
     /// The data folder's engine/ folder: the model archives the Engine view
@@ -659,20 +621,77 @@ final class Session {
     /// Every built tile into a new archive in engine/, the older ones gone
     /// after it, and the Engine view over it.
     private func updateEngineArchive() {
+        archive(building: [], exportTo: nil, title: "Update the engine's archive")
+    }
+
+    /// Whether every tile can be built and archived now: some tile has its
+    /// OSM, and no job of the data folder is going.
+    var canBuildAll: Bool { phase != .preparing && !workspace.fetched.isEmpty && !jobs.isActive(.workspace) }
+
+    /// Every tile with its OSM whose inputs changed since its last build
+    /// built again with the parts chosen (`--changed`, `BuildInputs`), the
+    /// others left as they are, then archived, the archive baking only the
+    /// tiles whose builds changed (`ArchiveCache`), in one job of the data
+    /// folder (the user, 2026-11-20: building tile by tile and exporting
+    /// apart was too much, and building everything again each time too
+    /// long): the
+    /// engine's archive in engine/ made anew for the Engine view, and a
+    /// copy of it where the user chooses, the place remembered. A tile that
+    /// fails to build is named at the end, and the others are archived.
+    func buildAllAndExport() {
+        guard canBuildAll else { return }
+        let remembered = UserDefaults.standard.string(forKey: Self.exportKey).map { URL(fileURLWithPath: $0) }
+        let suggested = remembered ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop").appendingPathComponent("models.pmtiles")
+        guard let destination = Platform.chooseSaveLocation(suggested: suggested, title: "Build Changed Tiles and Export",
+                                                            message: "Every tile whose OSM, landmarks or palette changed is built again, then all are archived here in the form the engine reads.") else { return }
+        UserDefaults.standard.set(destination.path, forKey: Self.exportKey)
+        let tiles = workspace.fetched.sorted { ($0.x, $0.y) < ($1.x, $1.y) }
+        archive(building: tiles, exportTo: destination, title: "Build the changed of \(tiles.count) tiles and export the archive")
+    }
+    private static let exportKey = "archive.exportPath"
+
+    /// One job of the data folder: the `tiles` built, one command each, the
+    /// job going on past a tile that fails; then every built tile archived
+    /// into a new file of engine/, the older ones dropped once it is
+    /// written, and copied to `exportTo` when given.
+    private func archive(building tiles: [TileKey], exportTo destination: URL?, title: String) {
         let stamp = Date().formatted(.verbatim("\(year: .defaultDigits)\(month: .twoDigits)\(day: .twoDigits)-\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased))\(minute: .twoDigits)\(second: .twoDigits)", locale: .init(identifier: "en_US_POSIX"), timeZone: .current, calendar: .init(identifier: .gregorian)))
         let folder = engineFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let out = folder.appendingPathComponent("models-\(stamp).pmtiles")
-        run([["archive", out.path]], on: .workspace, title: "Update the engine's archive") { [weak self] ok in
-            guard let self else { return }
-            if ok {
+        model?.saveIfNeeded()
+        let workspace = self.workspace
+        var job: PipelineJob?
+        job = PipelineJob(subject: .workspace, title: title, root: workspace.root,
+                          steps: tiles.map { buildStep($0) + ["--changed"] } + [["archive", out.path]], goOn: !tiles.isEmpty) { [weak self] _ in
+            workspace.scan()
+            workspace.tilesRevision += 1
+            // The archive's own command decides, whatever the builds before it.
+            let archived = job?.results.last.map { $0.ok && $0.arguments.first == "archive" } ?? false
+            if archived {
                 for old in ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
                     where old.pathExtension == "pmtiles" && old.lastPathComponent != out.lastPathComponent {
                     try? FileManager.default.removeItem(at: old)
                 }
+                if let destination {
+                    do {
+                        if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+                        try FileManager.default.copyItem(at: out, to: destination)
+                        job?.console.append("Exported to \(destination.path)")
+                    } catch {
+                        job?.console.append("Cannot export to \(destination.path): \(error.localizedDescription)")
+                        self?.problem = "The archive was made but could not be copied to \(destination.path): \(error.localizedDescription)"
+                    }
+                }
             }
-            self.engineRevision += 1
+            if let failed = job?.results.filter({ !$0.ok && $0.arguments.first == "build" }), !failed.isEmpty {
+                job?.console.append("Not built: " + failed.map { "\($0.arguments[1])/\($0.arguments[3])" + ($0.note.map { " (\($0))" } ?? "") }.joined(separator: ", "))
+            }
+            self?.engineRevision += 1
+            job = nil
         }
+        if let job { jobs.add(job) }
     }
 
     // MARK: Building the working tile
@@ -768,13 +787,12 @@ final class Session {
     /// Every built tile into the engine's model archive, where the user
     /// chooses (the user, 2026-10-29).
     func exportArchive() {
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = "models.pmtiles"
-        panel.allowedContentTypes = [.data]
-        panel.canCreateDirectories = true
-        panel.title = "Export the Model Archive"
-        panel.message = "Every built tile, in the form the engine reads (a PMTiles archive of model tiles)."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let remembered = UserDefaults.standard.string(forKey: Self.exportKey).map { URL(fileURLWithPath: $0) }
+        let suggested = remembered ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop").appendingPathComponent("models.pmtiles")
+        guard let url = Platform.chooseSaveLocation(suggested: suggested, title: "Export the Model Archive",
+                                                    message: "Every built tile, in the form the engine reads (a PMTiles archive of model tiles).") else { return }
+        UserDefaults.standard.set(url.path, forKey: Self.exportKey)
         run([["archive", url.path]], on: .workspace, title: "Export the archive")
     }
 

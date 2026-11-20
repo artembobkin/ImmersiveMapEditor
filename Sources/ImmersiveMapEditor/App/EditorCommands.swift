@@ -50,6 +50,12 @@ struct EditorCommands: Commands {
                     if i == 0 { button.keyboardShortcut("b") } else { button }
                 }
             }
+            Divider()
+            // Every tile built and the archive exported, from anywhere (the
+            // user, 2026-11-20).
+            Button("Build Changed Tiles and Export…") { session.buildAllAndExport() }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(!session.canBuildAll)
         }
     }
 }

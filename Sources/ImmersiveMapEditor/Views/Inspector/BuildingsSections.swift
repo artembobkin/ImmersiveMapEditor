@@ -55,17 +55,16 @@ struct BuildingsSections: View {
                     } message: {
                         Text("Each becomes a landmark of the tile, whole with its parts, named by its name or address, shown orange on the map and in the list below. Delete the ones not worth a model, then Model the Landmarks.")
                     }
-                let without = session.candidates.filter { $0.model == nil && !session.agent.isActive($0.id) }.count
-                let idle = session.candidates.filter { !session.agent.isActive($0.id) }.count
-                DetailPicker()
-                PanelButton("Model the Landmarks with Claude…", systemImage: "sparkles") { modellingNotable = true }
+                let without = session.candidates.filter { $0.model == nil && !session.isBusy(landmark: $0.id) }.count
+                let idle = session.candidates.filter { !session.isBusy(landmark: $0.id) }.count
+                PanelButton("Gather References for the Landmarks…", systemImage: "photo.on.rectangle.angled") { modellingNotable = true }
                     .disabled(idle == 0)
-                    .help("The tile's landmarks queued on Claude, \(ClaudeSettings.atOnce) at once: the \(without) without a model, or all \(idle) anew. The list of landmarks shows each one's state and stops any.")
-                    .confirmationDialog("Model the landmarks with Claude?", isPresented: $modellingNotable) {
-                        if without > 0 { Button("The \(without) Without a Model") { session.modelLandmarks(onlyWithoutModel: true) } }
-                        Button("All \(idle), Again") { session.modelLandmarks(onlyWithoutModel: false) }
+                    .help("The references of the tile's landmarks gathered, one landmark after another: the \(without) without a model, or all \(idle). Then copy each one's prompt from its panel.")
+                    .confirmationDialog("Gather the landmarks' references?", isPresented: $modellingNotable) {
+                        if without > 0 { Button("The \(without) Without a Model") { session.gatherReferences(onlyWithoutModel: true) } }
+                        Button("All \(idle)") { session.gatherReferences(onlyWithoutModel: false) }
                     } message: {
-                        Text("A run again starts from OSM: the photos kept are used again, the recipe, model and conversation of the last one go.")
+                        Text("The street photos of every facade, the satellite view and Commons' views, for the agent you run in a terminal. The photos already kept stay.")
                     }
             }
         } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
@@ -74,23 +73,14 @@ struct BuildingsSections: View {
                     .font(.callout).foregroundStyle(.secondary)
                 if holder.tile == session.workspace.tile?.name {
                     PanelButton("Open \(holder.name)", systemImage: "building.columns") { session.pickedLandmark = holder.id }
-                    // Claude on it again from here, model or no model (the user,
-                    // 2026-11-03), the view staying on the tile's buildings.
-                    if session.agent.isActive(holder.id) {
-                        // A run started by mistake stopped from here, where it
-                        // was started (the user, 2026-11-03).
-                        PanelButton("Stop Claude", systemImage: "stop.circle") { session.agent.stop(holder.id) }
-                            .help("Stops Claude on this landmark alone, killed when it does not go in 3 s" + (session.agent.active.count > 1 ? "; the other landmarks go on." : "."))
-                    } else {
-                        let busy = session.isBusy(landmark: holder.id)
-                        DetailPicker().disabled(busy)
-                        PanelButton(busy ? "Building It" : "Model It with Claude Again", systemImage: "sparkles") { session.modelLandmark(id: holder.id) }
-                            .disabled(busy)
-                            .help("A new attempt from OSM: the photos kept are used again, the recipe, model and conversation of the last one go. The run is queued, the view stays here.")
-                    }
+                    // Handed to the agent from here, the view staying on the
+                    // tile's buildings.
+                    DetailPicker()
+                    PanelButton("Copy Prompt", systemImage: "doc.on.clipboard") { session.copyPrompt(id: holder.id) }
+                        .help("Sets up the landmark's folder for the agent and copies its brief, to paste into the agent started in that folder (Copy Folder Command in its panel).")
                     PanelButton("Delete the Landmark…", systemImage: "trash", role: .destructive) { deleting = session.candidates.first { $0.id == holder.id } }
-                        .disabled(session.agent.isActive(holder.id))
-                        .help("Its folder goes with its photos, recipe, model and rounds; stop Claude first while it is on it.")
+                        .disabled(session.isBusy(landmark: holder.id))
+                        .help("Its folder goes with its photos, recipe, model and rounds.")
                         .confirmationDialog("Delete the landmark \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
                             Button("Delete the Landmark and Everything in Its Folder", role: .destructive) {
                                 if let landmark = deleting { session.deleteLandmark(landmark) }
@@ -115,13 +105,12 @@ struct BuildingsSections: View {
                 }
                 .disabled(picked.count == heldCount)
                 .help("Its folder with landmark.json and footprint.geojson, in the list below; nothing is modelled yet, and the view stays here.")
-                DetailPicker().disabled(picked.count == heldCount)
-                PanelButton("Make It and Model with Claude", systemImage: "sparkles") {
-                    session.makeLandmarkAndModel(named: title)
+                PanelButton("Make It and Gather References", systemImage: "photo.on.rectangle.angled") {
+                    session.makeLandmarkAndGather(named: title)
                     name = ""
                 }
                 .disabled(picked.count == heldCount)
-                .help("The landmark made and Claude set on it at once, in the queue with the others; the view stays here, its state in the list of landmarks below.")
+                .help("The landmark made and its references gathered at once, for the agent you run in a terminal; the view stays here.")
                 ForEach(holders, id: \.0.folder) { holder, count in
                     HStack {
                         Text("\(count) of the picked are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "" : " of tile \(holder.tile)") + ": left out.")

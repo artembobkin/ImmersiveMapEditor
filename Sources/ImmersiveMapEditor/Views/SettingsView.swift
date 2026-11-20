@@ -1,22 +1,14 @@
 import SwiftUI
 
 /// The app's settings (⌘,): what holds for every tile: the data folder
-/// everything is kept in, and the keys the satellite imagery's sources are
-/// fetched with, kept in the user's defaults.
+/// everything is kept in, the camera, and the keys the references and the
+/// satellite imagery are fetched with.
 struct SettingsView: View {
     @Environment(Session.self) private var session
     @State private var picking = false
     @AppStorage(CameraController.invertTurningKey) private var invertTurning = true
     @AppStorage(CameraController.invertTiltingKey) private var invertTilting = false
-    @AppStorage(ClaudeSettings.executableKey) private var claudePath = ""
-    @AppStorage(ClaudeSettings.modelKey) private var claudeModel = ""
-    @AppStorage(ClaudeSettings.effortKey) private var claudeEffort = ""
-    @AppStorage(ClaudeSettings.detailKey) private var claudeDetail = "normal"
-    /// The proxy, edited here and kept in the keychain (never shown in full).
-    @State private var proxy = ClaudeSettings.proxy
-    @State private var noProxy = ClaudeSettings.noProxy
-    @State private var mapillary = ClaudeSettings.mapillaryToken
-    @State private var proxySaid = ""
+    @State private var mapillary = AgentSettings.mapillaryToken
     @AppStorage(ImagerySource.mapbox.keyName) private var mapbox = ""
     @AppStorage(ImagerySource.esri.keyName) private var esri = ""
 
@@ -34,44 +26,13 @@ struct SettingsView: View {
                         .disabled(root.standardizedFileURL == DataFolder.standard.standardizedFileURL)
                 }
             }
-            Section("Claude") {
-                TextField("claude", text: $claudePath, prompt: Text(ClaudeSettings.executable?.path ?? "~/.local/bin/claude"))
-                // Lists, not text (the user, 2026-11-04: a typo in a text
-                // field was asked of claude as a model, and every run failed).
-                Picker("Model", selection: Binding(get: { ClaudeSettings.model }, set: { claudeModel = $0 })) {
-                    ForEach(ClaudeSettings.models, id: \.id) { Text($0.title).tag($0.id) }
-                }
-                .help("Which Claude models the landmarks: Claude Code's default, or one by name.")
-                Picker("Effort", selection: Binding(get: { ClaudeSettings.effort }, set: { claudeEffort = $0 })) {
-                    ForEach(ClaudeSettings.efforts, id: \.id) { Text($0.title).tag($0.id) }
-                }
-                .help("How hard it thinks: Claude Code's default, or a level.")
-                Picker("Detail", selection: Binding(get: { ClaudeSettings.detail }, set: { claudeDetail = $0 })) {
-                    ForEach(ClaudeSettings.details, id: \.id) { Text($0.title).tag($0.id) }
-                }
-                .help("How much of a landmark Claude models: everything that reads from across the street, or the ornament too (slower and dearer). Each landmark keeps the level it is queued with.")
-                SecureField("Proxy (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY)", text: $proxy)
-                    .onSubmit { ClaudeSettings.proxy = proxy }
-                    .onChange(of: proxy) { ClaudeSettings.proxy = proxy }
-                    .help("The landmarks' agent runs Claude Code on your subscription, every request through this proxy. The proxy is kept in your keychain, never in the project.")
-                SecureField("No proxy (NO_PROXY)", text: $noProxy)
-                    .onChange(of: noProxy) { ClaudeSettings.noProxy = noProxy }
+            // The agent itself is run by the user in a terminal (the user,
+            // 2026-11-20); what the editor's references and the agent's
+            // tools fetch Mapillary's photos with stays here.
+            Section("Landmark references") {
                 SecureField("Mapillary token", text: $mapillary, prompt: Text("MLY|…  (mapillary.com/dashboard/developers)"))
-                    .onChange(of: mapillary) { ClaudeSettings.mapillaryToken = mapillary }
-                    .help("The agent's street-level references: Mapillary's photos (CC BY-SA 4.0, credited). Kept in the keychain.")
-                HStack {
-                    Button("Take from ~/bin/claude") {
-                        let launcher = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/claude")
-                        if ClaudeSettings.takeProxy(fromLauncher: launcher) {
-                            proxy = ClaudeSettings.proxy
-                            noProxy = ClaudeSettings.noProxy
-                            proxySaid = "Taken from ~/bin/claude."
-                        } else {
-                            proxySaid = "No proxy in ~/bin/claude."
-                        }
-                    }
-                    Text(proxySaid).font(.callout).foregroundStyle(.secondary)
-                }
+                    .onChange(of: mapillary) { AgentSettings.mapillaryToken = mapillary }
+                    .help("The street-level references, gathered by the editor and the agent's tools: Mapillary's photos (CC BY-SA 4.0, credited). Kept in the keychain, read by the tools from there.")
             }
             Section("Camera") {
                 Toggle("Invert turning (left and right)", isOn: $invertTurning)

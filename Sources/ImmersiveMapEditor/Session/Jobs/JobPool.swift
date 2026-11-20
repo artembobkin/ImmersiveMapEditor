@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// Every job of the session, queued, running and ended: builds of several
-/// tiles, Claude on several landmarks, at once (the user, 2026-11-02). A
+/// tiles, references of several landmarks, at once (the user, 2026-11-02). A
 /// job added is started as soon as its own rule allows it beside the jobs
 /// running, and the pool starts the next whenever one changes state. One
 /// ended job a subject is kept, so its log can be read where its subject
@@ -47,8 +47,8 @@ final class JobPool {
 
     /// Every job stopped for the editor to quit: each told to stop (its
     /// process terminated), all given 2 s to end, then any process still
-    /// there killed outright, so no claude and no build goes on working for
-    /// no one (the user, 2026-11-03: the runs went on after a restart).
+    /// there killed outright, so no build goes on working for no one (the
+    /// user, 2026-11-03: the runs went on after a restart).
     /// Synchronous, on the way out of the app.
     func quit() {
         for job in active { job.stop() }

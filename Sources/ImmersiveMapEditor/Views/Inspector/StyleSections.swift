@@ -68,7 +68,7 @@ struct StyleSections: View {
                 Button("Add", systemImage: "plus") { addExtra() }
                     .labelStyle(.iconOnly)
                     .disabled(!validExtra)
-                    .help("A landmark colour this palette has and the defaults do not: Claude is told its name with the others.")
+                    .help("A landmark colour this palette has and the defaults do not: the agent is told its name with the others.")
             }
         }
         Section("Set over the defaults") {
@@ -87,7 +87,7 @@ struct StyleSections: View {
             }
         }
         Section("Takes effect") {
-            Text("A change is saved at once. A tile paints with it when built again (Build the Tile), a landmark model at its next build (Build from Its Recipe, or Claude's).")
+            Text("A change is saved at once. A tile paints with it when built again (Build the Tile), a landmark model at its next build (Build from Its Recipe, or the agent’s).")
                 .foregroundStyle(.secondary)
         }
         Section("Sun") {

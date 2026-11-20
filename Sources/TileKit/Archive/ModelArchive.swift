@@ -62,6 +62,11 @@ public enum ModelArchive {
                 byTile[[column.number >> shift, row.number >> shift], default: []].append(placement)
             }
         }
+        // The tiles baked before, taken as they are while their builds have
+        // not changed (the user, 2026-11-20).
+        let cache = ArchiveCache(paths, zoom: archiveZoom)
+        var reused = 0
+        defer { cache.prune(keeping: Set(byTile.keys)) }
         for key in byTile.keys.sorted(by: { ($0[0], $0[1]) < ($1[0], $1[1]) }) {
             let (x, y, files) = (key[0], key[1], byTile[key]!)
             // The built tiles of zoom z into the engine's tile of zoom 14 over
@@ -69,6 +74,20 @@ public enum ModelArchive {
             // 14/..." read as if the build were of zoom 14).
             let built = files.map { $0.deletingLastPathComponent().deletingLastPathComponent() }
                 .map { "\(z)/\($0.deletingLastPathComponent().lastPathComponent)/\($0.lastPathComponent)" }.sorted()
+            let cacheKey = ArchiveCache.key(placements: files, blockEdge: blockEdge, formatVersion: Int(ModelTileContents.version))
+            if let (data, entry) = cache.read(x: x, y: y, key: cacheKey) {
+                guard data.count <= PMTilesWriter.maximumTileByteCount else {
+                    summary.lines.append("\(archiveZoom)/\(x)/\(y) left out, it is \(megabytes(data.count)) and the engine reads a tile up to "
+                                         + "\(megabytes(PMTilesWriter.maximumTileByteCount)): its landmarks need fewer triangles")
+                    continue
+                }
+                archive.tiles.append(PMTilesWriter.Tile(zoom: archiveZoom, x: x, y: y, data: data))
+                summary.tiles += 1
+                summary.models += entry.models
+                summary.lines.append(entry.line + ", unchanged")
+                reused += 1
+                continue
+            }
             progress("\(built.joined(separator: ", ")) to \(archiveZoom)/\(x)/\(y)")
             // A tile that cannot be read is left out and named, the rest
             // archived (the user, 2026-11-04: one unreadable GLB, a build
@@ -84,6 +103,10 @@ public enum ModelArchive {
             }
             guard let tile = baked else { continue }
             let data = tile.serialized()
+            let textureBytes = tile.texture.levels.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } }
+            let line = "\(archiveZoom)/\(x)/\(y) (\(files.count) built of zoom \(z)): \(tile.indices.count / 3) triangles, \(tile.vertexCount) vertices, "
+                + "\(tile.texture.layerCount) texture layers (\(megabytes(textureBytes))), tile \(megabytes(data.count))"
+            cache.write(x: x, y: y, data: data, entry: ArchiveCache.Entry(key: cacheKey, models: tile.models.count, line: line))
             // A tile past what the engine reads is left out and named, as
             // one that cannot be read is: the engine takes a larger one for
             // a corrupt file and shows none of its models, saying so only
@@ -99,10 +122,9 @@ public enum ModelArchive {
             archive.tiles.append(PMTilesWriter.Tile(zoom: archiveZoom, x: x, y: y, data: data))
             summary.tiles += 1
             summary.models += tile.models.count
-            let textureBytes = tile.texture.levels.reduce(0) { $0 + $1.reduce(0) { $0 + $1.count } }
-            summary.lines.append("\(archiveZoom)/\(x)/\(y) (\(files.count) built of zoom \(z)): \(tile.indices.count / 3) triangles, \(tile.vertexCount) vertices, "
-                                 + "\(tile.texture.layerCount) texture layers (\(megabytes(textureBytes))), tile \(megabytes(data.count))")
+            summary.lines.append(line)
         }
+        summary.lines.append("\(reused) of \(byTile.count) tiles unchanged since the last archive, \(byTile.count - reused) baked")
         guard !archive.tiles.isEmpty else { throw BakeError("no built tile of zoom \(z) under \(paths.tiles.path)") }
         archive.metadata = [
             "name": "ImmersiveMap models",

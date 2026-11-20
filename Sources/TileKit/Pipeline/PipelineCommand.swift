@@ -9,7 +9,7 @@ import Foundation
 ///   pipeline build 15 19808 10243                 one tile
 ///   pipeline build 15 19808 10242 19809 10243     a range of tiles
 ///   pipeline build 15 --tiles 19810/10243 ...     any set of tiles
-///       [--refetch]
+///       [--refetch] [--changed: only the tiles whose inputs changed since their last build]
 ///   pipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
 ///       [--roads roads/....json]
 ///   pipeline fetch 15 19808 10243 [--force]
@@ -34,6 +34,7 @@ public enum PipelineCommand {
             case "build":
                 var options = Pipeline.Options()
                 options.refetch = args.flag("--refetch")
+                options.onlyChanged = args.flag("--changed")
                 if let p = args.value("--parts") { options.parts = Set(p[0].split(separator: ",").map(String.init)).intersection(Build.allParts) }
                 if args.flag("--no-roads") { options.parts.remove("roads") }
                 if args.flag("--no-buildings") { options.parts.subtract(["houses", "boxes"]) }
@@ -121,7 +122,7 @@ public enum PipelineCommand {
 
     static func usage() -> Never {
         FileHandle.standardError.write("""
-        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
+        usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--changed] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
                ImmersiveMapEditor pipeline archive OUT.pmtiles [--z 15] [--astc-block 8|4]
                ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--roads FILE]
                ImmersiveMapEditor pipeline fetch Z X Y [--force]

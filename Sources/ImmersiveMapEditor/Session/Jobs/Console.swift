@@ -33,11 +33,11 @@ final class Console {
         stage = name.map { Stage(name: $0) }
         step = (0, 0)
         #if DEBUG
-        // Every job runs the editor's own binary (the pipeline, Claude's
+        // Every job runs the editor's own binary (the pipeline, the agent's
         // tools), and a Debug one is tens of times slower (the user,
         // 2026-11-03: a landmark modelled in 5 minutes instead of 2;
         // GUM's set_recipe took 322 s in Debug and 8 s in Release).
-        append("The editor runs in Debug: its builds and Claude's tools run tens of times slower than in Release. Run the Release scheme.")
+        append("The editor runs in Debug: its builds and the agent's tools run tens of times slower than in Release. Run the Release scheme.")
         #endif
     }
 

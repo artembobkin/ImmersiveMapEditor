@@ -43,7 +43,7 @@ struct Inspector: View {
                 case .buildings:
                     // A landmark open is all the panel is about: the picked
                     // buildings' sections stayed above it, with Open Landmark
-                    // and Model with Claude twice (the user, 2026-11-04).
+                    // and the agent's buttons twice (the user, 2026-11-04).
                     if session.pickedLandmark == nil { BuildingsSections() }
                     LandmarksSections()
                 case .style: StyleSections()

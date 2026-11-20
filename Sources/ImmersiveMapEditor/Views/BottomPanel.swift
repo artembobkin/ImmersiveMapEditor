@@ -21,7 +21,7 @@ struct BottomPanel: View {
                     // it was dragged; the user, 2026-11-03).
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if console.lines.isEmpty {
-                            Text("Nothing run on this yet. Tile > Build the Tile (⌘B), or Claude on a landmark.")
+                            Text("Nothing run on this yet. Tile > Build the Tile (⌘B), or model a landmark.")
                         }
                         ForEach(console.lines.indices, id: \.self) { i in
                             Text(verbatim: console.lines[i].isEmpty ? " " : console.lines[i])

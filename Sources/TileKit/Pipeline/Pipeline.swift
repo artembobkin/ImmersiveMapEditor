@@ -22,6 +22,9 @@ public enum Pipeline {
         /// The parts built (Build.allParts): without the roads no road
         /// document is seeded.
         public var parts: Set<String> = Build.allParts
+        /// Only the tiles whose inputs changed since their last build
+        /// (`BuildInputs`), the others left as they are.
+        public var onlyChanged = false
         public init() {}
     }
 
@@ -73,6 +76,14 @@ public enum Pipeline {
             let name = "\(z)/\(x)/\(y)"
             print(name)
             let folder = paths.tileOut(z: z, x: x, y: y)
+            // What the build is made from, taken before it starts: a change
+            // made while it runs is a change the next build sees.
+            let inputs = BuildInputs.fingerprint(paths, z: z, x: x, y: y, parts: options.parts)
+            if options.onlyChanged, let written = try? String(contentsOf: BuildInputs.file(paths, z: z, x: x, y: y), encoding: .utf8), written == inputs {
+                print("  unchanged since its last build, left as it is")
+                index[name] = ["tile": name, "state": "unchanged"]
+                continue
+            }
             var state: [String: Any] = ["tile": name, "folder": "tiles/\(z)/\(x)/\(y)/build"]
             let started = Date()
             do {
@@ -80,7 +91,7 @@ public enum Pipeline {
                 // A stale GLB would pass validation after a failed build. The
                 // light map and the bake's folder are of builds from before
                 // the tiles stopped carrying a light map.
-                for stale in ["placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb", "lightmap.png", "bake"] {
+                for stale in [BuildInputs.fileName, "placement.json", "metadata.json", "validation.json", "stats.json", "tile_\(z)_\(x)_\(y).glb", "lightmap.png", "bake"] {
                     try? FileManager.default.removeItem(at: folder.appendingPathComponent(stale))
                 }
                 let tile = try Tile(folder: paths.tileData(z: z, x: x, y: y))
@@ -104,6 +115,9 @@ public enum Pipeline {
                 state["state"] = result.triangles == 0 ? "empty" : result.ok ? "ok" : "failed at validate"
                 state["triangles"] = result.triangles
                 state["glb_mb"] = round(Double(result.bytes) / 1e5) / 10
+                // Built: what it was made from kept, so an unchanged tile is
+                // left alone next time. A build that failed validation keeps none.
+                if result.ok || result.triangles == 0 { try? BuildInputs.record(inputs, paths, z: z, x: x, y: y) }
             } catch {
                 print("  FAILED: \(error)")
                 state["state"] = "failed: \(error)"
@@ -115,8 +129,10 @@ public enum Pipeline {
                                 triangles: state["triangles"] as? Int ?? 0, detail: (state["glb_mb"] as? Double).map { "\($0) MB" } ?? "")
         }
         let states = index.values.map { $0["state"] as? String ?? "?" }
-        let failed = states.filter { $0 != "ok" && $0 != "empty" }.count, empty = states.filter { $0 == "empty" }.count
-        print("\(index.count - failed - empty) tiles ok, \(failed) failed" + (empty > 0 ? ", \(empty) empty" : ""))
+        let failed = states.filter { !["ok", "empty", "unchanged"].contains($0) }.count, empty = states.filter { $0 == "empty" }.count
+        let unchanged = states.filter { $0 == "unchanged" }.count
+        print("\(index.count - failed - empty - unchanged) tiles ok, \(failed) failed" + (empty > 0 ? ", \(empty) empty" : "")
+              + (unchanged > 0 ? ", \(unchanged) unchanged" : ""))
         return failed == 0
     }
 }
