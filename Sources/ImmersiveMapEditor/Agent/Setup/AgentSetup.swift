@@ -1,11 +1,22 @@
 import Foundation
 
-/// A landmark's folder set up for an agent the user starts in it from a
-/// terminal (the user, 2026-11-20: their own `claude` or `codex` launchers,
-/// through their own proxy, not runs of the editor's): the editor's
-/// modelling tools (`ImmersiveMapEditor landmark-mcp FOLDER`) declared as
-/// the project's MCP server for both, written each time the prompt is
-/// copied, so the detail and the exaggeration are the ones set then.
+/// A folder set up for an agent the user starts in it from a terminal (the
+/// user, 2026-11-20: their own `claude` or `codex` launchers, through their
+/// own proxy, not runs of the editor's): the editor's modelling tools
+/// declared as the project's MCP server for both, written each time the
+/// prompt or the folder's command is copied, so the detail and the
+/// exaggeration are the ones set then. Two kinds of folder:
+///
+/// - a landmark's own (`prepare`), its tools `landmark-mcp FOLDER`
+///   (`LandmarkMCP`), for one agent modelling it;
+/// - a tile's `landmarks/` (`prepareTile`), the tools of every landmark of
+///   the tile behind one server, `landmark-mcp --tile FOLDER` (`TileMCP`),
+///   for one session that models them all with a subagent each.
+/// - the data folder's `agent/` (`prepareArea`), the tiles marked on the map
+///   with their plan, `landmark-mcp --area FOLDER` (`AreaMCP`), for one
+///   session that prepares, models and archives them all.
+///
+/// Each gets the same three files:
 ///
 /// - `.mcp.json`: Claude Code's project MCP servers.
 /// - `.claude/settings.json`: the server approved and its tools, web search
@@ -15,33 +26,46 @@ import Foundation
 ///   (Codex reads it once the folder is trusted, as it asks at its first
 ///   start there). No proxy is passed on (`env_vars` would make each
 ///   variable a required one, the server refused without it): the tools
-///   reach Mapillary, Esri and Commons directly, as the editor does.
+///   reach Mapillary, Esri and Commons through the Mac's own proxy
+///   settings (`Download`).
 ///
 /// Nothing secret goes into the files: the tools read Mapillary's token from
-/// the editor's keychain themselves (`App`), and the proxy is the
-/// launcher's, inherited by Claude Code's server.
+/// the editor's keychain themselves (`App`), and no proxy is named.
 enum AgentSetup {
-    /// Writes the three files into `folder` for `fine` detail.
+    /// A landmark's folder set up for one agent modelling it, at `fine` detail.
     static func prepare(_ folder: URL, fine: Bool) throws {
+        try write(folder, server: ["landmark-mcp", folder.path], fine: fine)
+    }
+
+    /// A tile's `landmarks/` folder set up for one session that models all
+    /// its landmarks with a subagent each (`LandmarkAgent.tilePrompt`).
+    static func prepareTile(_ landmarks: URL, fine: Bool) throws {
+        try write(landmarks, server: ["landmark-mcp", "--tile", landmarks.path], fine: fine)
+    }
+
+    /// The data folder's `agent/` set up for one session that goes through
+    /// the tiles marked on the map (`AreaMCP`, `LandmarkAgent.areaPrompt`).
+    static func prepareArea(_ folder: URL, fine: Bool) throws {
+        try write(folder, server: ["landmark-mcp", "--area", folder.path], fine: fine)
+    }
+
+    /// The three files written into `folder`, the server the editor itself
+    /// run with `server` as its arguments.
+    private static func write(_ folder: URL, server arguments: [String], fine: Bool) throws {
         let fm = FileManager.default
-        try json(["mcpServers": ["landmark": server(folder, fine: fine)]])
-            .write(to: folder.appendingPathComponent(".mcp.json"), options: .atomic)
+        let server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": arguments, "env": environment(fine: fine)]
+        try json(["mcpServers": ["landmark": server]]).write(to: folder.appendingPathComponent(".mcp.json"), options: .atomic)
         let claude = folder.appendingPathComponent(".claude")
         try fm.createDirectory(at: claude, withIntermediateDirectories: true)
         try json(claudeSettings).write(to: claude.appendingPathComponent("settings.json"), options: .atomic)
         let codex = folder.appendingPathComponent(".codex")
         try fm.createDirectory(at: codex, withIntermediateDirectories: true)
-        try Data(codexConfig(folder, fine: fine).utf8).write(to: codex.appendingPathComponent("config.toml"), options: .atomic)
+        try Data(codexConfig(arguments, fine: fine).utf8).write(to: codex.appendingPathComponent("config.toml"), options: .atomic)
     }
 
     /// The command that goes into the folder in a terminal, quoted for the shell.
     static func changeDirectory(_ folder: URL) -> String {
         "cd '" + folder.path.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// The MCP server of the modelling tools: the editor itself, for this folder.
-    static func server(_ folder: URL, fine: Bool) -> [String: Any] {
-        ["command": Bundle.main.executableURL!.path, "args": ["landmark-mcp", folder.path], "env": environment(fine: fine)]
     }
 
     /// The tools' environment: the detail asked and the generator's exaggeration.
@@ -69,13 +93,13 @@ enum AgentSetup {
 
     /// Codex's project config: the same server, a call allowed twenty
     /// minutes (the references gathered, a fine build).
-    static func codexConfig(_ folder: URL, fine: Bool) -> String {
+    static func codexConfig(_ arguments: [String], fine: Bool) -> String {
         let env = environment(fine: fine).sorted { $0.key < $1.key }.map { "\($0.key) = \(toml($0.value))" }
         return """
         # Written by Immersive Map Editor when the landmark's prompt is copied.
         [mcp_servers.landmark]
         command = \(toml(Bundle.main.executableURL!.path))
-        args = [\(toml("landmark-mcp")), \(toml(folder.path))]
+        args = [\(arguments.map(toml).joined(separator: ", "))]
         env = { \(env.joined(separator: ", ")) }
         required = true
         startup_timeout_sec = 30

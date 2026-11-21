@@ -10,7 +10,10 @@ import Foundation
 ///   landmark models.
 enum TileAction {
     case roads, tile
-    /// Engine: every built tile into the model archive the Engine view reads.
+    /// Engine, and Preview beside its build: every built tile whose inputs
+    /// changed built again, the tile open too when it has never been, then
+    /// all into the model archive the Engine view reads (the user,
+    /// 2026-11-21: from the Preview, a way to see the models in the engine).
     case engine
 
     var title: String {
@@ -36,19 +39,19 @@ enum TileAction {
         case .tile:
             "The tile's model from OSM and the road document, the parts you choose, exported (⌘B)"
         case .engine:
-            "Every built tile into the engine's model archive in the data folder (engine/), which the map on this view reads (⌘B)"
+            "Every built tile whose OSM, landmarks or palette changed is built again, the tile open too if it never was, then all go into the engine's model archive in the data folder (engine/), which the Engine view reads"
         }
     }
 }
 
 extension ViewMode {
-    /// The view's actions on the working tile, if it has any: Preview
-    /// builds the tile (the user, 2026-10-29: one view of the tile in 3D,
+    /// The view's actions on the working tile, if it has any, the first on
+    /// ⌘B: Preview builds the tile and updates the archive (the user, 2026-10-29: one view of the tile in 3D,
     /// Tiles 3D and Preview made one).
     var actions: [TileAction] {
         switch self {
         case .roads: [.roads]
-        case .preview: [.tile]
+        case .preview: [.tile, .engine]
         case .engine: [.engine]
         case .buildings, .style: []
         }

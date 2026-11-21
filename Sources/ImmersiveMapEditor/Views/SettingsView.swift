@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// The app's settings (⌘,): what holds for every tile: the data folder
-/// everything is kept in, the camera, and the keys the references and the
-/// satellite imagery are fetched with.
+/// everything is kept in, the OSM extracts in it, the camera, and the keys
+/// the references and the satellite imagery are fetched with.
 struct SettingsView: View {
     @Environment(Session.self) private var session
     @State private var picking = false
@@ -26,6 +26,7 @@ struct SettingsView: View {
                         .disabled(root.standardizedFileURL == DataFolder.standard.standardizedFileURL)
                 }
             }
+            OsmExtractsSection(paths: session.workspace.paths)
             // The agent itself is run by the user in a terminal (the user,
             // 2026-11-20); what the editor's references and the agent's
             // tools fetch Mapillary's photos with stays here.

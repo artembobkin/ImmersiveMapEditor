@@ -25,6 +25,9 @@ struct TileLandmark: Identifiable {
     /// 2026-11-03): `Session.readCandidates` lists again when a model is
     /// built.
     var model: URL?
+    /// Why the agent gave it up, when it did: no reference photo found
+    /// (`LandmarkSkip`). A landmark with a model is never skipped.
+    var skipped: String?
 
     /// The first GLB of a landmark's folder.
     static func model(in folder: URL) -> URL? {
@@ -94,7 +97,9 @@ enum LandmarkCandidates {
             // An older landmark named just "Landmark" shows its folder's number.
             var name = json["name"] as? String ?? id
             if name == "Landmark" { name = "Landmark \(number(of: id))" }
-            return TileLandmark(id: id, name: name, folder: f, buildings: osm, model: TileLandmark.model(in: f))
+            let model = TileLandmark.model(in: f)
+            return TileLandmark(id: id, name: name, folder: f, buildings: osm, model: model,
+                                skipped: model == nil ? LandmarkSkip.reason(in: f) : nil)
         }
     }
 

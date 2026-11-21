@@ -42,7 +42,7 @@ enum SatelliteView {
             for ty in y0...y1 {
                 let tile = cache.appendingPathComponent("\(zoom)_\(tx)_\(ty).jpg")
                 if !FileManager.default.fileExists(atPath: tile.path), let url = Self.source.url(z: zoom, x: tx, y: ty) {
-                    _ = CacheFile.fetch(url.absoluteString, to: tile, curl: ["-fsSL", "--http1.1", "--max-time", "60"], run: run)
+                    _ = CacheFile.fetch(url.absoluteString, to: tile, timeout: 60)
                 }
                 guard let src = CGImageSourceCreateWithURL(tile as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
                     missing += 1
@@ -182,7 +182,7 @@ enum SatelliteView {
         let url = "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/identify"
             + "?geometry=\(lon),\(lat)&geometryType=esriGeometryPoint&sr=4326&layers=all&tolerance=1"
             + "&mapExtent=\(around)&imageDisplay=800,600,96&returnGeometry=false&f=json"
-        let (status, said) = run(URL(fileURLWithPath: "/usr/bin/curl"), ["-fsSL", "--http1.1", "--max-time", "30", url])
+        let (status, said) = { let a = Download.text(url, timeout: 30); return (a.status, a.said) }()
         guard status == 0, let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else { return nil }
         for r in results {

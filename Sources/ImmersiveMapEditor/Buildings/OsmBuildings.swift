@@ -110,24 +110,8 @@ final class OsmBuildings {
     /// metres, for naming a landmark of a building with no name and no
     /// address (the user, 2026-11-04: "Landmark 1" told nothing).
     func nearestStreet(to p: Vec2, within: Double = 200) -> String? {
-        if streets == nil, let folder, let t = try? Tile(folder: folder), let osm = try? Osm(t) {
-            streets = osm.wayOrder.compactMap { id -> (String, [Vec2])? in
-                guard let way = osm.ways[id], way.tags["highway"] != nil, let name = way.tags["name"] else { return nil }
-                let points = osm.wayCoords(way).map { Vec2($0.x, $0.y) }
-                return points.count >= 2 ? (name, points) : nil
-            }
-        }
-        var best: (String, Double)?
-        for street in streets ?? [] {
-            for k in 0..<(street.points.count - 1) {
-                let a = street.points[k], b = street.points[k + 1], ab = b - a
-                let len2 = ab.dot(ab)
-                let t = len2 > 0 ? max(0, min(1, (p - a).dot(ab) / len2)) : 0
-                let d = (p - (a + ab * t)).length
-                if d < within, d < (best?.1 ?? .infinity) { best = (street.name, d) }
-            }
-        }
-        return best?.0
+        if streets == nil, let folder { streets = TileBuildings.streets(folder: folder) }
+        return TileBuildings.nearestStreet(to: p, in: streets ?? [], within: within)
     }
 
     /// Forgets the tile read, at once, for another to be opened: the view
@@ -167,33 +151,7 @@ final class OsmBuildings {
         loading = true
         defer { if self.tile == tile { loading = false } }
         status = "Reading the tile's OSM…"
-        let read = await Task.detached { () -> (Tile, [OsmBuilding])? in
-            guard let t = try? Tile(folder: folder) else { return nil }
-            // The buildings as last made from this OSM, kept beside it; else
-            // made from the OSM (its own cache, or the JSON) and kept.
-            if let kept = BuildingsCache.read(folder: folder, stamp: stamp) { return (t, kept) }
-            guard let osm = try? Osm(t) else { return nil }
-            var buildings = osm.areas().compactMap { a -> OsmBuilding? in
-                let part = a.tags["building:part"] != nil && a.tags["building:part"] != "no"
-                let building = part || (a.tags["building"] != nil && a.tags["building"] != "no")
-                let monument = !building && BuildingNote.isMonument(a.tags)
-                guard building || monument else { return nil }
-                let polygons = a.shape.polygons.map { p in [p.exterior] + p.interiors }.map { $0.map { $0.map { Vec2($0.x, $0.y) } } }
-                return OsmBuilding(id: "\(a.kind)/\(a.id)", tags: a.tags, polygons: polygons, isPart: part, monument: monument)
-            }
-            // The monuments mapped as a node: a disc of `plotRadius` round each,
-            // its plot, so it is drawn, picked and made a landmark as a building is.
-            for node in osm.nodes.values.sorted(by: { $0.id < $1.id }) where BuildingNote.isMonument(node.tags) {
-                let c = osm.point(node.id)
-                let ring = (0..<16).map { k -> Vec2 in
-                    let a = Double(k) / 16 * 2 * .pi
-                    return Vec2(c.x + OsmBuildings.plotRadius * cos(a), c.y + OsmBuildings.plotRadius * sin(a))
-                }
-                buildings.append(OsmBuilding(id: "node/\(node.id)", tags: node.tags, polygons: [[ring]], isPart: false, monument: true, point: true))
-            }
-            BuildingsCache.write(buildings, folder: folder, stamp: stamp)
-            return (t, buildings)
-        }.value
+        let read = await Task.detached { TileBuildings.read(folder: folder) }.value
         guard self.tile == tile else { return }
         guard let (t, buildings) = read else {
             status = "No OSM for the tile yet."

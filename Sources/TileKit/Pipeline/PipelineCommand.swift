@@ -12,7 +12,8 @@ import Foundation
 ///       [--refetch] [--changed: only the tiles whose inputs changed since their last build]
 ///   pipeline lab data/15_19808_10243 out/style_lab [--region CX CY HALF | --whole] [--export]
 ///       [--roads roads/....json]
-///   pipeline fetch 15 19808 10243 [--force]
+///   pipeline fetch 15 19808 10243 [--force]       a tile's OSM, cut from the extracts of sources/osm
+///   pipeline fetch 15 --tiles 19808/10243 ...      many, each extract read once
 ///   pipeline seed 15 19808 10243 [--force]           a tile's road document
 ///   pipeline migrate ~/Desktop/TilePipeline       an older workspace, copied in
 ///   pipeline validate tiles/15/19808/10243/build
@@ -59,10 +60,21 @@ public enum PipelineCommand {
                 try Build.run(paths, tile: Tile(folder: path(args.list[0])), out: path(args.list[1]), region: region, whole: whole, export: export,
                               roads: roads)
             case "fetch":
+                // One tile, or many with --tiles: each extract read once for all of them.
                 let force = args.flag("--force")
+                var tiles = args.tiles()
                 let n = args.list.compactMap { Int($0) }
-                guard n.count == 3 else { usage() }
-                try Fetch.tile(paths, z: n[0], x: n[1], y: n[2], force: force)
+                guard let z = n.first else { usage() }
+                if tiles.isEmpty {
+                    guard n.count == 3 else { usage() }
+                    tiles = [(n[1], n[2])]
+                }
+                let failed = try Fetch.tiles(paths, z: z, tiles: tiles, force: force)
+                // The tiles cut are kept; the others named, the reason once.
+                if let first = failed.first {
+                    throw PipelineError(failed.count == 1 ? first.reason
+                                        : "\(failed.count) tiles not taken (" + failed.map(\.tile).joined(separator: ", ") + "): \(first.reason)")
+                }
             case "seed":
                 let force = args.flag("--force")
                 let n = args.list.compactMap { Int($0) }
@@ -125,7 +137,7 @@ public enum PipelineCommand {
         usage: ImmersiveMapEditor pipeline [--root FOLDER] build Z X Y | Z X0 Y0 X1 Y1 | Z --tiles X/Y... [--refetch] [--changed] [--parts landmarks,houses,boxes,sites,roads] [--no-roads] [--no-buildings]
                ImmersiveMapEditor pipeline archive OUT.pmtiles [--z 15] [--astc-block 8|4]
                ImmersiveMapEditor pipeline lab DATA OUT [--region CX CY HALF | --whole] [--export] [--roads FILE]
-               ImmersiveMapEditor pipeline fetch Z X Y [--force]
+               ImmersiveMapEditor pipeline fetch Z X Y | Z --tiles X/Y... [--force]
                ImmersiveMapEditor pipeline seed Z X Y [--force]
                ImmersiveMapEditor pipeline migrate OLD_WORKSPACE
                ImmersiveMapEditor pipeline validate FOLDER

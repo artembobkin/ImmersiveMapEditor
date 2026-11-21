@@ -1,34 +1,26 @@
 import Foundation
 import Geometry
 
-/// Downloads the source data of one map tile into data/<z>_<x>_<y>/:
+/// Takes the source data of map tiles into tiles/<z>/<x>/<y>/osm/:
 ///
-///   osm.bin    every OSM element in the tile plus a margin, from Overpass,
-///              with the full geometry of the multipolygons that reach in:
-///              its JSON parsed once into TileKit's binary (OsmCache) and
-///              deleted, a sixth of the size, read in a few hundredths of a
-///              second (the user, 2026-11-03)
+///   osm.bin    every OSM element in the tile plus a margin, with the full
+///              geometry of the multipolygons that reach in, cut from the
+///              OSM extract of the data folder that holds the tile
+///              (`OsmExtract`, sources/osm/*.osm.pbf, downloaded by the user
+///              from Geofabrik or elsewhere) and kept in TileKit's binary
+///              (OsmCache)
 ///   tile.json  the tile's bounds, its Mercator centre and scale, and where
-///              and when everything was fetched
+///              and when its OSM was taken
 ///
-/// The OSM on disk is kept unless asked to fetch again, so the sources
-/// stay fixed while the style is worked out.
+/// No public API is asked (the user, 2026-11-21: before, Overpass's public
+/// servers, overloaded and down half the time). A tile no extract holds is
+/// refused, the way to get one said. The OSM on disk is kept unless asked
+/// to take it again, so the sources stay fixed while the style is worked out.
 public enum Fetch {
-    /// The public Overpass servers, tried in turn and again in rounds: each
-    /// is overloaded now and then, a 502 or 504 a moment long, so a tile is
-    /// asked of the next and of all of them again after a wait before it
-    /// is given up (the user, 2026-11-04: the source down all the time).
-    static let overpass = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
-                           "https://overpass.osm.jp/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-                           "https://overpass.kumi.systems/api/interpreter"]
-    /// The rounds over the servers, and the wait before each round after the first.
-    static let rounds = 3, waits = [0.0, 10, 30]
-    static let userAgent = "TilePipeline/0.1 (experimental 3D map tiles; github.com/artembobkin/ImmersiveMapEditor)"
-
     static func longitudeOfColumn(_ c: Double, _ z: Int) -> Double { c / pow(2, Double(z)) * 360 - 180 }
 
     /// The tile's edges, its Mercator centre, the tile units a metre takes
-    /// there (as the engine's baker computes them) and the box fetched around it.
+    /// there (as the engine's baker computes them) and the box taken around it.
     static func describe(z: Int, x: Int, y: Int, margin: Double) -> [String: Any] {
         let south = latitudeOfRow(Double(y + 1), z), north = latitudeOfRow(Double(y), z)
         let west = longitudeOfColumn(Double(x), z), east = longitudeOfColumn(Double(x + 1), z)
@@ -47,50 +39,9 @@ public enum Fetch {
         ]
     }
 
-    /// Every node and way in the box, and the multipolygon and building
-    /// relations with a member in it. Recursing down brings the whole of
-    /// each relation, members outside the box included, so an outline is
-    /// never open. Routes, boundaries and other large relations are left
-    /// out: they would pull in half the city.
-    static func query(_ b: [String: Double]) -> String {
-        let box = String(format: "%.7f,%.7f,%.7f,%.7f", b["south"]!, b["west"]!, b["north"]!, b["east"]!)
-        // The elements with their tags and geometry alone (`out body`): the
-        // metadata of every element (user, version, changeset) was never
-        // kept, and asking for it made the answer a third larger and the
-        // server's work longer; a quota of 256 MB, since a tile is 25 at
-        // most and a server under load refuses a larger ask.
-        return "[out:json][timeout:180][maxsize:268435456];\n"
-            + "(node(\(box)); way(\(box)); rel(\(box))[type~\"^(multipolygon|building)$\"];)->.a;\n"
-            + "(.a; .a >;);\nout body;\n"
-    }
-
-    static func download(_ query: String) throws -> (String, Data) {
-        var last = "no server answered"
-        for round in 0..<rounds {
-            if round > 0 {
-                let wait = waits[min(round, waits.count - 1)]
-                print("[osm] every server refused; round \(round + 1) of \(rounds) in \(Int(wait)) s")
-                Thread.sleep(forTimeInterval: wait)
-            }
-            for server in overpass {
-                print("[osm] \(server)")
-                var request = URLRequest(url: URL(string: server)!, timeoutInterval: 400)
-                request.httpMethod = "POST"
-                request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                var allowed = CharacterSet.alphanumerics
-                allowed.insert(charactersIn: "-._~")
-                request.httpBody = Data(("data=" + query.addingPercentEncoding(withAllowedCharacters: allowed)!).utf8)
-                let result = Receiver.fetch(request, host: URL(string: server)!.host ?? server)
-                if let data = result.data, (result.response as? HTTPURLResponse)?.statusCode == 200,
-                   (try? JSONSerialization.jsonObject(with: data)) != nil {
-                    return (server, data)
-                }
-                last = result.error?.localizedDescription ?? "HTTP \((result.response as? HTTPURLResponse)?.statusCode ?? 0)"
-                print("[osm] failed: \(last)")
-            }
-        }
-        throw PipelineError("Overpass failed on every server in \(rounds) rounds: \(last)")
+    static func box(_ info: [String: Any]) -> OsmExtract.Box {
+        let b = info["fetch_bounds"] as! [String: Double]
+        return OsmExtract.Box(south: b["south"]!, west: b["west"]!, north: b["north"]!, east: b["east"]!)
     }
 
     static func summary(_ elements: [[String: Any]]) -> [String: Any] {
@@ -111,104 +62,83 @@ public enum Fetch {
         ]
     }
 
-    /// Fetches one tile's OSM unless it is on disk (or `force`), and writes
+    /// Takes one tile's OSM unless it is on disk (or `force`), and writes
     /// its tile.json.
-    public static func tile(_ paths: WorkspacePaths, z: Int, x: Int, y: Int, margin: Double = 100,
-                            force: Bool = false) throws {
+    public static func tile(_ paths: WorkspacePaths, z: Int, x: Int, y: Int, margin: Double = 100, force: Bool = false) throws {
+        let failed = try tiles(paths, z: z, tiles: [(x, y)], margin: margin, force: force)
+        if let first = failed.first { throw PipelineError(first.reason) }
+    }
+
+    /// Takes the OSM of every tile that has none on disk (all of them with
+    /// `force`), the tiles cut from the same extracts cut together, each
+    /// extract read once for all of them. The tiles no extract holds are
+    /// left and returned with the reason; the others are taken.
+    @discardableResult
+    public static func tiles(_ paths: WorkspacePaths, z: Int, tiles: [(Int, Int)], margin: Double = 100,
+                             force: Bool = false) throws -> [(tile: String, reason: String)] {
+        let (extracts, unreadable) = OsmExtract.all(paths)
+        for name in unreadable { print("[osm] \(name) in sources/osm is no OSM PBF file: skipped") }
+        var failed: [(tile: String, reason: String)] = []
+        var groups: [[URL]: (sources: [OsmExtract], tiles: [(x: Int, y: Int, info: [String: Any])])] = [:]
+        for (x, y) in tiles {
+            let name = "\(z)/\(x)/\(y)"
+            let folder = paths.tileData(z: z, x: x, y: y)
+            let info = describe(z: z, x: x, y: y, margin: margin)
+            if Osm.isFetched(folder) && !force {
+                if tiles.count == 1 { print("[osm] \(name): on disk, kept") }
+                continue
+            }
+            let sources = OsmExtract.sources(for: box(info), in: extracts)
+            guard !sources.isEmpty else {
+                let reason = extracts.isEmpty
+                    ? "no OSM extract in the data folder's sources/osm: download the region of \(name) as .osm.pbf (download.geofabrik.de) into it"
+                    : "no OSM extract in sources/osm holds \(name) (\(extracts.map(\.name).joined(separator: ", ")) do not): download its region as .osm.pbf into it"
+                print("[osm] \(reason)")
+                failed.append((name, reason))
+                continue
+            }
+            groups[sources.map(\.url), default: (sources, [])].tiles.append((x, y, info))
+        }
+        for (_, group) in groups.sorted(by: { $0.key.map(\.path).joined() < $1.key.map(\.path).joined() }) {
+            print("[osm] \(group.tiles.count) tile\(group.tiles.count == 1 ? "" : "s") from " + group.sources.map(\.name).joined(separator: " and "))
+            let cut = try OsmExtract.cut(group.tiles.map { box($0.info) }, from: group.sources)
+            if cut.missing.ways + cut.missing.nodes > 0 {
+                print("[osm] WARN \(cut.missing.ways) ways and \(cut.missing.nodes) nodes of the multipolygons reaching in are in no extract: "
+                      + "cut at the edge of their region, a lake or a bay across the border may be open. The extract of the region beside it, "
+                      + "put into sources/osm, gives them")
+            }
+            for (tile, elements) in zip(group.tiles, cut.elements) {
+                try save(paths, z: z, x: tile.x, y: tile.y, info: tile.info, elements: elements, sources: group.sources)
+            }
+        }
+        return failed
+    }
+
+    /// A tile's elements kept as its osm.bin, with its tile.json.
+    static func save(_ paths: WorkspacePaths, z: Int, x: Int, y: Int, info: [String: Any], elements: Osm.Elements,
+                     sources: [OsmExtract]) throws {
         let folder = paths.tileData(z: z, x: x, y: y)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        var info = describe(z: z, x: x, y: y, margin: margin)
-        print(String(format: "[tile] %d/%d/%d: %.1f m across", z, x, y, info["size_m"] as! Double))
-        let osmURL = folder.appendingPathComponent(OsmCache.json), infoURL = folder.appendingPathComponent("tile.json")
-        let q = query(info["fetch_bounds"] as! [String: Double])
-        var source: String?
-        // Overpass's timestamp of the data, read off the JSON when it is
-        // downloaded; the JSON is then kept as osm.bin alone (OsmCache).
-        var timestamp: Any = NSNull()
-        let previous = (try? JSONSerialization.jsonObject(with: Data(contentsOf: infoURL)) as? [String: Any])??["osm"]
-            as? [String: Any] ?? [:]
-        if Osm.isFetched(folder) && !force {
-            print("[osm] on disk, kept")
-            timestamp = previous["timestamp"] ?? NSNull()
-        } else {
-            let data: Data
-            (source, data) = try download(q)
-            if let osm3s = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["osm3s"] as? [String: Any],
-               let t = osm3s["timestamp_osm_base"] {
-                timestamp = t
-            }
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(OsmCache.name))
-            try data.write(to: osmURL)
-        }
-        let elements = try OsmCache.elements(in: folder).overpass
-        let now = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: "Z", with: "+00:00")
-        let summary = summary(elements)
+        let iso = ISO8601DateFormatter()
+        // The data as of the oldest extract's date.
+        let taken = sources.compactMap(\.timestamp).min().map { iso.string(from: $0) }
+        let names = sources.map(\.name).joined(separator: ", ")
+        try? FileManager.default.removeItem(at: folder.appendingPathComponent(OsmCache.json))
+        OsmCache.write(elements, folder: folder, stamp: "\(names) \(taken ?? "undated") \(iso.string(from: Date()))")
+        // Read back as every reader will: the binary written is the one there.
+        let kept = try OsmCache.elements(in: folder)
+        var info = info
+        let summary = summary(kept.overpass)
         info["osm"] = [
-            "source": source ?? previous["source"] ?? NSNull(),
-            "fetched": source != nil ? now : (previous["fetched"] ?? NSNull()),
-            "timestamp": timestamp,
-            "query": q,
+            "source": names,
+            "fetched": iso.string(from: Date()).replacingOccurrences(of: "Z", with: "+00:00"),
+            "timestamp": taken.map { $0 as Any } ?? NSNull(),
+            "extract": sources.map { ["file": $0.name, "south": $0.south, "west": $0.west, "north": $0.north, "east": $0.east] as [String: Any] },
             "summary": summary,
             "attribution": "© OpenStreetMap contributors, ODbL",
         ]
         try JSONSerialization.data(withJSONObject: info, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-            .write(to: infoURL)
-        print("[osm] \(summary["elements"] ?? [:])")
+            .write(to: folder.appendingPathComponent("tile.json"))
+        print(String(format: "[tile] %d/%d/%d: %.1f m across, ", z, x, y, info["size_m"] as! Double) + "\(summary["elements"] as? [String: Int] ?? [:])")
     }
 }
-
-/// A download that reports its progress (`Progress`) while it runs: first
-/// the wait while Overpass prepares the answer, then the bytes as they come,
-/// their speed, and the fraction when the server says how many there are.
-private final class Receiver: NSObject, URLSessionDataDelegate {
-    private let lock = NSLock()
-    private var data = Data()
-    private var response: URLResponse?
-    private var error: Error?
-    private let done = DispatchSemaphore(value: 0)
-
-    static func fetch(_ request: URLRequest, host: String) -> (data: Data?, response: URLResponse?, error: Error?) {
-        let receiver = Receiver()
-        let session = URLSession(configuration: .default, delegate: receiver, delegateQueue: nil)
-        session.dataTask(with: request).resume()
-        let started = Date()
-        var firstByte: Date?
-        while receiver.done.wait(timeout: .now() + 0.25) == .timedOut {
-            let (count, expected) = receiver.locked { (receiver.data.count, receiver.response?.expectedContentLength ?? -1) }
-            let elapsed = Date().timeIntervalSince(started)
-            if count == 0 {
-                Progress.report("Fetching OSM", detail: String(format: "%@ is preparing the data, %.0f s", host, elapsed))
-            } else {
-                if firstByte == nil { firstByte = Date() }
-                let speed = Double(count) / max(0.25, Date().timeIntervalSince(firstByte!))
-                Progress.report("Fetching OSM", fraction: expected > 0 ? Double(count) / Double(expected) : nil,
-                                detail: Progress.bytes(count) + (expected > 0 ? " of " + Progress.bytes(Int(expected)) : "")
-                                    + ", " + Progress.bytes(Int(speed)) + "/s")
-            }
-        }
-        session.finishTasksAndInvalidate()
-        return receiver.locked { (receiver.error == nil ? receiver.data : nil, receiver.response, receiver.error) }
-    }
-
-    private func locked<T>(_ body: () -> T) -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return body()
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
-                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        locked { self.response = response }
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        locked { self.data.append(data) }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        locked { self.error = error }
-        done.signal()
-    }
-}
-

@@ -32,7 +32,8 @@ enum CommonsPhotos {
     static func api(_ host: String, _ query: [String: String], run: (URL, [String]) -> (Int32, String)) throws -> [String: Any] {
         var c = URLComponents(string: "https://\(host)/w/api.php")!
         c.queryItems = (query.merging(["format": "json"]) { a, _ in a }).map { URLQueryItem(name: $0.key, value: $0.value) }
-        let (status, said) = run(URL(fileURLWithPath: "/usr/bin/curl"), ["-sSL", "--http1.1", "--max-time", "60", "-A", agent, c.url!.absoluteString])
+        let answer = Download.text(c.url!.absoluteString, timeout: 60, agent: agent, failing: false)
+        let (status, said) = (answer.status, answer.said)
         guard status == 0, let json = try? JSONSerialization.jsonObject(with: Data(said.utf8)) as? [String: Any] else {
             throw NSError(domain: "Commons", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(host) did not answer: \(said.prefix(200))"])
         }

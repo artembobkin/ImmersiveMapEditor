@@ -73,7 +73,7 @@ public enum Export {
             "units_per_metre": tile.unitsPerMetre,
             "built": built,
             "sources": [
-                "osm": ["source", "fetched", "timestamp", "query"].reduce(into: [String: Any]()) { $0[$1] = osm[$1] ?? NSNull() },
+                "osm": ["source", "fetched", "timestamp", "query", "extract"].reduce(into: [String: Any]()) { $0[$1] = osm[$1] ?? NSNull() },
                 "osm2streets": ["revision": RoadDocument.osm2streetsRevision],
                 "landmarks": models.sorted(),
                 "landmarks_pending": stats["landmarks_pending"] ?? [String: Int](),

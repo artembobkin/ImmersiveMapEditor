@@ -1,0 +1,60 @@
+import Foundation
+import TileKit
+
+/// The modelling tools of every landmark of a tile behind one MCP server
+/// (`ImmersiveMapEditor landmark-mcp --tile FOLDER`, FOLDER the tile's
+/// `landmarks/`), for one agent session that hands each landmark without
+/// a model to a subagent of its own (the user, 2026-11-21: the whole tile
+/// modelled from one prompt, not a session a landmark).
+///
+/// Each tool is a landmark's tool (`LandmarkMCP`) with one more argument,
+/// `landmark`, its folder's name, the call passed to that landmark's own
+/// server (`LandmarkRouter`). Two tools of the tile's own: `list_landmarks`
+/// and `get_brief`, the landmark's prompt as Copy Prompt gives it.
+enum TileMCP {
+    static func run(landmarks folder: URL) -> Never {
+        let landmarks = folder.standardizedFileURL
+        let channel = MCPChannel()
+        let router = LandmarkRouter(channel: channel)
+        channel.serve { m in
+            guard !channel.answerProtocol(m, tools: tools), let id = m["id"] else { return }
+            let params = m["params"] as? [String: Any] ?? [:]
+            var args = params["arguments"] as? [String: Any] ?? [:]
+            let landmark = args.removeValue(forKey: "landmark") as? String ?? ""
+            let name = params["name"] as? String ?? ""
+            if name == "list_landmarks" {
+                channel.reply(MCPChannel.result(id, [MCPChannel.text(LandmarkRouter.listLandmarks(in: landmarks))]))
+                return
+            }
+            guard LandmarkRouter.isName(landmark) else {
+                channel.reply(MCPChannel.failure(id, "give landmark: the id list_landmarks names"))
+                return
+            }
+            let folder = landmarks.appendingPathComponent(landmark)
+            if name == "get_brief" {
+                do {
+                    let brief = try LandmarkRouter.brief(folder, calling: "The landmark tools here serve every landmark of the tile: give landmark: \"\(landmark)\" in every call.")
+                    channel.reply(MCPChannel.result(id, [MCPChannel.text(brief)]))
+                } catch {
+                    channel.reply(MCPChannel.failure(id, "\(error)"))
+                }
+                return
+            }
+            router.call(name, args, landmark: folder, id: id)
+        }
+        router.quit()
+        exit(0)
+    }
+
+    static let landmarkArgument: [String: Any] = ["type": "string", "description": "The landmark's id, as list_landmarks names it."]
+
+    /// The landmark's tools, each taking `landmark`, and the tile's own.
+    static let tools: [[String: Any]] = [
+        ["name": "list_landmarks",
+         "description": "Every landmark of the tile: its id (what every other tool takes as landmark), name, buildings, and whether it has a model yet.",
+         "inputSchema": ["type": "object", "properties": [:]]],
+        ["name": "get_brief",
+         "description": "The whole brief for modelling one landmark: what to do, the plan and its budget. The first call of whoever models it.",
+         "inputSchema": ["type": "object", "properties": ["landmark": landmarkArgument], "required": ["landmark"]]],
+    ] + MCPChannel.adding([("landmark", landmarkArgument)], to: LandmarkMCP.Server.tools)
+}

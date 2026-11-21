@@ -24,7 +24,7 @@ enum JobState: Equatable {
 }
 
 /// A piece of work run from the editor with a log of its own: a pipeline
-/// command on a tile (`PipelineJob`), a landmark's references gathered (`ReferencesJob`).
+/// command on a tile (`PipelineJob`).
 /// Jobs are queued in the `JobPool`, which starts each when its own rule
 /// allows it (`canStart`), so several run at once, and keeps the ended ones
 /// for their logs. A new kind of work is a new type conforming to this,

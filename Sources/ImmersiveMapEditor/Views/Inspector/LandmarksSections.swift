@@ -7,7 +7,7 @@ import SwiftUI
 ///   whether it has a model.
 /// - A landmark open (its model in place of the buildings' map): back, the
 ///   name and state, then what hands it to the agent the user runs in a
-///   terminal (the user, 2026-11-20): the detail, Gather References, the
+///   terminal (the user, 2026-11-20): the detail, the
 ///   folder's command and the prompt copied, and Build from Its Recipe;
 ///   the rest folded away: what the agent is asked for, the view, the
 ///   folder, and what deletes.
@@ -37,13 +37,22 @@ struct LandmarksSections: View {
             if session.candidates.isEmpty {
                 Text("None in this tile yet: pick buildings above and make one.").foregroundStyle(.secondary)
             }
+            // The whole tile from one session, a subagent a landmark without
+            // a model (the user, 2026-11-21).
+            let unmodelled = session.candidates.filter { $0.model == nil && $0.skipped == nil }.count
+            if unmodelled > 0 {
+                PanelButton("Copy Tile Folder Command", systemImage: "terminal") { session.copyTileChangeDirectory() }
+                    .help("Sets up the tile's landmarks folder for one Claude Code or Codex session with the tools of every landmark, and copies the cd into it. Start the agent there, then paste the tile's prompt.")
+                PanelButton("Copy Prompt for \(unmodelled) Without a Model", systemImage: "doc.on.clipboard") { session.copyTilePrompt() }
+                    .help("The prompt of one Claude Code or Codex session started in the tile's landmarks folder: it hands every landmark without a model to a subagent of its own, \(LandmarkAgent.tileAtOnce) at once, each with that landmark's whole brief, at the detail and exaggeration of the Agent settings. Each gathers its references itself. Claude Code or Codex, both with subagents.")
+            }
             ForEach(session.candidates) { landmark in
                 Button { session.pickedLandmark = landmark.id } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(landmark.name)
-                            Text(verbatim: landmark.buildingsCount + " · " + (landmark.model == nil ? "no model yet" : "model"))
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim: landmark.buildingsCount + " · " + (landmark.model != nil ? "model" : landmark.skipped.map { "skipped: \($0)" } ?? "no model yet"))
+                                .font(.caption).foregroundStyle(landmark.skipped == nil ? Color.secondary : Color.red)
                         }
                         Spacer()
                         if session.isBusy(landmark: landmark.id) { ProgressView().controlSize(.mini) }
@@ -92,9 +101,6 @@ struct LandmarksSections: View {
             }
         }
         Section("Model") {
-            PanelButton("Gather References", systemImage: "photo.on.rectangle.angled") { session.gatherReferences(id: landmark.id) }
-                .disabled(busy)
-                .help("The street photos of every facade from Mapillary, the satellite view and Commons' views, kept into the landmark's references/ ahead of the agent, which otherwise gathers them itself at its first look. The photos already kept stay.")
             DetailPicker()
             PanelButton("Copy Folder Command", systemImage: "terminal") {
                 session.copyChangeDirectory(id: landmark.id)

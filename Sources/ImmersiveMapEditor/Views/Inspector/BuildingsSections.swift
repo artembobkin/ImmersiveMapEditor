@@ -14,8 +14,7 @@ struct BuildingsSections: View {
     @Environment(Session.self) private var session
     @State private var name = ""
     @State private var deleting: TileLandmark?
-    @State private var modellingNotable = false
-    @State private var makingNotable = false
+    @State private var makingLandmarks = false
     @State private var listing = false
 
     /// The landmarks holding any of the picked buildings, each with how many.
@@ -43,29 +42,12 @@ struct BuildingsSections: View {
                 // The tile's best made landmarks first, to look over on the
                 // map and in the list, then modelled, the ones without a
                 // model or all anew (the user, 2026-11-04).
-                let notable = session.notableToModel.count
-                PanelButton("Make Landmarks of the Notable…", systemImage: "building.columns") { makingNotable = true }
-                    .disabled(notable == 0)
-                    .help(notable == 0 ? "No notable building inside the tile is without a landmark."
-                          : "Every notable building inside the tile that is not a landmark yet, \(notable) of them (an article, a heritage or historic tag, a kind people know by name), made one whole with its parts: nothing is modelled, look them over first.")
-                    .confirmationDialog("Make landmarks of \(notable) notable building\(notable == 1 ? "" : "s")?", isPresented: $makingNotable) {
-                        Button("All \(notable)") { session.makeNotableLandmarks(limit: notable) }
-                        if notable > 10 { Button("The 10 Largest") { session.makeNotableLandmarks(limit: 10) } }
-                        if notable > 5 { Button("The 5 Largest") { session.makeNotableLandmarks(limit: 5) } }
-                    } message: {
-                        Text("Each becomes a landmark of the tile, whole with its parts, named by its name or address, shown orange on the map and in the list below. Delete the ones not worth a model, then Model the Landmarks.")
-                    }
-                let without = session.candidates.filter { $0.model == nil && !session.isBusy(landmark: $0.id) }.count
-                let idle = session.candidates.filter { !session.isBusy(landmark: $0.id) }.count
-                PanelButton("Gather References for the Landmarks…", systemImage: "photo.on.rectangle.angled") { modellingNotable = true }
-                    .disabled(idle == 0)
-                    .help("The references of the tile's landmarks gathered, one landmark after another: the \(without) without a model, or all \(idle). Then copy each one's prompt from its panel.")
-                    .confirmationDialog("Gather the landmarks' references?", isPresented: $modellingNotable) {
-                        if without > 0 { Button("The \(without) Without a Model") { session.gatherReferences(onlyWithoutModel: true) } }
-                        Button("All \(idle)") { session.gatherReferences(onlyWithoutModel: false) }
-                    } message: {
-                        Text("The street photos of every facade, the satellite view and Commons' views, for the agent you run in a terminal. The photos already kept stay.")
-                    }
+                let makeable = LandmarkKind.allCases.contains { !session.toMake($0).isEmpty }
+                PanelButton("Make Landmarks…", systemImage: "building.columns") { makingLandmarks = true }
+                    .disabled(!makeable)
+                    .help(makeable ? "Many of the tile's buildings made landmarks at once: the notable, all the teal ones, the monuments, the tall or the large, all of them or the largest. Nothing is modelled: look them over first."
+                          : "Every building of the tile the choices take is a landmark already.")
+                    .sheet(isPresented: $makingLandmarks) { MakeLandmarksSheet() }
             }
         } else if heldCount == picked.count, let (holder, _) = holders.first, holders.count == 1 {
             Section("Picked: \(picked.count)") {
@@ -105,12 +87,6 @@ struct BuildingsSections: View {
                 }
                 .disabled(picked.count == heldCount)
                 .help("Its folder with landmark.json and footprint.geojson, in the list below; nothing is modelled yet, and the view stays here.")
-                PanelButton("Make It and Gather References", systemImage: "photo.on.rectangle.angled") {
-                    session.makeLandmarkAndGather(named: title)
-                    name = ""
-                }
-                .disabled(picked.count == heldCount)
-                .help("The landmark made and its references gathered at once, for the agent you run in a terminal; the view stays here.")
                 ForEach(holders, id: \.0.folder) { holder, count in
                     HStack {
                         Text("\(count) of the picked are the landmark \"\(holder.name)\"" + (holder.tile == session.workspace.tile?.name ? "" : " of tile \(holder.tile)") + ": left out.")

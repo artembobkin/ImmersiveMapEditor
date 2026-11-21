@@ -6,6 +6,7 @@ struct MapSections: View {
     @Environment(Session.self) private var session
     @State private var destination = ""
     @State private var placeName = ""
+    @State private var automating = false
 
     /// The map moved to what is typed; the text stays when it means nothing.
     private func go() {
@@ -92,32 +93,37 @@ struct MapSections: View {
                     .foregroundStyle(.secondary)
                 PanelButton("Fetch OSM for \(toFetch) Tile" + (toFetch == 1 ? "" : "s"), systemImage: "square.and.arrow.down") { session.fetchChosen() }
                     .disabled(toFetch == 0 || session.jobs.isActive(.workspace))
-                    .help("Fetches the OSM of every marked tile that has none, one after another, the console counting them. Shift-click marks a tile, a plain click starts over.")
+                    .help("Cuts the OSM of every marked tile that has none from the extracts in the data folder's sources/osm (.osm.pbf, from download.geofabrik.de), each extract read once for all of them. Shift-click marks a tile, a plain click starts over.")
+                PanelButton("Automate \(marked.count) Tiles…", systemImage: "wand.and.stars") { automating = true }
+                    .help("One agent session goes through the marked tiles: each one's OSM and landmarks, its landmarks modelled by subagents, the engine's archive at the end.")
+                    .sheet(isPresented: $automating) { AutomateAreaSheet() }
                 PanelButton("Unmark All", systemImage: "xmark.circle") { session.chosen = [] }
             }
         }
-        // The fetch of the marked tiles, as it goes and as it came out: which
-        // tile now, how many done, which failed and why (the user,
-        // 2026-11-04: the fetching was not to be understood from the log).
+        // The fetch of the marked tiles, as it goes and as it came out: how
+        // far the extracts are read, how many tiles taken, which were not
+        // and why (the user, 2026-11-04: the fetching was not to be
+        // understood from the log). One command a zoom, all its tiles cut
+        // together, so a tile is counted as taken when it has its OSM now.
         if let job = session.jobs.latest(of: .workspace) as? PipelineJob, job.results.first?.arguments.first == "fetch" || job.current?.first == "fetch" {
             Section(job.state.running ? "Fetching OSM" : "Fetched OSM") {
                 if job.state.running {
-                    let step = job.console.step
-                    ProgressView(value: Double(max(0, step.index - 1)), total: Double(max(1, step.count)))
-                    Text(job.current.map { "\(step.index) of \(step.count): tile \($0.dropFirst(1).joined(separator: "/"))" } ?? "Starting…")
+                    let stage = job.console.stage
+                    ProgressView(value: stage?.fraction ?? 0)
+                    Text("\(Self.fetchedTiles(job.current ?? []).count) tiles: " + (stage?.name ?? "starting…"))
                         .font(.callout).foregroundStyle(.secondary)
-                    if let detail = job.console.stage?.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                    if let detail = stage?.detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
                 } else {
-                    let done = job.results.filter(\.ok).count, failed = job.results.filter { !$0.ok }
-                    Text("\(done) of \(job.results.count) fetched" + job.endedStamp + (failed.isEmpty ? "." : ", \(failed.count) failed:"))
-                        .font(.callout).foregroundStyle(failed.isEmpty ? Color.secondary : Color.red)
-                    ForEach(Array(failed.enumerated()), id: \.offset) { _, r in
-                        Text(r.arguments.dropFirst(1).joined(separator: "/") + (r.note.map { ": \($0)" } ?? ""))
+                    let asked = job.results.flatMap { Self.fetchedTiles($0.arguments) }
+                    let missing = asked.filter { !workspace.fetched.contains($0) }
+                    Text("\(asked.count - missing.count) of \(asked.count) fetched" + job.endedStamp + (missing.isEmpty ? "." : ", \(missing.count) not:"))
+                        .font(.callout).foregroundStyle(missing.isEmpty ? Color.secondary : Color.red)
+                    if !missing.isEmpty {
+                        Text(missing.prefix(8).map(\.name).joined(separator: ", ") + (missing.count > 8 ? "…" : ""))
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if !failed.isEmpty {
-                        Text("The tiles that failed stay marked: Fetch OSM again when Overpass is back.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(job.results.compactMap(\.note).enumerated()), id: \.offset) { _, note in
+                        Text(note).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
             }
@@ -137,5 +143,18 @@ struct MapSections: View {
                 .disabled(workspace.built.isEmpty || session.jobs.isActive(.workspace))
                 .help("Every built tile into one PMTiles archive of model tiles, the file the engine reads, where you choose.")
         }
+    }
+
+    /// The tiles a fetch command asks for: `fetch Z X Y` or `fetch Z --tiles X/Y ...`.
+    static func fetchedTiles(_ arguments: [String]) -> [TileKey] {
+        guard arguments.first == "fetch", arguments.count > 1, let z = Int(arguments[1]) else { return [] }
+        if let i = arguments.firstIndex(of: "--tiles") {
+            return arguments[(i + 1)...].compactMap { t in
+                let p = t.split(separator: "/").compactMap { Int($0) }
+                return p.count == 2 ? TileKey(z: z, x: p[0], y: p[1]) : nil
+            }
+        }
+        let n = arguments.dropFirst(2).compactMap { Int($0) }
+        return n.count >= 2 ? [TileKey(z: z, x: n[0], y: n[1])] : []
     }
 }

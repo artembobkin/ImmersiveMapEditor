@@ -8,7 +8,8 @@ import Foundation
 /// Everything of a tile lies in its one folder, so a tile is looked at,
 /// moved or deleted as one:
 ///
-///   tiles/<z>/<x>/<y>/osm/          its sources (Fetch): osm.bin (the OSM, Overpass's JSON parsed once and kept as this, OsmCache), tile.json
+///   tiles/<z>/<x>/<y>/osm/          its sources (Fetch): osm.bin (the OSM, cut from an extract of sources/osm and kept as this, OsmCache), tile.json
+///   sources/osm/                    the OSM extracts the user downloaded (.osm.pbf, OsmExtract)
 ///   tiles/<z>/<x>/<y>/roads/        its road document, roads.json, hand-edited,
 ///                                   and seed/, what it was seeded from (Seed)
 ///   tiles/<z>/<x>/<y>/build/        its built model (Build)

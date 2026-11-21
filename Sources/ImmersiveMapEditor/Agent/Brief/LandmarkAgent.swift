@@ -7,16 +7,17 @@ import TileKit
 /// editor gives it: the brief (`prompt`, the system words and the first
 /// request with its plan, copied from the landmark's panel) and the
 /// landmark's folder set up so an agent started in it finds the editor's
-/// modelling tools (`AgentSetup`). The agent looks at the references the
-/// editor gathered (`ReferencesJob`), writes the landmark's recipe, renders
+/// modelling tools (`AgentSetup`). The agent finds its references itself
+/// (search_street_photos, the satellite view, Commons), writes the landmark's recipe, renders
 /// it and corrects it; the editor shows each model it builds as it lands.
 enum LandmarkAgent {
     static let system = """
     You make stylized low-poly 3D models of real landmarks for a cartoon-style city map, through the landmark tools only (the MCP server "landmark"): \
     do not run commands or edit files yourself. Every model is a recipe of a few architectural words (get_landmark explains \
     them); the generator builds it in the map's one style and palette. Work from the landmark's OSM buildings (its \
-    outlines and heights) and from freely licensed photos you find on the web (Wikimedia Commons), saved with \
-    save_reference_photo with their author and licence; never use Google or Yandex imagery. Compare your renders with the \
+    outlines and heights) and from the references you find yourself: the street photos of Mapillary you search and choose \
+    (search_street_photos), the satellite view, and freely licensed photos of Wikimedia Commons (find_commons_photos, or \
+    save_reference_photo with their author and licence); never use Google or Yandex imagery. Compare your renders with the \
     photos and correct the recipe until the silhouette, proportions, main colours and the few telling details agree. \
     Write short notes of what you do, in English.
     """
@@ -30,7 +31,7 @@ enum LandmarkAgent {
     /// What the agent makes in a landmark's folder, besides the photos (and
     /// what the editor's own runs of it left there before 2026-11-20: the
     /// conversation, its log, its stream and its pid).
-    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", "agent.json", "agent.log", "agent.stream.jsonl", "agent.pid"]
+    static let work = ["rounds", "search", "views", "recipe.json", "model.glb", LandmarkSkip.file, "agent.json", "agent.log", "agent.stream.jsonl", "agent.pid"]
 
     /// Whether the agent has built anything in `folder`.
     static func hasBuilt(_ folder: URL) -> Bool {
@@ -80,14 +81,22 @@ enum LandmarkAgent {
         The plan, and the budget: one build of the whole from the references, then builds of the fixes while the \
         comparisons still show something to fix, \(fixes) of them at most, each with everything that differed, and a \
         summary. A plain building takes two builds, a rich facade \(fine ? "all of them" : "four"); never a build for a detail alone, and stop as \
-        soon as a build changes little. Work from what each call returns; do not ask for more pictures than it gives.
-        1. get_landmark (the building, its walls' corners in metres, the recipe format), then list_references. It shows the references, and when none are kept yet it gathers them first (a few \
-        minutes, once): the best street photo of each facade (Mapillary, the landmark framed in red on each by the camera's pose; \
-        kept in a folder for each facade, its best one to three in best/, the others in other/, all by name: \
-        north-facade/best/photo-03.jpg, the path to give show_reference, compare_with_photo and drop_reference), the \
-        satellite view (the roofs from straight above with the OSM outlines and a grid in metres, the recipe's x and y: \
-        the roof shapes, ridges, domes and lanterns, the courtyards, where the parts stand), and from Wikimedia Commons a \
-        view of the whole and one from above when it has them. Nothing else to search for.
+        soon as a build changes little. The search for the references is yours and comes first: as many pages and looks as a \
+        facade needs to find a photo of it as it is now. After it, work from what each build returns, with no renders besides.
+        1. get_landmark (the building, its walls' corners in metres, the recipe format), then list_references (what is \
+        kept, and the facades no photo shows). Then find the references yourself, the building as it is now: satellite_view \
+        (the roofs from straight above with the OSM outlines and a grid in metres, the recipe's x and y: the roof shapes, \
+        ridges, domes and lanterns, the courtyards, where the parts stand); for each facade search_street_photos (the newest \
+        first, the landmark framed in red where each photo's pose puts it), look at the sheet, look_at_street_photo one you \
+        are not sure of, and save_street_photo the one or two that show that facade best, square on and recent, into its \
+        best/ (north-facade/best/photo-03.jpg, the path to give show_reference, compare_with_photo and drop_reference). A \
+        frame on another building, a facade hidden by trees or scaffolding, or one since rebuilt: the next page, since, or \
+        a larger radius. find_commons_photos for a view of the whole or from above. Every build compares with what you kept.
+        The search has a budget, counted for you and said with every answer (so many pages a facade and in all): when a \
+        facade's is spent, keep the best you saw of it, or model that facade from OSM and the satellite view, plain. \
+        With no photo of the building at all from Mapillary, try find_commons_photos once and the web once \
+        (save_reference_photo, freely licensed only); if there is still none, skip_landmark with the reason and stop: a \
+        landmark is never modelled from nothing.
         A wall is one wall (the user, 2026-10-28): the building's walls are its OSM outline, and each stretch of them \
         belongs to one mass. A building of parts with different heights, windows or roofs is the one outline cut into \
         them (cuts: a line through the outline and the side to keep; the rest of it minus the parts), never a polygon of \
@@ -138,12 +147,16 @@ enum LandmarkAgent {
         with its rotor, tail boom and skids, an obelisk with its tip), at its real size from the photos and OSM's height. \
         Up to 20 000 triangles (set_recipe tells the count).
         The plan, and the budget: one build from the references, then a build of the fixes while the comparisons still \
-        show something to fix, two of them at most, and a summary. Work from what each call returns.
+        show something to fix, two of them at most, and a summary. The search for the references is yours and comes first; \
+        after it, work from what each build returns.
         1. get_landmark (the plot, the recipe format: the ring it gives is the plot round the point, not a wall, and \
-        nothing of it is built), then list_references (it gathers them first when none are kept yet, a few minutes, once): the street photos round it from Mapillary, each the monument \
-        framed in red, kept by the side of the plot they look at (north-facade/best/photo-03.jpg, the path to give \
-        show_reference, compare_with_photo and drop_reference), the satellite view (its shadow and its base tell its \
-        footprint and heading) and from Wikimedia Commons a view of the whole when it has one. Nothing else to search for.
+        nothing of it is built), then list_references, then find the references yourself: search_street_photos round it \
+        (the newest first, the monument framed in red where each photo's pose puts it), look_at_street_photo one you are not \
+        sure of, and save_street_photo two or three from different sides (north-facade/best/photo-03.jpg, the path to give \
+        show_reference, compare_with_photo and drop_reference); satellite_view (its shadow and its base tell its footprint \
+        and heading); find_commons_photos for a view of the whole. The search has a budget, said with every answer: \
+        with no photo of the monument at all from Mapillary, Commons or the web (save_reference_photo, freely licensed \
+        only), skip_landmark with the reason and stop: it is never modelled from nothing.
         2. The build: set_recipe with no masses. The pedestal a box, a cylinder, a prism or a loft shape standing on \
         the ground at (0, 0), its real size; the figure on it a statue feature where one fits (figure, equestrian, \
         obelisk, cross, star, flame), marked "emphasis": true, since it is what stands free; otherwise the object \

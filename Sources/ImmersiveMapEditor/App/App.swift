@@ -15,6 +15,8 @@ import TileKit
 ///   ImmersiveMapEditor --landmark-views FOLDER OUT_DIR [--boxes]  a landmark's model (or OSM boxes) from around, PNGs
 ///   ImmersiveMapEditor --landmark-look FOLDER OUT.png X Y Z HEADING PITCH HFOV W H [--boxes]  the model as a camera there saw it
 ///   ImmersiveMapEditor landmark-mcp FOLDER                    the landmarks' agent's tools, an MCP server on stdio
+///   ImmersiveMapEditor landmark-mcp --tile LANDMARKS          every landmark of a tile behind one server, a landmark argument each
+///   ImmersiveMapEditor landmark-mcp --area AGENT_FOLDER       the marked tiles prepared, modelled and archived by one session (agent/plan.json)
 ///
 /// With no argument it opens the data folder of Settings (DataFolder).
 @main
@@ -38,6 +40,11 @@ enum Entry {
                 let token = AgentSettings.mapillaryToken
                 if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
             }
+            // All the landmarks of a tile behind one server, for one session
+            // that models them with a subagent each (TileMCP).
+            if arguments[2] == "--tile", arguments.count > 3 { TileMCP.run(landmarks: URL(fileURLWithPath: arguments[3])) }
+            // The tiles marked on the map gone through by one session (AreaMCP).
+            if arguments[2] == "--area", arguments.count > 3 { AreaMCP.run(agent: URL(fileURLWithPath: arguments[3])) }
             LandmarkMCP.run(folder: URL(fileURLWithPath: arguments[2]))
         }
         if Headless.asked(arguments) {

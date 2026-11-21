@@ -61,12 +61,9 @@ public enum Pipeline {
 
     public static func run(_ paths: WorkspacePaths, z: Int, tiles: [(Int, Int)], options: Options = Options()) throws -> Bool {
         let out = paths.tiles
-        for (x, y) in tiles {
-            let data = paths.tileData(z: z, x: x, y: y)
-            if options.refetch || !Osm.isFetched(data) {
-                try Fetch.tile(paths, z: z, x: x, y: y, force: options.refetch)
-            }
-        }
+        // Every tile without its OSM taken first, each extract read once for all.
+        let unfetched = try Fetch.tiles(paths, z: z, tiles: tiles, force: options.refetch)
+        if !unfetched.isEmpty { throw PipelineError(unfetched.map(\.reason).joined(separator: "\n")) }
         let seeded = options.parts.contains("roads") ? try ensureRoads(paths, z: z, tiles: tiles) : []
         if !seeded.isEmpty { print("roads seeded for " + seeded.joined(separator: ", ")) }
         let registry = try Registry(paths)
