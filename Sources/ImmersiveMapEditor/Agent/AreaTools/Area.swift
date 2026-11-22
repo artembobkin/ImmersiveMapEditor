@@ -11,6 +11,7 @@ final class Area: @unchecked Sendable {
     let folder: URL
     let paths: WorkspacePaths
     private let lock = NSLock()
+    private let buildLock = NSLock()
 
     init(folder: URL) {
         self.folder = folder
@@ -75,6 +76,17 @@ final class Area: @unchecked Sendable {
         }
     }
 
+    /// A tile built with the plan's parts, once its landmarks' models are made
+    /// (the user, 2026-11-22). Builds one at a time, beside the preparing:
+    /// a tile prepared meanwhile changes nothing of the one built.
+    func build(_ tile: TileKey) throws -> String {
+        try buildLock.withLock {
+            guard let plan else { throw MCPChannel.Failure("no plan: copy the area's prompt from the editor again") }
+            guard Osm.isFetched(paths.tileData(z: tile.z, x: tile.x, y: tile.y)) else { throw MCPChannel.Failure("\(tile.name) has no OSM: prepare_tile first") }
+            return "\(tile.name): " + (try TileBuild.run(root: paths.root, z: tile.z, tiles: [tile], parts: plan.parts))
+        }
+    }
+
     /// Every plan tile with its OSM built where its inputs changed, then
     /// the engine's archive written anew into engine/, the older ones gone
     /// once it is, as the editor's Update the Archive does.
@@ -84,11 +96,7 @@ final class Area: @unchecked Sendable {
             let tiles = plan.tiles.compactMap(AreaPlan.key).filter { Osm.isFetched(paths.tileData(z: $0.z, x: $0.x, y: $0.y)) }
             var said: [String] = []
             for z in Set(tiles.map(\.z)).sorted() {
-                let parts = Set(plan.parts).subtracting(Features.roads ? [] : ["roads"]).sorted().joined(separator: ",")
-                let (status, output) = pipeline(["build", "\(z)", "--changed", "--parts", parts] + (Features.roads ? [] : ["--no-roads"])
-                                                + ["--tiles"] + tiles.filter { $0.z == z }.map { "\($0.x)/\($0.y)" })
-                let summary = output.split(separator: "\n").last { $0.contains("tiles") && ($0.contains("ok") || $0.contains("failed")) }
-                said.append(String(summary ?? (status == 0 ? "built" : "the build failed: " + Substring(lastWord(output)))))
+                do { said.append(try TileBuild.run(root: paths.root, z: z, tiles: tiles.filter { $0.z == z }, parts: plan.parts)) } catch { said.append("\(error)") }
             }
             let engine = paths.root.appendingPathComponent("engine")
             try FileManager.default.createDirectory(at: engine, withIntermediateDirectories: true)
@@ -107,16 +115,6 @@ final class Area: @unchecked Sendable {
         }
     }
 
-    /// One of the pipeline's commands on the data folder, the editor run as
-    /// it runs them; its status and output.
-    private func pipeline(_ arguments: [String]) -> (Int32, String) {
-        let exe = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        return LandmarkMCP.Server.run(exe, ["pipeline", "--root", paths.root.path] + arguments)
-    }
-
-    /// The pipeline's last word on a failure: its error line, else its last line.
-    private func lastWord(_ output: String) -> String {
-        let lines = output.split(separator: "\n").filter { !$0.hasPrefix("@progress") }
-        return String(lines.last { $0.hasPrefix("pipeline: ") }?.dropFirst(10) ?? lines.last ?? "no output")
-    }
+    private func pipeline(_ arguments: [String]) -> (Int32, String) { TileBuild.pipeline(paths.root, arguments) }
+    private func lastWord(_ output: String) -> String { TileBuild.lastWord(output) }
 }

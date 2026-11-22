@@ -21,7 +21,12 @@ import TileKit
 extension LandmarkMCP.Server {
     func searchStreetPhotos(_ args: [String: Any]) throws -> [[String: Any]] {
         let scene = try StreetScene(folder: folder)
-        let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? 120))
+        // The radius from the landmark's centre: by default its farthest wall and
+        // 80 m beyond, 120 m at least (the user, 2026-11-22: a building 180 m
+        // long had its south facade 90 m from the centre, and 120 m from the
+        // centre held no photo of it, the street before it out of reach).
+        let reach = scene.facades.flatMap(\.samples).map { simd_length($0.p) }.max() ?? 0
+        let radius = max(30, min(400, (args["radius"] as? NSNumber)?.doubleValue ?? max(120, reach + 80)))
         let count = max(1, min(16, (args["count"] as? NSNumber)?.intValue ?? 9))
         let skip = max(0, (args["skip"] as? NSNumber)?.intValue ?? 0)
         let newest = (args["order"] as? String ?? "newest") != "best"
@@ -71,7 +76,14 @@ extension LandmarkMCP.Server {
             guard let guess = StreetView(turned, in: scene, quick: true), anywhere || seen(guess) >= StreetView.enough else { return nil }
             return (guess, e, "by its compass it looks away from the building: framed as if it looked at it, the frame and the side a guess", true)
         }
-        var looks: [Look] = entries.compactMap { judge($0) }
+        // The guesses only when asked for: nearly every photo of a street
+        // stands where a facade could be seen, and listed with the rest, the
+        // newest first, they filled the pages with cameras looking away (the
+        // user, 2026-11-22: models built from one photo, the rest unchecked).
+        let withGuesses = args["guesses"] as? Bool ?? false
+        let judged = entries.compactMap { judge($0) }
+        let guessCount = judged.filter(\.guessed).count
+        var looks: [Look] = withGuesses ? judged : judged.filter { !$0.guessed }
         /// How good a look: a guessed one after any its pose bears out.
         func score(_ look: Look) -> Double {
             let f = facade ?? look.view.best
@@ -117,7 +129,7 @@ extension LandmarkMCP.Server {
         }
         let passes = args["pass_of"] == nil
         guard !looks.isEmpty else {
-            return [text("Of \(total) street photos within \(Int(radius)) m none looks at " + (facade.map { "the \(scene.facades[$0].name)" } ?? "the landmark")
+            return [text("Of \(total) street photos within \(Int(radius)) m none looks at " + (facade.map { scene.facades[$0].name } ?? "the landmark")
                          + (since != nil ? " since then" : "") + ". A larger radius, an earlier since, or another facade.")]
         }
 
@@ -166,7 +178,7 @@ extension LandmarkMCP.Server {
         }
         let sheet = dir.appendingPathComponent("search-\(skip + 1)-\(skip + page.count).jpg")
         try ContactSheet.draw(cells, to: sheet)
-        let what = facade.map { "the \(scene.facades[$0].name)" } ?? "the landmark"
+        let what = facade.map { scene.facades[$0].name } ?? "the landmark"
         var content: [[String: Any]] = [text(
             "\(frames) of \(total) street photos within \(Int(radius)) m look at \(what)" + (since != nil ? " (taken since then)" : "")
             + (passes ? ", in \(looks.count) passes (a car's or a walker's track): of each pass its frame with the best look, \(newest ? "the newest pass" : "the best look") first"
@@ -174,7 +186,8 @@ extension LandmarkMCP.Server {
             + (passes ? "; " : " ") + "#\(skip + 1) to #\(skip + page.count) below, the landmark framed in red where each one's pose puts it "
             + "(a frame on another building is a wrong pose). look_at_street_photo(id) to see one large, save_street_photo(id, facade, shows) to keep it"
             + (passes ? ", pass_of: id for the other frames of a pass" : "")
-            + (skip + page.count < looks.count ? ", skip: \(skip + page.count) for the next ones" : "") + ".\n" + lines.joined(separator: "\n") + "\n" + searchLeft(budget))]
+            + (skip + page.count < looks.count ? ", skip: \(skip + page.count) for the next ones" : "") + ".\n"
+            + (!withGuesses && guessCount > 0 && passes ? "Besides, \(guessCount) photos stand where it could be seen but their compasses look away: guesses: true lists them too, when these give nothing.\n" : "") + lines.joined(separator: "\n") + "\n" + searchLeft(budget))]
         if let picture = image(sheet) { content.append(picture) }
         return content
     }

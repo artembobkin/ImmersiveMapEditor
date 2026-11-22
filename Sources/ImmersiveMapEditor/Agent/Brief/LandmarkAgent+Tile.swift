@@ -27,9 +27,12 @@ extension LandmarkAgent {
         Then answer in three lines: what you built, how many builds, what still differs from the photos." \
         Run \(tileAtOnce) subagents at once, no more: start the next as one finishes (in Codex, wait_agent for them and close_agent a finished one), until every one is done. \
         Their pictures stay with them: do not look at a landmark's pictures yourself.
-        3. When all have finished, call list_landmarks again and report: which have a model now, which were skipped for \
-        want of references (a subagent that skipped its landmark is done: never start it again), and for the others \
-        without one, why (from their subagents' answers).
+        A landmark skipped for want of references, a subagent that failed or gave up, a tool that answered with an \
+        error: none of these ends the run. Note it for the report and go on with the next landmark until every one is done.
+        3. When all have finished (made or skipped), call build_tile: the tile is built with its new models.
+        4. Call list_landmarks again and report: which have a model now, which were skipped for want of references (a \
+        subagent that skipped its landmark is done: never start it again), and for the others without one, why (from \
+        their subagents' answers); then what build_tile said.
         """
     }
 }

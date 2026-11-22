@@ -20,11 +20,15 @@ extension LandmarkAgent {
         Keep \(tileAtOnce) subagents running, no more: start the next as one finishes (in Codex, wait_agent for them and \
         close_agent a finished one). When a tile has no landmark left to start, prepare the next tile and go on, so the \
         subagents never wait. Their pictures stay with them: do not look at a landmark's pictures yourself.
-        3. When every landmark of every tile has finished, call update_archive once: the tiles are built with their new \
-        models and the engine's archive is made anew.
-        4. Report, tile by tile: the landmarks made, which have a model now, which were skipped for want of references \
+        A landmark skipped for want of references, a subagent that failed or gave up, a tool that answered with an \
+        error: none of these ends the run. Note it for the report and go on with the next landmark and the next tile; \
+        stop only when every tile list_tiles gave is done.
+        3. When every landmark of a tile has finished (made or skipped), call build_tile for it: the tile is built with \
+        its new models while you go on with the next tiles.
+        4. When every tile is built, call update_archive once: the engine's archive is made anew.
+        5. Report, tile by tile: the landmarks made, which have a model now, which were skipped for want of references \
         (a subagent that skipped its landmark is done: never start it again), and for the others without one, why (from \
-        their subagents' answers); then what update_archive said.
+        their subagents' answers); what build_tile said of each tile; then what update_archive said.
         """
     }
 }

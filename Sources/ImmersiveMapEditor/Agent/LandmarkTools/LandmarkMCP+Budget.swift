@@ -45,7 +45,7 @@ extension LandmarkMCP.Server {
         hasPhoto
             ? "Model from the photos you kept; a facade with none from OSM and the satellite view, plain."
             : "No photo of the building is kept: find_commons_photos once, then the web once (save_reference_photo, freely licensed only). "
-              + "If there is still none, skip_landmark: it is not modelled from nothing."
+              + "If there is still none, skip_landmark: it is not modelled from nothing, and the work on it ends there."
     }
 
     /// Whether a photo of the building itself is kept: a street photo or a
@@ -61,6 +61,6 @@ extension LandmarkMCP.Server {
         guard !hasPhoto else { throw Failure("a photo of the building is kept: model it from that, a facade with none from OSM and the satellite view") }
         let reason = (args["reason"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "no reference photo found"
         try LandmarkSkip.write(reason, in: folder)
-        return "Skipped: \(reason). The editor shows it red. Stop here and answer with that."
+        return "Skipped: \(reason). The editor shows it red. Your work on this landmark is done: answer that it was skipped and why. (Only this landmark: the run of the others goes on.)"
     }
 }

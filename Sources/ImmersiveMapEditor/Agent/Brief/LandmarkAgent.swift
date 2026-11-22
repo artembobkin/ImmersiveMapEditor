@@ -95,7 +95,7 @@ enum LandmarkAgent {
         The search has a budget, counted for you and said with every answer (so many pages a facade and in all): when a \
         facade's is spent, keep the best you saw of it, or model that facade from OSM and the satellite view, plain. \
         With no photo of the building at all from Mapillary, try find_commons_photos once and the web once \
-        (save_reference_photo, freely licensed only); if there is still none, skip_landmark with the reason and stop: a \
+        (save_reference_photo, freely licensed only); if there is still none, skip_landmark with the reason, and your work on this landmark is done: a \
         landmark is never modelled from nothing.
         A wall is one wall (the user, 2026-10-28): the building's walls are its OSM outline, and each stretch of them \
         belongs to one mass. A building of parts with different heights, windows or roofs is the one outline cut into \
@@ -156,7 +156,7 @@ enum LandmarkAgent {
         show_reference, compare_with_photo and drop_reference); satellite_view (its shadow and its base tell its footprint \
         and heading); find_commons_photos for a view of the whole. The search has a budget, said with every answer: \
         with no photo of the monument at all from Mapillary, Commons or the web (save_reference_photo, freely licensed \
-        only), skip_landmark with the reason and stop: it is never modelled from nothing.
+        only), skip_landmark with the reason, and your work on it is done: it is never modelled from nothing.
         2. The build: set_recipe with no masses. The pedestal a box, a cylinder, a prism or a loft shape standing on \
         the ground at (0, 0), its real size; the figure on it a statue feature where one fits (figure, equestrian, \
         obelisk, cross, star, flame), marked "emphasis": true, since it is what stands free; otherwise the object \

@@ -11,7 +11,7 @@ import TileKit
 /// automatic, tile after tile, after choosing the tiles and the landmarks).
 ///
 /// The area's own tools: `list_tiles`, `prepare_tile`, `list_landmarks`,
-/// `get_brief` and `update_archive`; every landmark tool (`LandmarkMCP`)
+/// `get_brief`, `build_tile` and `update_archive`; every landmark tool (`LandmarkMCP`)
 /// with two more arguments, `tile` and `landmark`, passed to that
 /// landmark's own server (`LandmarkRouter`). The long ones (a tile's OSM, a
 /// build of every tile) run on a thread of their own, so the subagents'
@@ -45,6 +45,7 @@ enum AreaMCP {
                     return
                 }
                 if name == "prepare_tile" { later { try area.prepare(tile) }; return }
+                if name == "build_tile" { later { try area.build(tile) }; return }
                 let landmarks = area.paths.tileLandmarks(z: tile.z, x: tile.x, y: tile.y)
                 if name == "list_landmarks" {
                     channel.reply(MCPChannel.result(id, [MCPChannel.text(LandmarkRouter.listLandmarks(in: landmarks))]))
@@ -87,6 +88,9 @@ enum AreaMCP {
         ["name": "get_brief",
          "description": "The whole brief for modelling one landmark: what to do, the plan and its budget. The first call of whoever models it.",
          "inputSchema": ["type": "object", "properties": ["tile": tileArgument, "landmark": landmarkArgument], "required": ["tile", "landmark"]]],
+        ["name": "build_tile",
+         "description": "Builds a tile with its landmarks' models, once every landmark of it has finished (made or skipped): its 3D tile as the editor builds it, with the parts the user chose. A minute or so; it runs while you go on with the next tile.",
+         "inputSchema": ["type": "object", "properties": ["tile": tileArgument], "required": ["tile"]]],
         ["name": "update_archive",
          "description": "Every tile of the area with its OSM built again where its inputs changed (its landmarks' models among them), then the engine's model archive made anew, for the editor's Engine view. Several minutes. Call it once, at the end.",
          "inputSchema": ["type": "object", "properties": [:]]],

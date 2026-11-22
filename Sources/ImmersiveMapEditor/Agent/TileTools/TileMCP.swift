@@ -9,8 +9,9 @@ import TileKit
 ///
 /// Each tool is a landmark's tool (`LandmarkMCP`) with one more argument,
 /// `landmark`, its folder's name, the call passed to that landmark's own
-/// server (`LandmarkRouter`). Two tools of the tile's own: `list_landmarks`
-/// and `get_brief`, the landmark's prompt as Copy Prompt gives it.
+/// server (`LandmarkRouter`). Three tools of the tile's own: `list_landmarks`,
+/// `get_brief`, the landmark's prompt as Copy Prompt gives it, and
+/// `build_tile`, the tile built once its models are made (`TileBuild`).
 enum TileMCP {
     static func run(landmarks folder: URL) -> Never {
         let landmarks = folder.standardizedFileURL
@@ -24,6 +25,19 @@ enum TileMCP {
             let name = params["name"] as? String ?? ""
             if name == "list_landmarks" {
                 channel.reply(MCPChannel.result(id, [MCPChannel.text(LandmarkRouter.listLandmarks(in: landmarks))]))
+                return
+            }
+            if name == "build_tile" {
+                // On a thread of its own: the subagents' calls go on meanwhile.
+                Thread.detachNewThread {
+                    do {
+                        guard let (root, tile) = TileBuild.tile(ofLandmarks: landmarks) else { throw MCPChannel.Failure("this folder is no tile's landmarks/") }
+                        let said = try TileBuild.run(root: root, z: tile.z, tiles: [tile], parts: TileBuild.sheetParts)
+                        channel.reply(MCPChannel.result(id, [MCPChannel.text("\(tile.name): \(said)")]))
+                    } catch {
+                        channel.reply(MCPChannel.failure(id, "\(error)"))
+                    }
+                }
                 return
             }
             guard LandmarkRouter.isName(landmark) else {
@@ -52,6 +66,9 @@ enum TileMCP {
     static let tools: [[String: Any]] = [
         ["name": "list_landmarks",
          "description": "Every landmark of the tile: its id (what every other tool takes as landmark), name, buildings, and whether it has a model yet.",
+         "inputSchema": ["type": "object", "properties": [:]]],
+        ["name": "build_tile",
+         "description": "Builds the tile with its landmarks' models, once every landmark has finished (made or skipped): its 3D tile as the editor builds it, with the parts of the editor's build sheet. A minute or so.",
          "inputSchema": ["type": "object", "properties": [:]]],
         ["name": "get_brief",
          "description": "The whole brief for modelling one landmark: what to do, the plan and its budget. The first call of whoever models it.",

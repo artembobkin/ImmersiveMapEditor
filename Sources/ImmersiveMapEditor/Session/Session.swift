@@ -166,7 +166,7 @@ final class Session {
     /// chosen apart), kept between runs. A stored property, so the sheet
     /// follows a toggle: Observation does not track a computed one over
     /// UserDefaults (the user, 2026-11-01: the checkboxes would not take).
-    static let partsKey = "build.parts"
+    static let partsKey = TileBuild.partsKey
     var buildParts: Set<String> = Set(UserDefaults.standard.stringArray(forKey: Session.partsKey) ?? Array(Build.allParts)) {
         didSet { UserDefaults.standard.set(buildParts.sorted(), forKey: Self.partsKey) }
     }
