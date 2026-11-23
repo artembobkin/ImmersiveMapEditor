@@ -48,8 +48,19 @@ extension Session {
     /// the others (and unmarked when it was).
     func pick(_ tile: TileKey, adding: Bool) {
         if adding {
-            if chosen.contains(tile) { chosen.remove(tile) } else { chosen.insert(tile) }
-            if chosen.isEmpty { candidate = nil } else { candidate = tile }
+            // The tile picked by a plain click is the first of the marks: a
+            // shift-click after it marks both (the user, 2026-11-22: the
+            // first tile was left out, the marking began at the second).
+            if chosen.isEmpty, let first = candidate { chosen.insert(first) }
+            if chosen.contains(tile) {
+                // Unmarked, it is no longer the one picked either: the
+                // picked one counts as marked.
+                chosen.remove(tile)
+                candidate = chosen.contains(candidate ?? tile) ? candidate : chosen.sorted().last
+            } else {
+                chosen.insert(tile)
+                candidate = tile
+            }
         } else {
             chosen = []
             candidate = tile

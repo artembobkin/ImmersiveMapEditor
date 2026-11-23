@@ -33,7 +33,7 @@ enum TileMCP {
                     do {
                         guard let (root, tile) = TileBuild.tile(ofLandmarks: landmarks) else { throw MCPChannel.Failure("this folder is no tile's landmarks/") }
                         let said = try TileBuild.run(root: root, z: tile.z, tiles: [tile], parts: TileBuild.sheetParts)
-                        channel.reply(MCPChannel.result(id, [MCPChannel.text("\(tile.name): \(said)")]))
+                        channel.reply(MCPChannel.result(id, [MCPChannel.text("\(tile.name): \(said). " + TileBuild.tidied(landmarks))]))
                     } catch {
                         channel.reply(MCPChannel.failure(id, "\(error)"))
                     }
@@ -68,7 +68,7 @@ enum TileMCP {
          "description": "Every landmark of the tile: its id (what every other tool takes as landmark), name, buildings, and whether it has a model yet.",
          "inputSchema": ["type": "object", "properties": [:]]],
         ["name": "build_tile",
-         "description": "Builds the tile with its landmarks' models, once every landmark has finished (made or skipped): its 3D tile as the editor builds it, with the parts of the editor's build sheet. A minute or so.",
+         "description": "Builds the tile with its landmarks' models, once every landmark has finished (made or skipped): its 3D tile as the editor builds it, with the parts of the editor's build sheet, then its finished landmarks' working files tidied (their candidates and old rounds; models, recipes and references stay). A minute or so.",
          "inputSchema": ["type": "object", "properties": [:]]],
         ["name": "get_brief",
          "description": "The whole brief for modelling one landmark: what to do, the plan and its budget. The first call of whoever models it.",

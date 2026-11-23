@@ -11,6 +11,8 @@ struct StyleSections: View {
     @State private var newName = ""
     @State private var extraName = ""
     @State private var extraHex = ""
+    @State private var city = ""
+    @State private var copied: String?
 
     var body: some View {
         let _ = session.palette.revision
@@ -37,6 +39,27 @@ struct StyleSections: View {
                 } message: {
                     Text("Its file goes; the tiles built with it keep their colours.")
                 }
+        }
+        // A palette made to fit a city with an agent the user starts in a
+        // terminal (PaletteMCP; the user, 2026-11-22), its changes shown here
+        // as they land (Session.watchFolder).
+        Section("Agent") {
+            TextField("City", text: $city, prompt: Text("A city: \(palette.active) if empty"))
+                .textFieldStyle(.roundedBorder)
+                .labelsHidden().multilineTextAlignment(.leading)
+                .help("The city the palette is made for. A palette of its name is made from the one shown when there is none; empty, the palette shown is made to fit the city it is named for.")
+            PanelButton("Copy Folder Command", systemImage: "terminal") {
+                session.copyPaletteFolderCommand()
+                copied = "The cd copied: start claude or codex there."
+            }
+            .help("Sets up the data folder's agent/palette/ with the palette tools for Claude Code and Codex, and copies the cd into it.")
+            PanelButton("Copy Prompt", systemImage: "doc.on.clipboard") {
+                session.copyPalettePrompt(city: city)
+                copied = "The prompt copied: paste it into the session."
+            }
+            .disabled(city.trimmingCharacters(in: .whitespaces).isEmpty && palette.active == "Common")
+            .help("Copies the brief: the agent looks at the city's street photos and sets the palette's colours, each change shown here at once.")
+            if let copied { Text(copied).font(.caption).foregroundStyle(.secondary) }
         }
         Section("Landmark colours added") {
             if palette.extras.isEmpty {

@@ -16,6 +16,10 @@ import Foundation
 ///   with their plan, `landmark-mcp --area FOLDER` (`AreaMCP`), for one
 ///   session that prepares, models and archives them all.
 ///
+/// - the data folder's `agent/palette/` (`preparePalette`), the palettes of
+///   the data folder, `palette-mcp DATA_FOLDER` (`PaletteMCP`), for one
+///   session that makes a palette fit a city, as the server "palette".
+///
 /// Each gets the same three files:
 ///
 /// - `.mcp.json`: Claude Code's project MCP servers.
@@ -49,18 +53,25 @@ enum AgentSetup {
         try write(folder, server: ["landmark-mcp", "--area", folder.path], fine: fine)
     }
 
+    /// The data folder's `agent/palette/` set up for one session that makes
+    /// a palette fit a city (`PaletteMCP`, `PaletteAgent.prompt`).
+    static func preparePalette(_ folder: URL, root: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try write(folder, server: ["palette-mcp", root.path], fine: false, name: "palette")
+    }
+
     /// The three files written into `folder`, the server the editor itself
     /// run with `server` as its arguments.
-    private static func write(_ folder: URL, server arguments: [String], fine: Bool) throws {
+    private static func write(_ folder: URL, server arguments: [String], fine: Bool, name: String = "landmark") throws {
         let fm = FileManager.default
         let server: [String: Any] = ["command": Bundle.main.executableURL!.path, "args": arguments, "env": environment(fine: fine)]
-        try json(["mcpServers": ["landmark": server]]).write(to: folder.appendingPathComponent(".mcp.json"), options: .atomic)
+        try json(["mcpServers": [name: server]]).write(to: folder.appendingPathComponent(".mcp.json"), options: .atomic)
         let claude = folder.appendingPathComponent(".claude")
         try fm.createDirectory(at: claude, withIntermediateDirectories: true)
-        try json(claudeSettings).write(to: claude.appendingPathComponent("settings.json"), options: .atomic)
+        try json(claudeSettings(name)).write(to: claude.appendingPathComponent("settings.json"), options: .atomic)
         let codex = folder.appendingPathComponent(".codex")
         try fm.createDirectory(at: codex, withIntermediateDirectories: true)
-        try Data(codexConfig(arguments, fine: fine).utf8).write(to: codex.appendingPathComponent("config.toml"), options: .atomic)
+        try Data(codexConfig(arguments, fine: fine, name: name).utf8).write(to: codex.appendingPathComponent("config.toml"), options: .atomic)
     }
 
     /// The command that goes into the folder in a terminal, quoted for the shell.
@@ -73,10 +84,11 @@ enum AgentSetup {
         AgentSettings.generatorEnvironment.merging(["LANDMARK_DETAIL": fine ? "fine" : "normal"]) { _, new in new }
     }
 
-    static let claudeSettings: [String: Any] = [
+    /// Claude Code's project settings with the server of this name.
+    static func claudeSettings(_ name: String) -> [String: Any] { [
         "enableAllProjectMcpServers": true,
-        "enabledMcpjsonServers": ["landmark"],
-        "permissions": ["allow": ["mcp__landmark", "WebSearch", "WebFetch"]],
+        "enabledMcpjsonServers": [name],
+        "permissions": ["allow": ["mcp__" + name, "WebSearch", "WebFetch"]],
         "env": [
             "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
@@ -89,15 +101,15 @@ enum AgentSetup {
             // renders for long; twenty minutes before Claude Code gives up.
             "MCP_TOOL_TIMEOUT": "1200000",
         ],
-    ]
+    ] }
 
     /// Codex's project config: the same server, a call allowed twenty
     /// minutes (the references gathered, a fine build).
-    static func codexConfig(_ arguments: [String], fine: Bool) -> String {
+    static func codexConfig(_ arguments: [String], fine: Bool, name: String = "landmark") -> String {
         let env = environment(fine: fine).sorted { $0.key < $1.key }.map { "\($0.key) = \(toml($0.value))" }
         return """
-        # Written by Immersive Map Editor when the landmark's prompt is copied.
-        [mcp_servers.landmark]
+        # Written by Immersive Map Editor when the prompt is copied.
+        [mcp_servers.\(name)]
         command = \(toml(Bundle.main.executableURL!.path))
         args = [\(arguments.map(toml).joined(separator: ", "))]
         env = { \(env.joined(separator: ", ")) }

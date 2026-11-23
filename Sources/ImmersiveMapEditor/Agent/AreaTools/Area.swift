@@ -83,7 +83,8 @@ final class Area: @unchecked Sendable {
         try buildLock.withLock {
             guard let plan else { throw MCPChannel.Failure("no plan: copy the area's prompt from the editor again") }
             guard Osm.isFetched(paths.tileData(z: tile.z, x: tile.x, y: tile.y)) else { throw MCPChannel.Failure("\(tile.name) has no OSM: prepare_tile first") }
-            return "\(tile.name): " + (try TileBuild.run(root: paths.root, z: tile.z, tiles: [tile], parts: plan.parts))
+            let built = try TileBuild.run(root: paths.root, z: tile.z, tiles: [tile], parts: plan.parts)
+            return "\(tile.name): \(built). " + TileBuild.tidied(paths.tileLandmarks(z: tile.z, x: tile.x, y: tile.y))
         }
     }
 

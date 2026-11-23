@@ -115,6 +115,35 @@ extension Session {
         Platform.copy(LandmarkAgent.areaPrompt(tiles: markedTiles.count))
     }
 
+    /// The data folder's `agent/palette/` set up for the palette agent
+    /// (`PaletteMCP`). Returns the folder, nil when it could not be written.
+    @discardableResult
+    func preparePaletteAgent() -> URL? {
+        let folder = workspace.paths.root.appendingPathComponent("agent").appendingPathComponent("palette")
+        do {
+            try AgentSetup.preparePalette(folder, root: workspace.paths.root)
+            return folder
+        } catch {
+            problem = "Cannot set up the palette agent's folder: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// The palette agent's folder set up and the command into it copied.
+    func copyPaletteFolderCommand() {
+        guard let folder = preparePaletteAgent() else { return }
+        Platform.copy(AgentSetup.changeDirectory(folder))
+    }
+
+    /// The palette agent's prompt copied: the palette named for `city`
+    /// made (a copy of the one shown when there is none of that name), or,
+    /// with no city, the one shown made to fit the city it is named for.
+    func copyPalettePrompt(city: String) {
+        guard preparePaletteAgent() != nil else { return }
+        let city = city.trimmingCharacters(in: .whitespaces), shown = palette.active
+        Platform.copy(PaletteAgent.prompt(name: city.isEmpty ? shown : city, city: city.isEmpty ? shown : city, from: shown))
+    }
+
     /// Watches the models of the open tile's landmarks every two seconds: a
     /// model the agent built (or Forget removed) is shown at once, in the
     /// landmark open, the Preview, and green on the buildings' map. A look at a file's date, nothing
@@ -125,8 +154,52 @@ extension Session {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
                 self?.lookAtModels()
+                self?.watchFolder()
             }
         }
+    }
+
+    /// What the agent's sessions change in the data folder, run in a
+    /// terminal outside the editor, shown as it lands (the user, 2026-11-22:
+    /// the tiles an area's run built and the OSM it cut never showed): the
+    /// open tile's landmarks every two seconds (the ones prepare_tile made
+    /// listed), and every six the tiles fetched and built, on the map and in
+    /// the 3D views, and the engine's newest archive (update_archive).
+    private func watchFolder() {
+        if let tile = workspace.tile {
+            let root = LandmarkCandidates.folder(workspace.paths, tile)
+            let ids = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).sorted()
+                .filter { FileManager.default.fileExists(atPath: root.appendingPathComponent($0).appendingPathComponent("landmark.json").path) }
+            if ids != seenLandmarks {
+                if ids != candidates.map(\.id).sorted() { readCandidates() }
+                seenLandmarks = ids
+            }
+        }
+        // The palettes, which the palette agent changes (PaletteMCP).
+        let palettes = paletteStamps()
+        if palettes != seenPalettes {
+            if seenPalettes != nil { palette.reread() }
+            seenPalettes = palettes
+        }
+        watchTicks += 1
+        guard watchTicks % 3 == 0, !jobs.isActive(.workspace) else { return }
+        workspace.scan()
+        let newest = engineArchive?.lastPathComponent
+        if newest != seenArchive {
+            if seenArchive != nil { engineRevision += 1 }
+            seenArchive = newest
+        }
+    }
+
+    /// Every palette file of the data folder by its date: the kept ones and
+    /// the one in use.
+    private func paletteStamps() -> [String: Date] {
+        let store = PaletteStore(paths: workspace.paths)
+        var out: [String: Date] = [:]
+        for url in store.names.map(store.url) + [Palette.file(workspace.paths)] {
+            out[url.path] = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        }
+        return out
     }
 
     private func lookAtModels() {

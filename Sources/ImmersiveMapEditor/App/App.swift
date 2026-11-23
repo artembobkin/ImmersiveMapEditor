@@ -17,6 +17,7 @@ import TileKit
 ///   ImmersiveMapEditor landmark-mcp FOLDER                    the landmarks' agent's tools, an MCP server on stdio
 ///   ImmersiveMapEditor landmark-mcp --tile LANDMARKS          every landmark of a tile behind one server, a landmark argument each
 ///   ImmersiveMapEditor landmark-mcp --area AGENT_FOLDER       the marked tiles prepared, modelled and archived by one session (agent/plan.json)
+///   ImmersiveMapEditor palette-mcp DATA_FOLDER                the palettes of the data folder, for an agent making one fit a city
 ///
 /// With no argument it opens the data folder of Settings (DataFolder).
 @main
@@ -46,6 +47,14 @@ enum Entry {
             // The tiles marked on the map gone through by one session (AreaMCP).
             if arguments[2] == "--area", arguments.count > 3 { AreaMCP.run(agent: URL(fileURLWithPath: arguments[3])) }
             LandmarkMCP.run(folder: URL(fileURLWithPath: arguments[2]))
+        }
+        // The palette agent's tools (PaletteMCP), Mapillary's token as above.
+        if arguments.count > 2, arguments[1] == "palette-mcp" {
+            if ProcessInfo.processInfo.environment["MAPILLARY_TOKEN"] == nil {
+                let token = AgentSettings.mapillaryToken
+                if !token.isEmpty { setenv("MAPILLARY_TOKEN", token, 1) }
+            }
+            PaletteMCP.run(root: URL(fileURLWithPath: arguments[2]))
         }
         if Headless.asked(arguments) {
             Platform.runMain { exit(await Headless.run(arguments) ?? 1) }

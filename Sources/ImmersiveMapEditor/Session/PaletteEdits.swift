@@ -162,11 +162,13 @@ final class PaletteEdits {
     /// it is the data folder's, then applied again.
     private func save() {
         guard let paths else { return }
-        let palette = Palette.File(name: active, colours: colours, extra: extras)
-        try? palette.write(Palette.palettesFolder(paths).appendingPathComponent(active + ".json"))
-        if active == defaultName { try? palette.write(Palette.file(paths)) }
+        try? PaletteStore(paths: paths).write(Palette.File(name: active, colours: colours, extra: extras))
         show(tile: tile)
     }
+
+    /// The palettes read again from their files, changed outside the view
+    /// (the palette agent's tools, `PaletteMCP`).
+    func reread() { show(tile: tile) }
 
     /// A colour of the tables, by name, as it is now.
     static func colour(_ name: String) -> String? {

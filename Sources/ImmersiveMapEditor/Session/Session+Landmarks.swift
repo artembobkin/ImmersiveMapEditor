@@ -162,3 +162,26 @@ extension Session {
         return made.count
     }
 }
+
+extension Session {
+    /// What tidying the open tile's finished landmarks would free: how many
+    /// and the bytes (`LandmarkTidy`).
+    var tidyableLandmarks: (count: Int, bytes: Int) {
+        candidates.filter { $0.model != nil }.reduce((0, 0)) { sum, landmark in
+            let bytes = LandmarkTidy.reclaimable(landmark.folder)
+            return bytes > 0 ? (sum.0 + 1, sum.1 + bytes) : sum
+        }
+    }
+
+    /// The open tile's finished landmarks tidied, those the agent is not
+    /// working on through a job of the editor; what it freed.
+    @discardableResult
+    func tidyLandmarks() -> Int {
+        var freed = 0
+        for landmark in candidates where landmark.model != nil && !isBusy(landmark: landmark.id) {
+            freed += LandmarkTidy.tidy(landmark.folder)
+        }
+        workspace.tilesRevision += 1
+        return freed
+    }
+}

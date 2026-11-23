@@ -28,6 +28,14 @@ enum TileBuild {
         return String(summary ?? "built")
     }
 
+    /// The finished landmarks of a tile tidied once it is built, their
+    /// working files gone (`LandmarkTidy`; the user, 2026-11-22: the disk
+    /// filled with what no one cleared), and what that freed, said.
+    static func tidied(_ landmarks: URL) -> String {
+        let (count, freed) = LandmarkTidy.tidyTile(landmarks)
+        return count == 0 ? "No landmark to tidy." : "\(count) finished landmarks tidied, \(LandmarkTidy.text(freed)) freed (their candidates and old rounds; the models, recipes and references stay)."
+    }
+
     /// One of the pipeline's commands on the data folder at `root`, the
     /// editor run as it runs them; its status and output.
     static func pipeline(_ root: URL, _ arguments: [String]) -> (Int32, String) {

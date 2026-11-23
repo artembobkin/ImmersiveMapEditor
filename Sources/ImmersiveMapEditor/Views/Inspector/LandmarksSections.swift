@@ -21,6 +21,8 @@ struct LandmarksSections: View {
     @State private var moreShown = false
     /// What was last put on the clipboard and when, for the state line.
     @State private var copied: (what: String, when: Date)?
+    /// What tidying the tile's finished landmarks would free, measured when asked.
+    @State private var tidying: (count: Int, bytes: Int)?
 
     var body: some View {
         @Bindable var session = session
@@ -45,6 +47,19 @@ struct LandmarksSections: View {
                     .help("Sets up the tile's landmarks folder for one Claude Code or Codex session with the tools of every landmark, and copies the cd into it. Start the agent there, then paste the tile's prompt.")
                 PanelButton("Copy Prompt for \(unmodelled) Without a Model", systemImage: "doc.on.clipboard") { session.copyTilePrompt() }
                     .help("The prompt of one Claude Code or Codex session started in the tile's landmarks folder: it hands every landmark without a model to a subagent of its own, \(LandmarkAgent.tileAtOnce) at once, each with that landmark's whole brief, at the detail and exaggeration of the Agent settings. Each gathers its references itself. Claude Code or Codex, both with subagents.")
+            }
+            // The finished landmarks' working files freed (the user, 2026-11-22).
+            if session.candidates.contains(where: { $0.model != nil }) {
+                PanelButton("Tidy Finished Landmarks…", systemImage: "archivebox") { tidying = session.tidyableLandmarks }
+                    .help("Removes the finished landmarks' working files, which the agent makes again when it works on one: the candidates it was shown and the models and pictures of its old rounds. Their models, recipes and references stay. The agent's build_tile does it by itself.")
+                    .confirmationDialog(tidying.map { $0.count == 0 ? "Nothing to tidy" : "Tidy \($0.count) finished landmarks?" } ?? "",
+                                        isPresented: Binding(get: { tidying != nil }, set: { if !$0 { tidying = nil } })) {
+                        if let tidying, tidying.count > 0 {
+                            Button("Free \(LandmarkTidy.text(tidying.bytes))", role: .destructive) { session.tidyLandmarks() }
+                        }
+                    } message: {
+                        Text("Their models, recipes and references stay.")
+                    }
             }
             ForEach(session.candidates) { landmark in
                 Button { session.pickedLandmark = landmark.id } label: {

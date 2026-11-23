@@ -89,10 +89,17 @@ final class Workspace {
         if next != shown { shown = next }
     }
 
-    /// Reads again what is on disk: tiles/<z>/<x>/<y>/, the zoom's.
+    /// When each tile was last built (its placement.json), to tell a build
+    /// made outside the editor (the agent's build_tile) from none.
+    @ObservationIgnored private var buildDates: [TileKey: Date] = [:]
+
+    /// Reads again what is on disk: tiles/<z>/<x>/<y>/, the zoom's. Only what
+    /// changed is set, so a look every few seconds (`Session.watchModels`)
+    /// redraws nothing while nothing changed, and a tile built again bumps
+    /// `tilesRevision`, so the 3D views load its new build.
     func scan() {
         let fm = FileManager.default
-        var f = Set<TileKey>(), b = Set<TileKey>()
+        var f = Set<TileKey>(), b = Set<TileKey>(), dates: [TileKey: Date] = [:]
         var docs: [(URL, RoadPlan.Tiles)] = []
         let z = Workspace.zoom
         let zoom = paths.tiles.appendingPathComponent("\(z)")
@@ -101,14 +108,22 @@ final class Workspace {
                 guard let xi = Int(x), let yi = Int(y) else { continue }
                 let t = TileKey(z: z, x: xi, y: yi)
                 if Osm.isFetched(paths.tileData(z: z, x: xi, y: yi)) { f.insert(t) }
-                if fm.fileExists(atPath: paths.tileOut(z: z, x: xi, y: yi).appendingPathComponent("placement.json").path) { b.insert(t) }
+                let placement = paths.tileOut(z: z, x: xi, y: yi).appendingPathComponent("placement.json")
+                if let date = (try? placement.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                    b.insert(t)
+                    dates[t] = date
+                }
                 let doc = paths.roadDocument(z: z, x: xi, y: yi)
                 if fm.fileExists(atPath: doc.path) { docs.append((doc, RoadPlan.Tiles(z: z, x0: xi, y0: yi, x1: xi, y1: yi))) }
             }
         }
-        fetched = f
-        built = b
-        documents = docs
+        if f != fetched { fetched = f }
+        if b != built { built = b }
+        if docs.map(\.0) != documents.map(\.url) { documents = docs }
+        if dates != buildDates {
+            buildDates = dates
+            tilesRevision += 1
+        }
         follow()
     }
 

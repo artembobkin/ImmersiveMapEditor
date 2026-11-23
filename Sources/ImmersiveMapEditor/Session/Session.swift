@@ -83,6 +83,13 @@ final class Session {
     /// each as it lands (`watchModels`).
     @ObservationIgnored var seenModels: [String: ModelStamp] = [:]
     @ObservationIgnored var modelWatch: Task<Void, Never>?
+    /// What the watch saw last of the data folder: the newest archive of
+    /// engine/ and the open tile's landmark folders (`watchFolder`).
+    @ObservationIgnored var seenArchive: String?
+    @ObservationIgnored var seenLandmarks: [String] = []
+    @ObservationIgnored var watchTicks = 0
+    /// The palette files' dates the watch saw last.
+    @ObservationIgnored var seenPalettes: [String: Date]?
     /// When and how sharp the imagery over the working tile was taken, by its
     /// source's metadata (Esri says it, Mapbox does not).
     var imageryCapture: String?
